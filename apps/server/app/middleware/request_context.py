@@ -93,7 +93,10 @@ def _declares_oversized_body(scope: Scope) -> bool:
         if name == b"content-length":
             if not value.isdigit():
                 return False
-            return len(value) > MAX_CONTENT_LENGTH_DIGITS or int(value) > MAX_BODY_BYTES
+            significant_digits = value.lstrip(b"0") or b"0"
+            if len(significant_digits) > MAX_CONTENT_LENGTH_DIGITS:
+                return True
+            return int(significant_digits) > MAX_BODY_BYTES
     return False
 
 

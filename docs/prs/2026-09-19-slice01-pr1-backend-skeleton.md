@@ -28,7 +28,7 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 - **Who wrote the tests:** the test-author agent, before any implementation existed, as the fallback for Codex, which was out of quota (owner rule, 2026-09-19). It also checked that the tests can fail: it ran them against a throwaway implementation and four deliberately broken versions, and each broken version failed at least one test.
 - **RED:** `tdd.sh red` locked the 3 unit test files with 25 tests, all failing on the missing module. **GREEN:** `tdd.sh green` then passed all 25.
 - **Integration:** `/health/ready` answers 200 against a real local Postgres when `TEST_DATABASE_URL` is set, for 26 of 26 passing. CI runs it once PR 4 adds the integration job.
-- **Checks:** ruff, black, and mypy in strict mode are clean, and with the review fixes the suite is 38 of 38 including the real-Postgres test, at 95.8 percent coverage.
+- **Checks:** ruff, black, and mypy in strict mode are clean, and with all review fixes the suite is 48 of 48 including the real-Postgres test, at about 95 percent coverage against an 80 percent floor.
 - **Not yet runnable:** `e2e/health.spec.ts` is written, but it runs only once PR 4 installs Playwright and starts the containers.
 
 ## Codex review
@@ -46,9 +46,9 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 | 7 | LOW | A 5,000-digit `Content-Length` raised a 500 | Fixed: more than 19 digits is treated as oversized |
 | 8 | LOW | The request-ID validator lived in `main.py` | Fixed: moved into `app/middleware/request_context.py` |
 | 9 | LOW | The 413 body lacked the `{ code, error }` envelope | Fixed: `INPUT_PAYLOAD_TOO_LARGE`, asserted by tests |
-| 10 | LOW | The test tree did not mirror the modules, and there was no coverage floor | Fixed: `tests/unit/test_main.py` and `tests/unit/core/test_logging.py`; a 60 percent floor, currently at 95.8 percent |
+| 10 | LOW | The test tree did not mirror the modules, and there was no coverage floor | Fixed: `tests/unit/test_main.py` and `tests/unit/core/test_logging.py`; a coverage floor of 80 percent, the spec's server floor (first set at 60 and raised after Copilot's review), currently at about 95 percent |
 
-**Copilot's review** raised three more points. Two were valid and are fixed in `3784948`, test-first under `tdd.sh`: deployed environments did not verify the Postgres certificate, and the body cap missed chunked bodies sent to routes that never read them. The third, that a parametrized fixture was not in the test's signature, was answered in its thread: pytest overrides any fixture in a test's closure, and the RED run proved the marker DSN was in use.
+**Copilot's review** raised three more points. Two were valid and are fixed in `3784948`, test-first under `tdd.sh`: deployed environments did not verify the Postgres certificate, and the body cap missed chunked bodies sent to routes that never read them. A later round found that a zero-padded `Content-Length` within the limit was rejected (fixed test-first) and that the coverage floor was below the spec's 80 percent (raised); its claim that `asyncio.timeout`'s `TimeoutError` escapes the readiness handler was answered, since the built-in `TimeoutError` subclasses `OSError`. The earlier invalid point, that a parametrized fixture was not in the test's signature, was answered in its thread: pytest overrides any fixture in a test's closure, and the RED run proved the marker DSN was in use.
 
 A tooling limit surfaced along the way: `tdd.sh red` requires every test in each named file to fail, so tests added beside passing tests in an existing file cannot be locked as RED. This fix round therefore recorded RED by hand (8 failed, 29 passed, 1 skipped) in the commit message. The limit is queued for agent-governance.
 
