@@ -1,7 +1,7 @@
 # Slice 01: Walking Skeleton
 
 Spec: `docs/superpowers/specs/2026-09-19-template-fastapi-nuxt-design.md` (acceptance criteria B-1 to B-4)
-Status: Gate 1 approved by the owner on 2026-09-19; building starts when spec PR #5 merges
+Status: complete; all four PRs merged on 2026-09-19 (Gate 1 approved by the owner the same day)
 Tracker: Linear project template-fastapi-nuxt; slice ticket IAN-123, with one child ticket per PR
 Estimate: 4.5 hours of agent time across the four PRs
 
@@ -18,12 +18,14 @@ This slice builds nothing a user can see beyond a landing page, and that is the 
 
 ## Execution record
 
-| PR  | Concern                         | PR number | Merged | Scope change                                                                                                                                                                            |
-| --- | ------------------------------- | --------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Backend skeleton                | IAN-124   |        | Tests by the test-author agent (Codex out of quota); pre-merge review by a Fable agent found ten issues, including a password leak in the readiness log, all fixed before the PR opened |
-| 2   | Frontend skeleton and workspace |           |        |                                                                                                                                                                                         |
-| 3   | Type contract pipeline          |           |        |                                                                                                                                                                                         |
-| 4   | Containers, compose, and CI     |           |        |                                                                                                                                                                                         |
+| PR  | Concern                         | PR number     | Merged     | Scope change                                                                                                                                                                                                     |
+| --- | ------------------------------- | ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Backend skeleton                | #6 (IAN-124)  | 2026-09-19 | Tests by the test-author agent (Codex out of quota); a Fable pre-merge review found ten issues, including a password leak in the readiness log, all fixed before the PR opened                                   |
+| 2   | Frontend skeleton and workspace | #7 (IAN-125)  | 2026-09-19 | The token generator emits every group, and the accent darkened to `#bf4f10` for AA contrast; 14 review findings                                                                                                  |
+| 3   | Type contract pipeline          | #9 (IAN-126)  | 2026-09-19 | Spec PR #8 moved the per-request `useApiClient()`, `resolveClientAddress`, and the `X-Requested-With` base header into this PR; two review rounds and three Copilot rounds                                       |
+| 4   | Containers, compose, and CI     | #10 (IAN-127) | 2026-09-19 | A heartbeat cron job (arq needs a job to start), passwordless compose Postgres on loopback ports 5433 and 6380, no `.env.example` (a protected path), and the spec's lefthook set; 18 review findings, none HIGH |
+
+Slice 01 is complete: B-1 to B-4 and B-49 hold on `main`, and the full CI graph is green there.
 
 ## PRs
 
