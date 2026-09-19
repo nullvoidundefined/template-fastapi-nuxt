@@ -29,7 +29,7 @@
         "eslint-plugin-vuejs-accessibility": "2.6.0",
         "happy-dom": "20.14.5",
         "sass": "1.104.1",
-        "typescript": "5.9.3",
+        "typescript": "7.0.2",
         "vitest": "5.0.1",
         "vue-tsc": "3.3.11"
     }
