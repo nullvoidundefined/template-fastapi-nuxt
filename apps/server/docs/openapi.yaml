@@ -1,0 +1,66 @@
+components:
+  schemas:
+    HealthLiveness:
+      description: 'Body of `GET /health`: the process is up.'
+      properties:
+        status:
+          const: ok
+          title: Status
+          type: string
+      required:
+      - status
+      title: HealthLiveness
+      type: object
+    HealthReadiness:
+      description: 'Body of `GET /health/ready`: whether Postgres answered within the deadline.'
+      properties:
+        db:
+          enum:
+          - connected
+          - disconnected
+          title: Db
+          type: string
+        status:
+          enum:
+          - ok
+          - degraded
+          title: Status
+          type: string
+      required:
+      - status
+      - db
+      title: HealthReadiness
+      type: object
+info:
+  title: template-fastapi-nuxt
+  version: 0.1.0
+openapi: 3.1.0
+paths:
+  /health:
+    get:
+      description: Answer 200 without touching any dependency.
+      operationId: read_liveness_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthLiveness'
+          description: Successful Response
+      summary: Read Liveness
+      tags:
+      - health
+  /health/ready:
+    get:
+      description: Answer 200 when Postgres answers within the deadline, and 503 otherwise.
+      operationId: read_readiness_health_ready_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReadiness'
+          description: Successful Response
+      summary: Read Readiness
+      tags:
+      - health
