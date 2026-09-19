@@ -12,7 +12,7 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 - **`app/main.py`:** `create_app()` reads settings, configures logging, and attaches a lifespan that creates the engine on `app.state` and disposes it. It also registers the middleware and includes the health router.
 - **`app/core/settings.py`:** `Settings` reads `DATABASE_URL` as a secret and `ENVIRONMENT`, and `get_settings()` caches it once per process.
 - **`app/core/logging.py`:** a structlog chain that merges per-request context before the renderer, with console output in development and JSON everywhere else.
-- **`app/db/engine.py`:** the one async engine, with a bounded pool, a 5-second connect timeout, and a 10-second statement timeout.
+- **`app/db/engine.py`:** the one async engine, with a bounded pool, a 5-second connect timeout, a 10-second statement timeout, and, in staging and production, TLS with the server certificate verified and the hostname checked (optional `DATABASE_CA_CERT` for a private CA).
 - **`app/middleware/request_context.py`:** binds the request ID into structlog's context for the length of a request and restores the previous context afterwards, and rejects a body over 100 KB with 413, whether the body declares its length or streams.
 - **`app/routers/health.py`:** `/health` answers 200 without touching a dependency. `/health/ready` opens its own connection and answers 503 when Postgres cannot be reached.
 - **Product docs (R-607):** Infrastructure rows in `docs/feature-list/features.md` and stories US-INFRA-001 and US-INFRA-002 in `docs/user-stories/infrastructure.md`.
@@ -20,7 +20,7 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 ## Architectural decisions
 
 - **asgi-correlation-id outermost, the request-context middleware inside it.** The library validates or mints the ID and writes it on every response, so the 413 this PR's middleware sends still carries `X-Request-Id`. The library never resets its context variable, so the inner middleware binds the ID into structlog's own context with `bound_contextvars`, which restores whatever was bound before when the request ends; that keeps an ID from leaking into later log lines and keeps an outer caller's own binding intact. The alternative was a single hand-written middleware doing both jobs, which the stack audit replaced with the maintained library.
-- **The body limit counts streamed bytes, not only the declared length.** A chunked request has no `Content-Length`, so a check on the header alone would let an unbounded body through. Once the running total passes the limit, the middleware sends the 413 itself as raw ASGI messages, reports a disconnect to the app, and drops whatever the app sends afterwards. Raising from `receive` does not work, because FastAPI turns an exception raised while it reads a Pydantic body into a 400.
+- **The body limit counts streamed bytes, not only the declared length.** A chunked request has no `Content-Length`, so a check on the header alone would let an unbounded body through. The middleware therefore reads the whole body, up to the limit, before calling the app, and replays it; an oversized body is answered with 413 and the app never runs, even on a route that would not have read its body (spec B-43, and Copilot's review). An earlier version counted bytes as the app read them, which missed routes that never read the body; raising from `receive` also fails, because FastAPI turns an exception raised while it reads a Pydantic body into a 400. Holding at most 100 KB per request is cheap, because uploads go to R2 through presigned URLs.
 - **The 413 already uses the `{ code, error }` envelope** with `INPUT_PAYLOAD_TOO_LARGE`, so slice 02's error handlers need not change this middleware.
 
 ## Testing
@@ -47,6 +47,8 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 | 8 | LOW | The request-ID validator lived in `main.py` | Fixed: moved into `app/middleware/request_context.py` |
 | 9 | LOW | The 413 body lacked the `{ code, error }` envelope | Fixed: `INPUT_PAYLOAD_TOO_LARGE`, asserted by tests |
 | 10 | LOW | The test tree did not mirror the modules, and there was no coverage floor | Fixed: `tests/unit/test_main.py` and `tests/unit/core/test_logging.py`; a 60 percent floor, currently at 95.8 percent |
+
+**Copilot's review** raised three more points. Two were valid and are fixed in `3784948`, test-first under `tdd.sh`: deployed environments did not verify the Postgres certificate, and the body cap missed chunked bodies sent to routes that never read them. The third, that a parametrized fixture was not in the test's signature, was answered in its thread: pytest overrides any fixture in a test's closure, and the RED run proved the marker DSN was in use.
 
 A tooling limit surfaced along the way: `tdd.sh red` requires every test in each named file to fail, so tests added beside passing tests in an existing file cannot be locked as RED. This fix round therefore recorded RED by hand (8 failed, 29 passed, 1 skipped) in the commit message. The limit is queued for agent-governance.
 
