@@ -29,7 +29,7 @@ the date and what changed. Section shape:
 | Request IDs on every response and log line                                                              | **Partial**  | US-INFRA-002; spec B-2; shipped in PR #6, e2e runs once PR 4 adds Playwright                               |
 | Web server health check (`GET /api/health` on the Nuxt server)                                          | **Partial**  | US-INFRA-003; shipped in PR #7, e2e runs once PR 4 adds Playwright                                         |
 | API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check               | **Partial**  | spec B-4; `pnpm check:contract` runs locally, CI's `openapi-drift` job arrives in PR 4                     |
-| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | spec B-3 and R-345; unit tests plus a real-Redis integration test                                          |
+| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test                            |
 | Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Partial**  | spec B-3; every container reports healthy locally, and the first CI run on this branch proves the pipeline |
 
 ## Landing
