@@ -1,7 +1,7 @@
 # Web image (R-351): the Nuxt app built with Nitro's node-server preset, run as the non-root
 # `node` user. Build context: the repository root, because the app depends on the workspace
 # packages @repo/tokens (built during install by its prepare script) and @repo/api-types.
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 ENV PNPM_HOME=/pnpm PATH="/pnpm:$PATH"
 RUN corepack enable
 WORKDIR /repo
@@ -14,7 +14,7 @@ COPY apps/client/web/ apps/client/web/
 RUN pnpm install --offline --frozen-lockfile --filter @repo/web...
 RUN pnpm --filter @repo/web build
 
-FROM node:22-alpine
+FROM node:25-alpine
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 COPY --from=builder --chown=node:node /repo/apps/client/web/.output ./.output
