@@ -107,7 +107,7 @@ Tables follow R-334: the aggregate root takes no prefix, and every entity inside
 | `password_resets` | `user_password_resets` | `id` uuid, `user_id`, `token_hash` unique, `expires_at`, `used_at`, `created_at` | Owned by a user |
 | `subscriptions` | `user_subscriptions` | `id` uuid, `user_id` unique, `stripe_customer_id`, `stripe_subscription_id`, `status`, `current_period_end`, timestamps | One per user, owned by the user |
 | `stripe_events` | `billing_webhook_events` | `id` uuid, `stripe_event_id` unique, `event_type`, `status` (claimed, processed, failed), `attempted_at`, `processed_at` | The name the Python track uses; the ledger outlives any one user |
-| `idempotency_keys` | `request_idempotency_keys` | `key`, `user_id`, `status_code`, `response_body` jsonb, `created_at`; unique on `(key, user_id)` | Declared as its own root, as in Voyager 2.0 |
+| `idempotency_keys` | `request_idempotency_keys` | `key`, `user_id`, `request_method`, `request_path`, `request_body_hash`, `status_code`, `response_body` jsonb, `created_at`; unique on `(key, user_id)` | Declared as its own root, as in Voyager 2.0. The stored method, path, and body hash bind a key to one request, so a key reused on a different endpoint or with a different body is rejected rather than replaying another request's response; this is stricter than the Express template and the Python track, which scope by `(key, user_id)` alone |
 | `posts` | none | | Excluded by the owner |
 
 Each table arrives in the slice that first needs it, as its own Alembic revision, and a column that only a later slice uses arrives with that slice: `users.role` is added in slice 05, not slice 02.
@@ -143,7 +143,7 @@ Slice 04, password reset:
 Slice 05, idempotency and admin:
 - B-17: A repeated `POST` with the same `Idempotency-Key` from the same user within 24 hours replays the stored status and body without running the handler again.
 - B-18: A handler that fails releases its idempotency claim, so the client's retry runs again instead of answering 409.
-- B-19: A member calling an admin endpoint receives 403 `AUTH_ADMIN_REQUIRED`, and a member visiting `/admin` is redirected.
+- B-19: A member calling an admin endpoint receives 403 `AUTH_ADMIN_REQUIRED`, a member visiting `/admin` is redirected, and `GET /auth/me` now includes the user's `role`.
 
 Slice 06, billing:
 - B-20: A webhook with a bad signature answers 400 `BILLING_WEBHOOK_INVALID_SIGNATURE` and writes nothing.
@@ -165,13 +165,14 @@ Criteria added after review keep the earlier numbers stable, so they are listed 
 - B-29 (slice 07): An R2 upload URL is presigned for a server-generated key of the form `{user_id}/{uuid}.{extension}`, with an extension from the upload purpose's allowlist and a 15-minute expiry; a client-supplied key or a disallowed extension is rejected before any R2 call.
 - B-30 (slice 07): Sentry initializes only when `SENTRY_DSN` is set, an unhandled error's event carries the request ID tag and the user's ID (never the email), and cookies and the `Authorization` header are scrubbed from the event.
 - B-31 (slice 03): `POST /auth/logout` answers 204 whether or not a session exists, deletes the session row, and clears the cookie, so the same cookie then fails `GET /auth/me` with 401.
-- B-32 (slice 03): `GET /auth/me` answers `{ data: user }` with the user's ID, email, and role and never the password hash, and answers 401 `AUTH_REQUIRED` without a session.
+- B-32 (slice 03): `GET /auth/me` answers `{ data: user }` with the user's ID and email and never the password hash (the role joins the response in slice 05, under B-19), and answers 401 `AUTH_REQUIRED` without a session.
 - B-33 (slice 06): `POST /billing/checkout` answers the Stripe Checkout URL for the signed-in user, and the same request repeated with the same `Idempotency-Key` returns the same URL without creating a second Checkout session.
 - B-34 (slice 06): A verified webhook for an event type outside the allowlist answers 200 and changes no row.
 - B-35 (slice 02): Every response carries the security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy`, and `Strict-Transport-Security` in production), and a preflight from an origin other than `CORS_ORIGIN` receives no `Access-Control-Allow-Origin` header.
 - B-36 (slice 04): `/login?reset=true` shows the reset-success banner, `/forgot-password` shows its submitted state after a request, and `/reset-password` refuses to submit when the two passwords differ.
-- B-37 (slice 07): A chosen theme survives a reload, and the server-rendered page carries the stored `data-theme` before first paint, so the page never flashes the other theme.
+- B-37 (slice 07): A chosen theme survives a reload: the inline script in the document head reads the theme from `localStorage` and sets `data-theme` on `<html>` before first paint, so the page never flashes the other theme. Server-side rendering cannot read `localStorage`, so the server never renders a theme attribute itself.
 - B-38 (slice 03): Registering with an invalid email shows the field-level error from `INPUT_VALIDATION_ERROR` beside the email input.
+- B-40 (slice 05): Reusing an `Idempotency-Key` for a different method, path, or request body answers 422 `IDEMPOTENCY_KEY_REUSED` and runs no handler, so a key sent to `/billing/checkout` can never replay into `/billing/portal`.
 - B-39 (slice 03): Every `components/ui/` component has a Storybook story, and the `visual-regression` project fails when a story's rendering changes without an updated snapshot.
 
 ## Invariants
