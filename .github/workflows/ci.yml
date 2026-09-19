@@ -52,7 +52,7 @@ jobs:
       # first slice lands, so the Python steps run only once pyproject.toml
       # exists. Slice 01 replaces this workflow with the full backend and
       # frontend pipeline and drops these conditions.
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         if: hashFiles('pyproject.toml') != ''
       - uses: actions/setup-python@v5
         if: hashFiles('pyproject.toml') != ''
