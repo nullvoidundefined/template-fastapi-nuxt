@@ -1,0 +1,10 @@
+// Vitest config: the Nuxt test environment, so components and Nitro routes run with Nuxt's runtime.
+import { defineVitestConfig } from '@nuxt/test-utils/config';
+
+export default defineVitestConfig({
+    test: {
+        environment: 'nuxt',
+        environmentOptions: { nuxt: { domEnvironment: 'happy-dom' } },
+        include: ['tests/**/*.test.ts'],
+    },
+});

@@ -1,0 +1,6 @@
+apps/server/
+**/.nuxt/
+**/.output/
+**/dist/
+pnpm-lock.yaml
+**/generated/

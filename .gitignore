@@ -37,3 +37,9 @@ coverage/
 .claude/task-tier.json
 *.log
 .DS_Store
+
+# Nuxt and Node build output
+.nuxt/
+.output/
+node_modules/
+packages/*/dist/
