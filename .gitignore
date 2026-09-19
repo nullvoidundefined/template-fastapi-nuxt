@@ -43,3 +43,11 @@ coverage/
 .output/
 node_modules/
 packages/*/dist/
+
+# Playwright output
+test-results/
+playwright-report/
+
+# Python coverage data
+.coverage
+.coverage.*

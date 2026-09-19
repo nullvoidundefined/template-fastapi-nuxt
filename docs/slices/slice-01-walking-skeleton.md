@@ -18,12 +18,12 @@ This slice builds nothing a user can see beyond a landing page, and that is the 
 
 ## Execution record
 
-| PR | Concern | PR number | Merged | Scope change |
-|---|---|---|---|---|
-| 1 | Backend skeleton | IAN-124 | | Tests by the test-author agent (Codex out of quota); pre-merge review by a Fable agent found ten issues, including a password leak in the readiness log, all fixed before the PR opened |
-| 2 | Frontend skeleton and workspace | | | |
-| 3 | Type contract pipeline | | | |
-| 4 | Containers, compose, and CI | | | |
+| PR  | Concern                         | PR number | Merged | Scope change                                                                                                                                                                            |
+| --- | ------------------------------- | --------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Backend skeleton                | IAN-124   |        | Tests by the test-author agent (Codex out of quota); pre-merge review by a Fable agent found ten issues, including a password leak in the readiness log, all fixed before the PR opened |
+| 2   | Frontend skeleton and workspace |           |        |                                                                                                                                                                                         |
+| 3   | Type contract pipeline          |           |        |                                                                                                                                                                                         |
+| 4   | Containers, compose, and CI     |           |        |                                                                                                                                                                                         |
 
 ## PRs
 
