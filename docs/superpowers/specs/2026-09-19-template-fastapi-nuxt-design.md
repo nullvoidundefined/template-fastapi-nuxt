@@ -61,7 +61,7 @@ Paths are under `/v1` except the health endpoints and the Stripe webhook.
 | Register | `POST /auth/register` | bcrypt with 12 rounds, run in a worker thread; a SHA-256 session token; 409 `AUTH_EMAIL_ALREADY_REGISTERED` on a duplicate email |
 | Log in | `POST /auth/login` | Timing equalized against a dummy hash; the same `AUTH_INVALID_CREDENTIALS` for a wrong email or a wrong password |
 | Log out | `POST /auth/logout` | Always 204; deletes the session row and clears the cookie |
-| Current user | `GET /auth/me` | Returns `{ user }` |
+| Current user | `GET /auth/me` | Returns `{ data: user }`, the Python track's success envelope; the Express template returns `{ user }`, and this template follows the track so generated clients see one success shape |
 | Update profile | `PATCH /auth/me` | Verifies the current password before setting a new one; deletes the user's other sessions |
 | Forgot password | `POST /auth/forgot-password` | Always 200; enqueues `send_password_reset_email`, so the response never reveals whether the email exists |
 | Reset password | `POST /auth/reset-password` | Single-use token with an expiry; deletes every session of the user |
@@ -125,12 +125,12 @@ Slice 01, the walking skeleton:
 Slice 02, data and errors:
 - B-5: An unknown path answers 404 `ROUTING_NOT_FOUND`, a wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and neither ever returns FastAPI's default `{ detail }`.
 - B-6: A state-changing request without `X-Requested-With: XMLHttpRequest` answers 403 `CSRF_HEADER_MISSING`, while the health routes and the Stripe webhook are exempt.
-- B-7: The eleventh auth request inside 15 minutes from one IP answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`.
+- B-7: The eleventh auth request inside 15 minutes from one IP answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and so does the one hundred and first request of any kind inside 15 minutes from one IP.
 - B-8: A handler that runs longer than 30 seconds answers 408 `SERVER_REQUEST_TIMEOUT`.
 - B-9: A database outage during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, and an unexpected error answers 500 with no stack trace in production.
 
 Slice 03, auth:
-- B-10: Registering stores a bcrypt hash, sets an `httpOnly`, `SameSite=Lax` session cookie with a 7-day lifetime, and stores only the SHA-256 hash of its token.
+- B-10: Registering stores a bcrypt hash, sets an `httpOnly`, `SameSite=Lax` session cookie with a 7-day lifetime that is also `Secure` in every environment except local development, and stores only the SHA-256 hash of its token; a test asserts each attribute, including `Secure` under the production setting.
 - B-11: Logging in with a wrong password and with an unknown email both answer `AUTH_INVALID_CREDENTIALS`.
 - B-12: A signed-out browser that loads `/dashboard` is redirected to `/login` on the first request, and a client-side navigation to `/dashboard` with an expired session is redirected as well.
 - B-13: Changing the password through `PATCH /auth/me` requires the current password and signs out every other session of the user.
@@ -154,11 +154,15 @@ Slice 07, observability and integrations:
 - B-23: Every outbound provider call logs the provider, the operation, the duration, and the outcome, carries the request ID, and has an explicit timeout.
 - B-24: The six auth events reach PostHog from the server, and the browser's pageview events reach it through `/ingest`.
 - B-25: After five failures inside 60 seconds, the circuit breaker fails calls to that provider fast for 30 seconds.
+- B-29: An R2 upload URL is presigned for a server-generated key of the form `{user_id}/{uuid}.{extension}`, with an extension from the upload purpose's allowlist and a 15-minute expiry; a client-supplied key or a disallowed extension is rejected before any R2 call.
+- B-30: Sentry initializes only when `SENTRY_DSN` is set, an unhandled error's event carries the request ID tag and the user's ID (never the email), and cookies and the `Authorization` header are scrubbed from the event.
 
 Slice 08, cleanup and closing:
 - B-26: Expired sessions and idempotency keys older than 24 hours are deleted hourly, by pg_cron where it exists and by the arq job where it does not.
 - B-27: Lighthouse accessibility scores 100 on the landing, log-in, and dashboard pages.
 - B-28: The smoke suite passes against the deployed Railway URLs.
+
+B-29 and B-30 were added after review and belong to slice 07; the numbering keeps earlier criteria stable.
 
 ## Invariants
 
