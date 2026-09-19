@@ -10,7 +10,7 @@
 # lefthook pre-push hook run it.
 #
 # To fix a reported drift, regenerate and commit both files:
-#   (cd apps/server && uv run python -m app.export_openapi)
+#   (cd apps/server && uv run --frozen python -m app.export_openapi)
 #   pnpm --filter @repo/api-types generate
 set -euo pipefail
 
