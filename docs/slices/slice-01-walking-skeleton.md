@@ -39,9 +39,9 @@ Readiness opens its own connection, so a Postgres outage answers 503 rather than
 
 ruff, black, and mypy in strict mode are configured in `pyproject.toml`, and pytest with pytest-asyncio runs the unit suite. Removing the `hashFiles('pyproject.toml')` conditions from CI is PR 4's job, so this PR's tests run locally and in the pre-push hook.
 
-**Contents:** `apps/server/pyproject.toml`, `uv.lock`, `.python-version`, `app/main.py`, `app/core/settings.py`, `app/core/logging.py`, `app/db/engine.py`, `app/middleware/request_context.py` (the body-size limit), `app/routers/health.py`, and tests under `apps/server/tests/`.
+**Contents:** `apps/server/pyproject.toml`, `uv.lock`, `.python-version`, `app/main.py`, `app/core/settings.py`, `app/core/logging.py`, `app/db/engine.py`, `app/middleware/request_context.py` (the body-size limit), `app/routers/health.py`, and tests under `apps/server/tests/`. Because `app/routers/health.py` is a new route, the R-607 checklist that CI runs requires this PR to add the feature-list row (Infrastructure: health endpoints), a user story for the health checks in `docs/user-stories/infrastructure.md`, and `e2e/health.spec.ts`.
 
-**Tests:** B-1: `/health` answers 200 with Postgres unreachable, and `/health/ready` answers 503 when the engine cannot connect and 200 when it can (the latter against a real Postgres). B-2: a valid inbound `X-Request-Id` is echoed, an invalid or missing one is replaced by a new UUID, and a log line emitted during the request carries the same ID.
+**Tests:** B-1: `/health` answers 200 with Postgres unreachable, and `/health/ready` answers 503 when the engine cannot connect and 200 when it can (the latter against a real Postgres). B-2: a valid inbound `X-Request-Id` is echoed, an invalid or missing one is replaced by a new UUID, and a log line emitted during the request carries the same ID. The e2e spec `e2e/health.spec.ts` checks both health endpoints through the running API, satisfying the R-607 checklist.
 
 **Review focus:** Request-ID handling: that asgi-correlation-id's ID is bound into structlog's context per request and cleared afterwards, so one request's ID can never leak into the next under concurrency, and that an inbound ID failing the validator is replaced rather than echoed.
 
@@ -57,9 +57,9 @@ ruff, black, and mypy in strict mode are configured in `pyproject.toml`, and pyt
 
 Port `packages/tokens` unchanged from `template-express-next`, since tokens are framework-free and the styling track consumes them as SCSS custom properties. Configure ESLint with the Vue plugin, Prettier, vue-tsc, and Vitest with `@nuxt/test-utils`.
 
-**Contents:** Root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `apps/client/web/` (`nuxt.config.ts`, `app/app.vue`, `app/layouts/default.vue`, `app/pages/index.vue`, `app/assets/css/main.scss`, `server/api/health.get.ts`, lint and test configuration), `packages/tokens/`, and their tests.
+**Contents:** Root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `apps/client/web/` (`nuxt.config.ts`, `app/app.vue`, `app/layouts/default.vue`, `app/pages/index.vue`, `app/assets/css/main.scss`, `server/api/health.get.ts`, lint and test configuration), `packages/tokens/`, and their tests, plus the R-607 artifacts for the new page and the Nitro route: the landing page and web health rows in `docs/feature-list/features.md`, the landing story in `docs/user-stories/landing.md`, and `e2e/landing.spec.ts` (B-49).
 
-**Tests:** A component test that the landing page renders its heading and the log-in and register links with accessible names; a Nitro test that `/api/health` answers 200 without contacting the backend; a token build test that the generated SCSS contains every token the source defines.
+**Tests:** A component test that the landing page renders its heading and the log-in and register links with accessible names; a Nitro test that `/api/health` answers 200 without contacting the backend; a token build test that the generated SCSS contains every token the source defines; and `e2e/landing.spec.ts`, which follows both landing links to their routes (B-49).
 
 **Review focus:** `nuxt.config.ts`: that `runtimeConfig` declares every variable with an empty default and reads values only at run time, so one image serves every environment (the Nuxt track's Environment Variables section).
 
