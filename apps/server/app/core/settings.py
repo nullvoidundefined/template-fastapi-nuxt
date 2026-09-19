@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_name: str = "template-fastapi-nuxt"
     environment: Literal["development", "test", "staging", "production"] = "development"
     database_url: SecretStr
+    database_ca_cert: str | None = None
 
 
 @lru_cache

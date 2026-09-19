@@ -3,13 +3,13 @@
 asgi-correlation-id, which wraps this middleware, validates or mints the ID and echoes it on the
 response; the validator it uses lives here with the rest of the request-ID concern. This class
 binds that ID into structlog's per-request context and restores whatever was bound before when
-the request ends, and it rejects a body over 100 KB with 413 whether the body declares its
-length or streams without one.
+the request ends.
 
-A streamed body that passes the limit is answered with 413 immediately, and the app then sees a
-disconnect, so whatever it tries to send afterwards (FastAPI turns an interrupted body read into
-a 400) is dropped. Raising an exception from receive would not work: FastAPI catches any
-exception raised while it reads a Pydantic body and converts it into that 400.
+The body limit holds before the route runs (spec B-43): the whole body is read, up to the
+limit, before the app is called, and then replayed to it. A body that declares or streams more
+than 100 KB is answered with 413 and the app never runs, whether or not the route would have
+read its body. Bodies stay small by design (uploads go to R2 through presigned URLs), so holding
+at most 100 KB in memory per request is the cheaper side of the trade.
 """
 
 import json
@@ -47,59 +47,44 @@ class RequestContextMiddleware:
             await self._handle_http(scope, receive, send)
 
     async def _handle_http(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Reject a declared oversized body at once, otherwise enforce it while the body streams.
-
-        Once the guard has answered 413, the app's own reaction to the disconnect (a body-read
-        error, a 400) is expected and already superseded, so it is dropped rather than raised.
-        """
+        """Answer 413 for an oversized body, otherwise run the app with the body replayed."""
         if _declares_oversized_body(scope):
             await _send_payload_too_large(send)
             return
-        guard = _StreamedBodyGuard(scope, receive, send)
-        try:
-            await self.app(scope, guard.receive, guard.send)
-        except Exception:
-            if not guard.is_rejected:
-                raise
-
-
-class _StreamedBodyGuard:
-    """Counts streamed body bytes and answers 413 the moment they pass the limit."""
-
-    def __init__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Hold the real channel and start with nothing received and nothing sent."""
-        self._scope = scope
-        self._receive = receive
-        self._send = send
-        self._received_bytes = 0
-        self._response_started = False
-        self._rejected = False
-
-    @property
-    def is_rejected(self) -> bool:
-        """Return True once the guard has answered 413 in place of the app."""
-        return self._rejected
-
-    async def receive(self) -> Message:
-        """Pass body messages through until the limit, then answer 413 and report a disconnect."""
-        if self._rejected:
-            return {"type": "http.disconnect"}
-        message = await self._receive()
-        if message["type"] == "http.request":
-            self._received_bytes += len(message.get("body", b""))
-            if self._received_bytes > MAX_BODY_BYTES and not self._response_started:
-                self._rejected = True
-                await _send_payload_too_large(self._send)
-                return {"type": "http.disconnect"}
-        return message
-
-    async def send(self, message: Message) -> None:
-        """Forward the app's response unless a 413 has already been sent in its place."""
-        if self._rejected:
+        body_messages = await _read_body_within_limit(receive)
+        if body_messages is None:
+            await _send_payload_too_large(send)
             return
-        if message["type"] == "http.response.start":
-            self._response_started = True
-        await self._send(message)
+        await self.app(scope, _replay_receive(body_messages, receive), send)
+
+
+async def _read_body_within_limit(receive: Receive) -> list[Message] | None:
+    """Read every body message; return None as soon as the running total passes the limit."""
+    body_messages: list[Message] = []
+    received_bytes = 0
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            body_messages.append(message)
+            return body_messages
+        received_bytes += len(message.get("body", b""))
+        if received_bytes > MAX_BODY_BYTES:
+            return None
+        body_messages.append(message)
+        if not message.get("more_body", False):
+            return body_messages
+
+
+def _replay_receive(body_messages: list[Message], receive: Receive) -> Receive:
+    """Hand the buffered body messages to the app, then fall through to the real channel."""
+    pending_messages = list(body_messages)
+
+    async def replay() -> Message:
+        if pending_messages:
+            return pending_messages.pop(0)
+        return await receive()
+
+    return replay
 
 
 def _declares_oversized_body(scope: Scope) -> bool:
