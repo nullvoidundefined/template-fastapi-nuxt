@@ -13,15 +13,15 @@ This PR creates the FastAPI backend that every later slice builds on. It adds th
 - **`app/core/settings.py`:** `Settings` reads `DATABASE_URL` as a secret and `ENVIRONMENT`, and `get_settings()` caches it once per process.
 - **`app/core/logging.py`:** a structlog chain that merges per-request context before the renderer, with console output in development and JSON everywhere else.
 - **`app/db/engine.py`:** the one async engine, with a bounded pool, a 5-second connect timeout, and a 10-second statement timeout.
-- **`app/middleware/request_context.py`:** binds the request ID into structlog's context for the length of a request and clears it afterwards, and rejects a body over 100 KB with 413, whether the body declares its length or streams.
+- **`app/middleware/request_context.py`:** binds the request ID into structlog's context for the length of a request and restores the previous context afterwards, and rejects a body over 100 KB with 413, whether the body declares its length or streams.
 - **`app/routers/health.py`:** `/health` answers 200 without touching a dependency. `/health/ready` opens its own connection and answers 503 when Postgres cannot be reached.
 - **Product docs (R-607):** Infrastructure rows in `docs/feature-list/features.md` and stories US-INFRA-001 and US-INFRA-002 in `docs/user-stories/infrastructure.md`.
 
 ## Architectural decisions
 
-- **asgi-correlation-id outermost, the request-context middleware inside it.** The library validates or mints the ID and writes it on every response, so the 413 this PR's middleware sends still carries `X-Request-Id`. The library never resets its context variable, so the inner middleware binds the ID into structlog's own context and unbinds it in a `finally` block, which is what keeps an ID from leaking into log lines after its request ends. The alternative was a single hand-written middleware doing both jobs, which the stack audit replaced with the maintained library.
-- **The body limit counts streamed bytes, not only the declared length.** A chunked request has no `Content-Length`, so a check on the header alone would let an unbounded body through; the receive wrapper raises once the running total passes the limit.
-- **The 413 body is a placeholder shape.** Slice 02 introduces the `{ code, error }` envelope and moves this response onto `INPUT_PAYLOAD_TOO_LARGE`; this PR's tests assert only the status.
+- **asgi-correlation-id outermost, the request-context middleware inside it.** The library validates or mints the ID and writes it on every response, so the 413 this PR's middleware sends still carries `X-Request-Id`. The library never resets its context variable, so the inner middleware binds the ID into structlog's own context with `bound_contextvars`, which restores whatever was bound before when the request ends; that keeps an ID from leaking into later log lines and keeps an outer caller's own binding intact. The alternative was a single hand-written middleware doing both jobs, which the stack audit replaced with the maintained library.
+- **The body limit counts streamed bytes, not only the declared length.** A chunked request has no `Content-Length`, so a check on the header alone would let an unbounded body through. Once the running total passes the limit, the middleware sends the 413 itself as raw ASGI messages, reports a disconnect to the app, and drops whatever the app sends afterwards. Raising from `receive` does not work, because FastAPI turns an exception raised while it reads a Pydantic body into a 400.
+- **The 413 already uses the `{ code, error }` envelope** with `INPUT_PAYLOAD_TOO_LARGE`, so slice 02's error handlers need not change this middleware.
 
 ## Testing
 
