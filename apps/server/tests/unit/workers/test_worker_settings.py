@@ -143,3 +143,47 @@ async def test_b3_worker_lifecycle_serves_the_probe_on_worker_port_and_releases_
     assert liveness_response.json() == {"status": "ok"}
     assert "engine" in worker_context
     assert not await is_port_accepting_connections(probe_port)
+
+
+HEARTBEAT_JOB_NAME = "log_worker_heartbeat"
+HEARTBEAT_JOB_MODULE = "app.workers.jobs.log_worker_heartbeat"
+HEARTBEAT_MINUTES = set(range(0, 60, 5))
+
+
+@pytest.mark.usefixtures("worker_environment")
+async def test_b3_worker_settings_construct_an_arq_worker_without_raising() -> None:
+    """B-3: arq accepts WorkerSettings, so the worker container does not crash at startup.
+
+    Worker construction registers jobs and binds the event loop but opens no Redis connection
+    (the pool is created later in Worker.main), so this runs arq's own registration check, which
+    raises "at least one function or cron_job must be registered" on an empty registry. The test
+    is async so arq binds the running loop, and signal handling is off so the test loop keeps its
+    own SIGINT and SIGTERM handlers.
+    """
+    from arq.worker import create_worker  # noqa: PLC0415 (the test owns the import timing)
+
+    worker_settings_module = import_worker_settings_module()
+
+    worker = create_worker(worker_settings_module.WorkerSettings, handle_signals=False)
+
+    assert HEARTBEAT_JOB_NAME in worker.functions
+
+
+@pytest.mark.usefixtures("worker_environment")
+def test_b3_worker_settings_schedule_the_heartbeat_every_five_minutes() -> None:
+    """B-3: one cron job runs log_worker_heartbeat on minutes 0, 5, ..., 55, not at startup."""
+    from arq.cron import CronJob  # noqa: PLC0415 (the test owns the import timing)
+
+    worker_settings_module = import_worker_settings_module()
+    heartbeat_module = importlib.import_module(HEARTBEAT_JOB_MODULE)
+    worker_settings = worker_settings_module.WorkerSettings
+
+    cron_jobs = list(worker_settings.cron_jobs)
+
+    assert len(cron_jobs) == 1
+    [heartbeat_cron_job] = cron_jobs
+    assert isinstance(heartbeat_cron_job, CronJob)
+    assert heartbeat_cron_job.coroutine is heartbeat_module.log_worker_heartbeat
+    assert set(heartbeat_cron_job.minute) == HEARTBEAT_MINUTES
+    assert heartbeat_cron_job.run_at_startup is False
+    assert worker_settings.functions == []

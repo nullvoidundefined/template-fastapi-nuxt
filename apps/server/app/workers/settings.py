@@ -1,9 +1,10 @@
 """arq worker configuration: the queue connection, the job registry, and lifecycle hooks.
 
 arq imports `WorkerSettings` to start the process (`arq app.workers.settings.WorkerSettings`), so
-this is the one module allowed to read settings at import time; nothing else imports it. There are
-no jobs until slice 04. Startup opens the engine and serves the health probes on WORKER_PORT as a
-background uvicorn server, which the container's HEALTHCHECK calls; shutdown stops both.
+this is the one module allowed to read settings at import time; nothing else imports it. The only
+job until slice 04 is a five-minute heartbeat cron job, because arq refuses to start without one.
+Startup opens the engine and serves the health probes on WORKER_PORT as a background uvicorn
+server, which the container's HEALTHCHECK calls; shutdown stops both.
 """
 
 import asyncio
@@ -11,15 +12,18 @@ import asyncio
 import structlog
 import uvicorn
 from arq.connections import RedisSettings
+from arq.cron import cron
 
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
 from app.workers.context import WorkerContext
 from app.workers.health import create_worker_health_app
+from app.workers.jobs.log_worker_heartbeat import log_worker_heartbeat
 
 HEALTH_SERVER_HOST = "0.0.0.0"  # noqa: S104 (the container's HEALTHCHECK and the platform probe it)
 HEALTH_SERVER_START_TIMEOUT_SECONDS = 5
+HEARTBEAT_MINUTES = set(range(0, 60, 5))
 
 
 async def start_worker_resources(ctx: WorkerContext) -> None:
@@ -62,9 +66,17 @@ def build_redis_settings(settings: Settings) -> RedisSettings:
 
 
 class WorkerSettings:
-    """The class arq reads: no jobs yet, the Redis connection, and the lifecycle hooks."""
+    """The class arq reads: the heartbeat cron job, the Redis connection, and the hooks."""
 
     functions: list[object] = []
+    cron_jobs = [
+        cron(
+            log_worker_heartbeat,  # type: ignore[arg-type]  # arq's protocol wants *args jobs never take
+            name="log_worker_heartbeat",
+            minute=HEARTBEAT_MINUTES,
+            run_at_startup=False,
+        )
+    ]
     redis_settings = build_redis_settings(get_settings())
     on_startup = start_worker_resources
     on_shutdown = stop_worker_resources
