@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-19 (feature list created)
+Last updated: 2026-09-19 (slice 01 PR 1: health endpoints and request IDs planned)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -20,3 +20,10 @@ the date and what changed. Section shape:
 -->
 
 ---
+
+## Infrastructure
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`) | **Planned** | US-INFRA-001; spec B-1 |
+| Request IDs on every response and log line | **Planned** | US-INFRA-002; spec B-2 |
