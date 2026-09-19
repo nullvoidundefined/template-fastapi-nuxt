@@ -12,6 +12,7 @@ class WorkerContext(TypedDict, total=False):
     """The dict arq passes to lifecycle hooks and jobs, typed so mypy checks every read."""
 
     redis: Redis
+    job_id: str
     engine: AsyncEngine
     health_server: uvicorn.Server
     health_server_task: asyncio.Task[None]
