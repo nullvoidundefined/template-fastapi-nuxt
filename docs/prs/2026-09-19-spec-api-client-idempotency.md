@@ -39,6 +39,8 @@ A documentation-only change with no code to run. B-52 and B-53 name the tests th
 | 7 | LOW | The takeover could let a request with a different body take over an expired claim (B-40) | Fixed: the takeover `WHERE` matches method, path, and body hash |
 | 8 | LOW | The shared `X-Forwarded-For` function had no module, the proxy had no slice, and PR 3's Contents omitted `useApiClient.ts` | Fixed: `shared/services/resolveClientAddress.ts`, slice 03 ships the proxy, and PR 3's Contents is updated |
 
+**Copilot's review** raised one point: the takeover's re-read can find no row when the holder releases its claim just before the takeover, and the spec gave no answer for that case. Fixed: the request retries the initial claim insert once, and B-53 covers the race.
+
 ## Reflection
 
 Work started at about 10:09Z, and this document was written at about 10:30Z. I first treated this as three sentence fixes. The review showed that the passages around them were underspecified in the same way. The base URL doubled `/v1`, which only reading FastAPI's OpenAPI export and openapi-fetch's URL builder together revealed. The claim's transaction boundary decides whether the 409 path can fire at all. What I understand now is that a spec paragraph that names a library call has to be checked against that library's contract, not just against how the call sounds.
