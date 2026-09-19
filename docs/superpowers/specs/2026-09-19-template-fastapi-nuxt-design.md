@@ -60,7 +60,7 @@ JSON responses in the `{ data }` envelope (with `meta` for pages) on success and
 
 ## Backend feature map
 
-Paths are under `/v1` except the health endpoints. The Stripe webhook moves from the Express template's `/webhooks/stripe` to `/v1/billing/webhook`, the path the Python track fixes, so the Stripe dashboard's endpoint is updated at deploy (see Deployment).
+Every path in this section's table and in the acceptance criteria is relative to the `/v1` prefix, so `/auth/login` means `/v1/auth/login`; only the health endpoints sit outside it. The Stripe webhook moves from the Express template's `/webhooks/stripe` to `/v1/billing/webhook`, the path the Python track fixes, so the Stripe dashboard's endpoint is updated at deploy (see Deployment).
 
 | Feature | Endpoint or unit | Parity notes |
 |---|---|---|
@@ -74,7 +74,7 @@ Paths are under `/v1` except the health endpoints. The Stripe webhook moves from
 | Admin gate | `require_admin` dependency and `GET /admin/users` | Reads `users.role`. The Express template exports its admin guard but mounts it on no route, so the port adds one admin endpoint for the guard to protect and the admin page to show: `GET /admin/users` returns a paginated list of `{ id, email, role, created_at }` |
 | Checkout | `POST /billing/checkout` | Body `{ price_id }` validated against `^price_[A-Za-z0-9]+$`; creates a Checkout session in `subscription` mode with `metadata.user_id` (the only link the webhook has back to the user), a success URL of `{client_url}/dashboard?checkout=success`, and a cancel URL of `{client_url}/dashboard?checkout=cancelled`; the client sends an idempotency key |
 | Portal | `POST /billing/portal` | Return URL `{client_url}/dashboard`; 400 `BILLING_NO_ACCOUNT` when the user has no Stripe customer |
-| Webhook | `POST /v1/billing/webhook` | Raw body and signature verification; exempt from CSRF and rate limiting; an allowlist of the five events the Express template handles (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`), each writing the `user_subscriptions` columns below. The `billing_webhook_events` claim is `INSERT ... ON CONFLICT (stripe_event_id) DO UPDATE SET status = 'claimed', attempted_at = now() WHERE billing_webhook_events.status = 'failed' OR (billing_webhook_events.status = 'claimed' AND billing_webhook_events.attempted_at < now() - interval '10 minutes') RETURNING id`, so a redelivery after a failure or a crash is processed again, which the Express template's `ON CONFLICT DO NOTHING` never does |
+| Webhook | `POST /billing/webhook` | Raw body and signature verification; exempt from CSRF and rate limiting; an allowlist of the five events the Express template handles (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`), each writing the `user_subscriptions` columns below. The `billing_webhook_events` claim is `INSERT ... ON CONFLICT (stripe_event_id) DO UPDATE SET status = 'claimed', attempted_at = now() WHERE billing_webhook_events.status = 'failed' OR (billing_webhook_events.status = 'claimed' AND billing_webhook_events.attempted_at < now() - interval '10 minutes') RETURNING id`, so a redelivery after a failure or a crash is processed again, which the Express template's `ON CONFLICT DO NOTHING` never does |
 | Health | `GET /health`, `GET /health/ready` | Registered before every router; readiness opens its own connection so a failed connect still answers 503 |
 | Middleware | Six pure ASGI classes plus asgi-correlation-id | Request ID through asgi-correlation-id, whose validator keeps an inbound `X-Request-Id` only when it matches `^[A-Za-z0-9._-]{1,64}$` and otherwise mints a UUID, bound into structlog's context; a request-context class that rejects bodies over 100 KB with 413 `INPUT_PAYLOAD_TOO_LARGE`; security headers, CORS, rate limit (keyed on the client IP resolved through the trust chain under Architecture, never on a client-supplied header; 100 per 15 minutes globally; 10 per 15 minutes on exactly `/auth/login`, `/auth/register`, `/auth/forgot-password`, and `/auth/reset-password`; the health routes and the webhook exempt), a 30-second timeout, the `X-Requested-With` CSRF guard, idempotency |
 | Errors | `{ code, error }` | The Express template's codes plus `ROUTING_METHOD_NOT_ALLOWED`, `INPUT_PAYLOAD_TOO_LARGE`, and `IDEMPOTENCY_KEY_REUSED`; five exception handlers as the Python track specifies |
@@ -108,12 +108,12 @@ Tables follow R-334: the aggregate root takes no prefix, and every entity inside
 
 | Express table | Template table | Columns | Why the name |
 |---|---|---|---|
-| `users` | `users` | `id` uuid, `email` (unique index on `lower(email)`), `password_hash`, `role` enum `user_role` (member, admin), `created_at`, `updated_at` maintained by a shared `set_updated_at` trigger created in this revision | The aggregate root |
+| `users` | `users` | `id` uuid, `email` (unique index on `lower(email)`), `password_hash`, `role` enum `user_role` (member, admin) `NOT NULL DEFAULT 'member'`, added in slice 05 by a revision that backfills every existing row to `member`, `created_at`, `updated_at` maintained by a shared `set_updated_at` trigger created in this revision | The aggregate root |
 | `sessions` | `user_sessions` | `id` uuid, `user_id`, `token_hash` unique, `expires_at`, `created_at`, `last_seen_at` (written at most once every 5 minutes per session, so reads do not become writes) | Owned by a user |
 | `password_resets` | `user_password_resets` | `id` uuid, `user_id`, `token_hash` unique, `expires_at`, `used_at`, `created_at` | Owned by a user |
 | `subscriptions` | `user_subscriptions` | `id` uuid, `user_id` unique, `stripe_customer_id` unique, `stripe_subscription_id` unique, `plan_id`, `status` enum `user_subscription_status` (the Express template's values), `current_period_start`, `current_period_end`, `is_canceling_at_period_end`, timestamps | One per user, owned by the user; the boolean takes its `is_` prefix per R-316 |
-| `stripe_events` | `billing_webhook_events` | `id` uuid, `stripe_event_id` unique, `event_type`, `status` (claimed, processed, failed), `attempted_at`, `processed_at` | The name the Python track uses; the ledger outlives any one user |
-| `idempotency_keys` | `request_idempotency_keys` | `key`, `user_id`, `request_method`, `request_path`, `request_body_hash`, `status_code`, `response_body` jsonb, `created_at`; unique on `(key, user_id)` | Declared as its own root, as in Voyager 2.0. The stored method, path, and body hash bind a key to one request, so a key reused on a different endpoint or with a different body is rejected rather than replaying another request's response; this is stricter than the Express template and the Python track, which scope by `(key, user_id)` alone |
+| `stripe_events` | `billing_webhook_events` | `id` uuid, `stripe_event_id` unique, `event_type`, `status` (claimed, processed, failed), `attempted_at`, `processed_at` | The name the Python track uses; the ledger outlives any one user. `billing` names the bounded context rather than an aggregate table, a documented exception the owner approved with this vocabulary |
+| `idempotency_keys` | `request_idempotency_keys` | `key`, `user_id`, `request_method`, `request_path`, `request_body_hash`, `status_code`, `response_body` jsonb, `created_at`; unique on `(key, user_id)` | Declared as its own root, as in Voyager 2.0. The `request_` is part of the root's own noun (an idempotency key belongs to a request), not the name of an owning aggregate, which is what R-334 forbids on a root; the owner approved this name in the brainstorming session. The stored method, path, and body hash bind a key to one request, so a key reused on a different endpoint or with a different body is rejected rather than replaying another request's response; this is stricter than the Express template and the Python track, which scope by `(key, user_id)` alone |
 | `posts` | none | | Excluded by the owner |
 
 Each table arrives in the slice that first needs it, as its own Alembic revision, and a column that only a later slice uses arrives with that slice: `users.role` is added in slice 05, not slice 02.
@@ -131,13 +131,13 @@ Slice 01, the walking skeleton:
 Slice 02, data and errors:
 - B-5: An unknown path answers 404 `ROUTING_NOT_FOUND` with a fixed message that never contains the requested path, a wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and neither ever returns FastAPI's default `{ detail }`.
 - B-6: A state-changing request without `X-Requested-With: XMLHttpRequest` answers 403 `CSRF_HEADER_MISSING`, while the health routes and the Stripe webhook are exempt.
-- B-7: The eleventh request inside 15 minutes from one client to the four limited auth paths answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and so does the one hundred and first request of any kind; two distinct client IPs arriving through Nitro count in two buckets, while a client that prepends forged `X-Forwarded-For` entries stays in its own bucket, and a request reaching FastAPI directly rather than through Nitro is keyed on its peer address; `GET /auth/me`, the health routes, and the webhook never count against the auth limit or receive 429.
+- B-7: The eleventh request inside 15 minutes from one client to the four limited auth paths answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and so does the one hundred and first request of any kind; two distinct client IPs arriving through Nitro count in two buckets, while a client that prepends forged `X-Forwarded-For` entries stays in its own bucket, and a request reaching FastAPI directly rather than through Nitro is keyed on its peer address; `GET /auth/me` never counts against the auth bucket but does count against the global one; the health routes and the webhook are exempt from both buckets and never receive 429.
 - B-8: A handler that runs longer than 30 seconds answers 408 `SERVER_REQUEST_TIMEOUT`.
 - B-9: A database outage during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, and an unexpected error answers 500 with no stack trace in production.
 
 Slice 03, auth:
 - B-10: Registering stores a bcrypt hash, treats a mixed-case duplicate of an existing email as a duplicate (409), sets an `httpOnly`, `SameSite=Lax` session cookie with a 7-day lifetime that is also `Secure` in every environment except local development, and stores only the SHA-256 hash of its token; a test asserts each attribute, including `Secure` under the production setting.
-- B-11: Logging in with a wrong password and with an unknown email both answer `AUTH_INVALID_CREDENTIALS`.
+- B-11: Logging in with a wrong password and with an unknown email both answer `AUTH_INVALID_CREDENTIALS`, and a correct login sets a session cookie with the same attributes B-10 requires and a new `user_sessions` row.
 - B-12: A signed-out browser that loads `/dashboard` is redirected to `/login` on the first request, and a client-side navigation to `/dashboard` with an expired session is redirected as well.
 - B-13: Changing the password through `PATCH /auth/me` requires the current password and signs out every other session of the user.
 
@@ -149,16 +149,16 @@ Slice 04, password reset:
 Slice 05, idempotency and admin:
 - B-17: A repeated `POST` with the same `Idempotency-Key` from the same user within 24 hours replays the stored status and body without running the handler again.
 - B-18: A handler that fails releases its idempotency claim, so the client's retry runs again instead of answering 409.
-- B-19: A member calling `GET /admin/users` receives 403 `AUTH_ADMIN_REQUIRED` while an admin receives the user list, a member visiting `/admin` is redirected, and `GET /auth/me` now includes the user's `role`.
+- B-19: A member calling `GET /admin/users` receives 403 `AUTH_ADMIN_REQUIRED` while an admin receives `{ data, meta: { total, limit, offset } }` whose items carry exactly `id`, `email`, `role`, and `created_at` and never a password hash, a member visiting `/admin` is redirected, and `GET /auth/me` now includes the user's `role`.
 
 Slice 06, billing:
 - B-20: A webhook with a bad signature answers 400 `BILLING_WEBHOOK_INVALID_SIGNATURE` and writes nothing.
 - B-21: The same Stripe event delivered twice changes `user_subscriptions` once, and a `checkout.session.completed` event is mapped to its user through `metadata.user_id`.
-- B-22: The portal request for a user with no Stripe customer answers 400 `BILLING_NO_ACCOUNT`.
+- B-22: The portal request for a user with no Stripe customer answers 400 `BILLING_NO_ACCOUNT`, and for a user with one answers the portal URL created with a return URL of `{client_url}/dashboard`.
 
 Slice 07, observability and integrations:
 - B-23: Every outbound provider call logs the provider, the operation, the duration, and the outcome, carries the request ID, and has an explicit timeout.
-- B-24: The six auth events reach PostHog from the server, the browser's pageview events reach it through `/ingest`, and no event or identify call carries an email address.
+- B-24: The six auth events reach PostHog from the server, the browser's pageview events reach it through `/ingest`, the browser calls `identify` with the user ID after log in and registration and `reset` after log out, and no event or identify call carries an email address.
 - B-25: Withdrawn. The circuit breaker was dropped by the owner after the stack audit; the number stays unused so later criteria keep their numbers.
 
 Slice 08, cleanup and closing:
@@ -187,7 +187,10 @@ Criteria added after review keep the earlier numbers stable, so they are listed 
 - B-45 (slice 03): A signed-in user who opens `/login` or `/register` is sent to `/dashboard`.
 - B-46 (slice 02): Settings refuse to load with `environment="production"` and no `REDIS_URL`, and under `environment="test"` without Redis the rate limiter counts in memory and logs `rate_limiter_in_memory` exactly once.
 - B-47 (slice 04): Running `send_password_reset_email` against a fake Resend client sends one email to the requester whose link carries a token whose SHA-256 equals the stored `token_hash`, and a Resend error raises so arq retries the job (up to three tries).
-- B-48 (slice 03): Every page is fully operable by keyboard with a visible focus indicator, and with `prefers-reduced-motion: reduce` no element animates.
+- B-49 (slice 01): The landing page links to `/login` and `/register` by accessible name, and each link navigates to its route.
+- B-50 (slices 03 and 06): The dashboard's profile form changes the password through `PATCH /auth/me` and shows the result; in slice 06 its checkout button redirects to the Stripe Checkout URL and its portal button to the portal URL.
+- B-51 (slice 06): Each of the five allowlisted Stripe events writes its `user_subscriptions` columns: `checkout.session.completed` links the customer and subscription to the user from `metadata.user_id`; the three subscription events set `status`, `plan_id`, the period dates, and `is_canceling_at_period_end`; `invoice.payment_failed` sets `status` to `past_due`.
+- B-48 (slices 03 to 08, each for the pages it ships, and across all seven in slice 08): Every page is fully operable by keyboard with a visible focus indicator, and with `prefers-reduced-motion: reduce` no element animates.
 
 ## Invariants
 
@@ -258,7 +261,7 @@ Middleware criteria in slices 02 and 05 (B-7's auth bucket, B-17, B-18, B-40, B-
 
 The root `package.json` keeps the Express template's developer scripts that still apply: `dev`, `dev:worker`, `dev:payments` (forwarding Stripe events with `stripe listen` to the webhook), `test:e2e:ui`, and `test:visual:update`.
 
-The total is about 29.5 hours of agent time, which already includes the 1.2 overrun ratio that code slices ran at in agent-governance slice 01. Each slice has its own Linear ticket, blocked by the one before it; slice 08 blocks Voyager 2.0's slice 01 (IAN-80). Each slice runs under the TDD lock with its feature-list row and user story written first (R-607), and its pull request merges when CI is green and Copilot's review is addressed.
+The total is about 29 hours of agent time, which already includes the 1.2 overrun ratio that code slices ran at in agent-governance slice 01. Each slice has its own Linear ticket, blocked by the one before it; slice 08 blocks Voyager 2.0's slice 01 (IAN-80). Each slice runs under the TDD lock with its feature-list row and user story written first (R-607), and its pull request merges when CI is green and Copilot's review is addressed.
 
 ## Non-goals
 
