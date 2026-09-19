@@ -17,9 +17,14 @@
         "test": "pnpm -r run test",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "check:contract": "scripts/check-contract-drift.sh"
+        "check:contract": "scripts/check-contract-drift.sh",
+        "prepare": "lefthook install",
+        "test:e2e": "playwright test"
     },
     "devDependencies": {
+        "@playwright/test": "1.63.0",
+        "@vitest/coverage-v8": "5.0.1",
+        "lefthook": "2.1.14",
         "prettier": "3.9.8",
         "vitest": "5.0.1"
     }

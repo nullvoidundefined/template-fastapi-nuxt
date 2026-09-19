@@ -1,0 +1,41 @@
+# Git hooks (installed by `pnpm install` through the root prepare script). pre-commit formats and
+# lints only the staged files; pre-push runs the suites and the contract check (R-408). Neither
+# replaces CI, which runs everything on every pull request.
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      glob: '*.{ts,mts,vue,js,mjs,json,md,yml,yaml,scss}'
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+    eslint:
+      root: apps/client/web/
+      glob: '*.{ts,vue}'
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+    ruff:
+      root: apps/server/
+      glob: '*.py'
+      run: uv run ruff check --fix {staged_files}
+      stage_fixed: true
+    black:
+      root: apps/server/
+      glob: '*.py'
+      run: uv run black {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    pytest:
+      root: apps/server/
+      run: uv run pytest -q
+    vitest:
+      run: pnpm exec vitest run
+    typecheck:
+      run: pnpm typecheck
+    mypy:
+      root: apps/server/
+      run: uv run mypy app
+    contract:
+      run: scripts/check-contract-drift.sh
