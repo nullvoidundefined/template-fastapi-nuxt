@@ -1,6 +1,5 @@
 """Builds the FastAPI application; uvicorn runs `app.main:create_app` as a factory."""
 
-import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
@@ -10,11 +9,10 @@ from fastapi import FastAPI
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
-from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.routers import health
 
 REQUEST_ID_HEADER = "X-Request-Id"
-REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 def create_app() -> FastAPI:
@@ -49,8 +47,3 @@ def register_middleware(app: FastAPI) -> None:
         header_name=REQUEST_ID_HEADER,
         validator=is_valid_request_id,
     )
-
-
-def is_valid_request_id(candidate: str) -> bool:
-    """Accept an inbound request ID only when it is 1 to 64 safe characters."""
-    return REQUEST_ID_PATTERN.fullmatch(candidate) is not None

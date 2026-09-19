@@ -1,4 +1,4 @@
-"""B-2 unit tests for request IDs as the app factory wires them.
+"""B-2 unit tests for the app factory in app/main.py: request IDs as create_app() wires them.
 
 Covers the response header (a valid inbound X-Request-Id echoed, an invalid or missing one
 replaced by a new UUID, on every response including rejections) and the structlog binding (every
