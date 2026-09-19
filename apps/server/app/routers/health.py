@@ -21,7 +21,16 @@ async def read_liveness() -> HealthLiveness:
     return HealthLiveness(status="ok")
 
 
-@router.get("/health/ready", response_model=HealthReadiness)
+@router.get(
+    "/health/ready",
+    response_model=HealthReadiness,
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": HealthReadiness,
+            "description": "Postgres did not answer within the deadline",
+        }
+    },
+)
 async def read_readiness(request: Request, response: Response) -> HealthReadiness:
     """Answer 200 when Postgres answers within the deadline, and 503 otherwise."""
     try:

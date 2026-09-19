@@ -61,6 +61,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthReadiness'
           description: Successful Response
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReadiness'
+          description: Postgres did not answer within the deadline
       summary: Read Readiness
       tags:
       - health

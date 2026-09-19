@@ -56,6 +56,13 @@ def read_200_schema_ref(document: dict[str, Any], path: str) -> str:
     return schema_ref
 
 
+def read_response_schema_ref(document: dict[str, Any], path: str, status_code: str) -> str:
+    """Return the $ref of the JSON schema a GET on `path` declares for `status_code`."""
+    declared_response = document["paths"][path]["get"]["responses"][status_code]
+    schema_ref: str = declared_response["content"]["application/json"]["schema"]["$ref"]
+    return schema_ref
+
+
 def test_b4_document_lists_health_and_readiness_paths_with_get() -> None:
     """B-4: the exported document lists GET /health and GET /health/ready."""
     openapi_document = build_current_document()
@@ -165,3 +172,14 @@ def test_b4_main_writes_lf_line_endings_only(tmp_path: Path) -> None:
     assert exit_code == 0
     assert b"\n" in written_bytes
     assert b"\r" not in written_bytes
+
+
+def test_b4_readiness_route_documents_503_with_readiness_body() -> None:
+    """B-4: GET /health/ready documents its 503 degraded answer with the HealthReadiness body."""
+    openapi_document = build_current_document()
+    readiness_responses = openapi_document["paths"]["/health/ready"]["get"]["responses"]
+
+    assert "503" in readiness_responses
+    assert (
+        read_response_schema_ref(openapi_document, "/health/ready", "503") == HEALTH_READINESS_REF
+    )
