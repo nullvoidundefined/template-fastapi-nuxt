@@ -10,7 +10,10 @@
 # OpenAPI document, exits 1 and names that file alone; an unmodified copy still exits 0 with
 # APP_NAME set, so the document does not depend on the environment; deleting either committed
 # contract file exits 2, names the missing path, and does not report drift, so a broken checkout
-# is never mistaken for drift; and no run writes anything into the copy's tree. Prints PASS or FAIL per case and exits non-zero when any case fails.
+# is never mistaken for drift; a committed types file that exists but cannot be read also exits 2
+# from the up-front readability check, names the path, and does not report drift (skipped as root,
+# where file permissions do not block reads); and no run writes anything into the copy's tree.
+# Prints PASS or FAIL per case and exits non-zero when any case fails.
 
 set -uo pipefail
 
@@ -417,6 +420,39 @@ test_missing_committed_file_exits_2() {
         "output: $(cat "$output_file")"
 }
 
+# A committed contract file that exists but cannot be read is a broken checkout, not drift: the
+# up-front check exits 2, names the path as missing or unreadable, and does not report "contract
+# drift". Root reads a mode-000 file anyway, so the case is skipped there. Permissions are
+# restored before returning so the cleanup trap can delete the copy.
+# Arguments: none.
+test_unreadable_committed_types_exits_2() {
+    local copy_root="$WORK_DIRECTORY/types-unreadable"
+    local output_file="$WORK_DIRECTORY/types-unreadable.out"
+    local case_name="unreadable $SCHEMA_TS_RELATIVE"
+    local exit_code outcome
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "PASS: $case_name (skipped: running as root, where chmod 000 does not block reads)"
+        return
+    fi
+    prepare_case_copy "$copy_root" "$case_name" || return
+    chmod 000 "$copy_root/$SCHEMA_TS_RELATIVE"
+    run_drift_script "$copy_root" "$output_file"
+    exit_code=$?
+    chmod 644 "$copy_root/$SCHEMA_TS_RELATIVE"
+    outcome=0
+    [ "$exit_code" -eq 2 ] || outcome=1
+    report_case "$outcome" "$case_name exits 2" "exit $exit_code; output: $(cat "$output_file")"
+    outcome=0
+    grep -qF "committed file $SCHEMA_TS_RELATIVE is missing or unreadable" "$output_file" ||
+        outcome=1
+    report_case "$outcome" "$case_name output names $SCHEMA_TS_RELATIVE as unreadable" \
+        "output: $(cat "$output_file")"
+    outcome=0
+    if grep -qF "contract drift" "$output_file"; then outcome=1; fi
+    report_case "$outcome" "$case_name output does not report contract drift" \
+        "output: $(cat "$output_file")"
+}
+
 test_unmodified_tree_passes
 test_schema_change_without_regeneration_fails
 test_types_only_edit_names_types_alone
@@ -425,6 +461,7 @@ test_schema_change_diff_and_regeneration
 test_app_name_does_not_change_document
 test_missing_committed_file_exits_2 "$SCHEMA_TS_RELATIVE" "types-missing"
 test_missing_committed_file_exits_2 "$OPENAPI_RELATIVE" "document-missing"
+test_unreadable_committed_types_exits_2
 
 if [ "$FAILED_CASE_COUNT" -gt 0 ]; then
     echo "$FAILED_CASE_COUNT case(s) failed"

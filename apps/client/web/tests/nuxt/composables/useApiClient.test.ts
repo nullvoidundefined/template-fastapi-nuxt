@@ -4,9 +4,14 @@
  * before client creation so the real typed client exposes its URL and outgoing headers.
  * runWithContext is typed to return the callback's value or a promise of it, so each call is
  * awaited; awaiting a non-promise yields the same object, which keeps the identity check exact.
+ * useNuxtApp is wrapped in a spy that keeps the real implementation, so one test can hand the
+ * composable two distinct app objects and tell per-app memoization from a module-level client.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { useNuxtApp } from '#app';
+import { mockNuxtImport } from '@nuxt/test-utils/runtime';
+import { type NuxtApp, useNuxtApp } from '#app';
+
+mockNuxtImport('useNuxtApp', (originalUseNuxtApp) => vi.fn(originalUseNuxtApp));
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -42,5 +47,25 @@ describe('useApiClient', () => {
 
         expect(firstClient).toBeDefined();
         expect(secondClient).toBe(firstClient);
+    });
+
+    it('Request path: memoizes one client per Nuxt app instance, never one shared by every instance', async () => {
+        const { useApiClient } = await import('~/composables/useApiClient');
+        const firstNuxtApp = {} as NuxtApp;
+        const secondNuxtApp = {} as NuxtApp;
+        vi.mocked(useNuxtApp)
+            .mockReturnValueOnce(firstNuxtApp)
+            .mockReturnValueOnce(firstNuxtApp)
+            .mockReturnValueOnce(secondNuxtApp)
+            .mockReturnValueOnce(secondNuxtApp);
+
+        const firstAppClient = useApiClient();
+        const firstAppRepeatClient = useApiClient();
+        const secondAppClient = useApiClient();
+        const secondAppRepeatClient = useApiClient();
+
+        expect(firstAppRepeatClient).toBe(firstAppClient);
+        expect(secondAppRepeatClient).toBe(secondAppClient);
+        expect(secondAppClient).not.toBe(firstAppClient);
     });
 });
