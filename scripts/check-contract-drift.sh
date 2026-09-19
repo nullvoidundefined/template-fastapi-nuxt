@@ -4,8 +4,10 @@
 # Exports a fresh OpenAPI document from the FastAPI app and regenerates the TypeScript types from
 # it, both into a temporary directory, then compares them with the committed
 # apps/server/docs/openapi.yaml and packages/api-types/src/schema.ts. Prints a unified diff that
-# names each differing committed file and exits 1 on any difference, 0 when both match. It never
-# writes into the working tree. CI's openapi-drift job and the lefthook pre-push hook run it.
+# names each differing committed file and exits 1 on any difference, 0 when both match, and 2 when
+# a required tool is missing, so a broken runner is never mistaken for drift. It never writes into
+# the working tree: `uv run --frozen` neither re-locks nor syncs. CI's openapi-drift job and the
+# lefthook pre-push hook run it.
 #
 # To fix a reported drift, regenerate and commit both files:
 #   (cd apps/server && uv run python -m app.export_openapi)
@@ -19,17 +21,31 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+readonly OPENAPI_TYPESCRIPT="$repo_root/packages/api-types/node_modules/.bin/openapi-typescript"
+
+# Exit 2 with an install hint when uv or openapi-typescript is unavailable.
+require_tools() {
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "check-contract-drift: uv is not installed (https://docs.astral.sh/uv/)" >&2
+        exit 2
+    fi
+    if [ ! -x "$OPENAPI_TYPESCRIPT" ]; then
+        echo "check-contract-drift: openapi-typescript is missing; run pnpm install" >&2
+        exit 2
+    fi
+}
+
 # Export the OpenAPI document from the app into the work directory, without bytecode files.
 export_fresh_document() {
     (cd "$repo_root/apps/server" &&
-        PYTHONDONTWRITEBYTECODE=1 uv run --quiet python -m app.export_openapi \
+        PYTHONDONTWRITEBYTECODE=1 uv run --frozen --quiet python -m app.export_openapi \
             --output "$work_dir/openapi.yaml")
 }
 
 # Generate the TypeScript types from the freshly exported document into the work directory.
 generate_fresh_types() {
     (cd "$repo_root/packages/api-types" &&
-        ./node_modules/.bin/openapi-typescript "$work_dir/openapi.yaml" \
+        "$OPENAPI_TYPESCRIPT" "$work_dir/openapi.yaml" \
             --output "$work_dir/schema.ts" >/dev/null)
 }
 
@@ -46,6 +62,7 @@ compare_with_committed() {
 
 # Regenerate both files, compare each, and report every drifted file before failing.
 main() {
+    require_tools
     export_fresh_document
     generate_fresh_types
     local drift_status=0
