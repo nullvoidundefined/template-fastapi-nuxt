@@ -81,7 +81,7 @@ jobs:
       - name: pytest (unit, with coverage)
         working-directory: apps/server
         run: uv run pytest tests/unit --cov=app --cov-report=term-missing
-      # The web floor (60 percent of apps/client/web/app) is in apps/client/web/vitest.config.ts.
+      # The web floor (60 percent of apps/client/web/app) is in the root vitest.config.ts.
       - name: Vitest (with coverage)
         run: pnpm exec vitest run --coverage
       - name: Drift script test

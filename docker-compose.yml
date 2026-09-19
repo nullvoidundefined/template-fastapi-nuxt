@@ -4,7 +4,8 @@
 # network, so no credential appears here or in any env file (R-103, R-108). Deployed environments
 # set DATABASE_URL and REDIS_URL from the platform's secrets. Postgres and Redis publish on host
 # ports 5433 and 6380 by default, so a locally installed Postgres or Redis on the standard ports
-# does not shadow them; override with POSTGRES_HOST_PORT and REDIS_HOST_PORT. The app services
+# does not shadow them, and only on loopback, because the compose Postgres is passwordless and Redis
+# has no auth; override the ports with POSTGRES_HOST_PORT and REDIS_HOST_PORT. The app services
 # restart on exit, as the platform restarts them: arq exits when it loses Redis and comes back
 # healthy once Redis does.
 name: template-fastapi-nuxt
@@ -22,7 +23,7 @@ services:
       POSTGRES_DB: app
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - '${POSTGRES_HOST_PORT:-5433}:5432'
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432'
     healthcheck:
       test: ['CMD', 'pg_isready', '-U', 'app', '-d', 'app']
       interval: 5s
@@ -32,7 +33,7 @@ services:
   redis:
     image: redis:7
     ports:
-      - '${REDIS_HOST_PORT:-6380}:6379'
+      - '127.0.0.1:${REDIS_HOST_PORT:-6380}:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -47,6 +48,8 @@ services:
     environment:
       <<: *server-environment
       PORT: '3001'
+      # Trusts X-Forwarded-For from any container on Docker's private range, which includes the
+      # host gateway; acceptable for local use, and revisited when the rate limiter lands.
       FORWARDED_ALLOW_IPS: 172.16.0.0/12
     ports:
       - '3001:3001'
@@ -64,6 +67,20 @@ services:
     environment:
       <<: *server-environment
       WORKER_PORT: '3002'
+    # The image's HEALTHCHECK is liveness (/health), so a dependency outage never restarts a
+    # working process; compose waits on readiness instead, so `up --wait` proves Postgres and Redis.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/health/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy

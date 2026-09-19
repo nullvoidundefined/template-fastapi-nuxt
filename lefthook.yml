@@ -1,6 +1,6 @@
-# Git hooks (installed by `pnpm install` through the root prepare script). pre-commit formats and
-# lints only the staged files; pre-push runs the suites and the contract check (R-408). Neither
-# replaces CI, which runs everything on every pull request.
+# Git hooks (spec: lefthook), installed by `pnpm install` through the root prepare script.
+# pre-commit checks the staged files; commit-msg enforces the fix-needs-a-test rule; pre-push runs
+# the affected tests and the builds. The full suites run in CI (R-408, R-509).
 pre-commit:
   parallel: true
   commands:
@@ -13,6 +13,9 @@ pre-commit:
       glob: '*.{ts,vue}'
       run: pnpm exec eslint --fix {staged_files}
       stage_fixed: true
+    vue-tsc:
+      glob: 'apps/client/web/**/*.{ts,vue}'
+      run: pnpm --filter @repo/web typecheck
     ruff:
       root: apps/server/
       glob: '*.py'
@@ -23,19 +26,43 @@ pre-commit:
       glob: '*.py'
       run: uv run black {staged_files}
       stage_fixed: true
+    mypy:
+      glob: 'apps/server/app/**/*.py'
+      run: cd apps/server && uv run mypy app
+    no-em-dash:
+      glob: '*.{py,ts,mts,vue,js,mjs,md,scss,yml,yaml}'
+      run: |
+        em_dash=$(printf '\xe2\x80\x94')
+        if grep -n "$em_dash" {staged_files}; then
+          echo 'Em dash (U+2014) found in staged files (R-207). Use a period, comma, colon, or parentheses.'
+          exit 1
+        fi
+    migration-defaults:
+      glob: 'apps/server/migrations/**/*.py'
+      run: |
+        if grep -nE "server_default=[\"']['\"]" {staged_files}; then
+          echo 'Nested quotes in a server_default (R-328): write server_default="draft" or sa.text("now()").'
+          exit 1
+        fi
+
+commit-msg:
+  commands:
+    fix-requires-test:
+      run: |
+        subject=$(head -1 {1})
+        if echo "$subject" | grep -qE '^(fix|bug|bugfix|hotfix)(\(.+\))?!?:'; then
+          if ! git diff --cached --name-only | grep -qE '(\.(test|spec)\.(ts|mts|js)|/test_[^/]*\.py|\.test\.sh)$'; then
+            echo 'A fix:/bug:/bugfix:/hotfix: commit must stage at least one test file (R-403).'
+            exit 1
+          fi
+        fi
 
 pre-push:
-  parallel: true
+  piped: true
   commands:
-    pytest:
-      root: apps/server/
-      run: uv run pytest -q
-    vitest:
-      run: pnpm exec vitest run
-    typecheck:
-      run: pnpm typecheck
-    mypy:
-      root: apps/server/
-      run: uv run mypy app
+    affected-tests:
+      run: scripts/run-affected-tests.sh
     contract:
       run: scripts/check-contract-drift.sh
+    build:
+      run: pnpm build

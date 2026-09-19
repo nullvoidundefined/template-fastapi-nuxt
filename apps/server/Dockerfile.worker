@@ -17,5 +17,5 @@ COPY --from=builder --chown=app:app /app /app
 USER app
 EXPOSE 3002
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"WORKER_PORT\"]}/health/ready', timeout=2)" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"WORKER_PORT\"]}/health', timeout=2)" || exit 1
 CMD ["arq", "app.workers.settings.WorkerSettings"]
