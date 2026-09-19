@@ -1,8 +1,8 @@
 # Slice 01: Walking Skeleton
 
 Spec: `docs/superpowers/specs/2026-09-19-template-fastapi-nuxt-design.md` (acceptance criteria B-1 to B-4)
-Status: draft, awaiting Gate 1 (owner approval of this plan) and the spec's own approval on PR #5
-Tracker: Linear project template-fastapi-nuxt; the slice ticket is opened at Gate 1, with one child ticket per PR
+Status: Gate 1 approved by the owner on 2026-09-19; building starts when spec PR #5 merges
+Tracker: Linear project template-fastapi-nuxt; slice ticket IAN-123, with one child ticket per PR
 Estimate: 4.5 hours of agent time across the four PRs
 
 ## Purpose
