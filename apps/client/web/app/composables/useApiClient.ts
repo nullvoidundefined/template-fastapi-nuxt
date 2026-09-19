@@ -13,6 +13,8 @@ import { type ApiClient, createApiClient } from '~/api/apiClient';
 import { buildServerApiClientOptions } from '~/services/apiClient/buildServerApiClientOptions';
 
 const browserApiBaseUrl = '/api';
+// The only page-request headers the server-side client may forward (spec: Request path).
+const forwardedRequestHeaderNames = ['cookie', 'x-request-id', 'x-forwarded-for'];
 const apiClientsByNuxtApp = new WeakMap<object, ApiClient>();
 
 /** Return this Nuxt app instance's client, creating it on first use. */
@@ -33,7 +35,7 @@ export function useApiClient(): ApiClient {
 function readServerApiClientOptions(): ReturnType<typeof buildServerApiClientOptions> {
     return buildServerApiClientOptions({
         apiBaseUrl: useRuntimeConfig().apiBaseUrl,
-        requestHeaders: useRequestHeaders(),
+        requestHeaders: useRequestHeaders(forwardedRequestHeaderNames),
         socketAddress: useRequestEvent()?.node.req.socket.remoteAddress,
     });
 }
