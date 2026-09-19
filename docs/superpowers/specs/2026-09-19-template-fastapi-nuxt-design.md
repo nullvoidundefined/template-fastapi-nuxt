@@ -27,6 +27,7 @@ Settled with the owner, one question at a time, on 2026-09-19:
 | Typed API client | openapi-fetch over the generated types | Types every call straight from the OpenAPI document with no per-route typing by hand; about 6 kB and no codegen (stack audit, owner choice) |
 | Request-ID middleware | asgi-correlation-id | A maintained pure-ASGI package that validates, caps, and binds the ID to structlog, replacing about 40 hand-written lines (stack audit, owner choice) |
 | Circuit breaker | Dropped | The Express breaker is never called, so parity is nominal; no provider needs one yet (R-309). This departs from the Python track, which lists one, and the track is amended in the next agent-governance change (stack audit, owner choice) |
+| Scheduled cleanup | arq cron job only, no pg_cron | One code path for one job; the worker exists anyway (stack audit, owner choice) |
 | Client app state | Nuxt `useState` composables, no Pinia | Only the theme and the modal stack are app state, which `useState` holds with no dependency. This departs from the Vue track, which names Pinia, and the track is amended in the next agent-governance change (stack audit, owner choice) |
 
 ## Architecture
@@ -77,7 +78,7 @@ Paths are under `/v1` except the health endpoints. The Stripe webhook moves from
 | Errors | `{ code, error }` | The Express template's codes plus `ROUTING_METHOD_NOT_ALLOWED`, `INPUT_PAYLOAD_TOO_LARGE`, and `IDEMPOTENCY_KEY_REUSED`; five exception handlers as the Python track specifies |
 | Integrations | `app/clients/` | Resend, PostHog (server events carry the user ID, never the email), Cloudflare R2 (presigned uploads, with no caller yet), Sentry, Stripe, and `with_client_telemetry`, which arrives with the first client in slice 04 so no client ships uninstrumented (R-346) |
 | Worker | `app/workers/` | Jobs `send_password_reset_email` and `delete_expired_rows`; HTTP health probes on port 3002 |
-| Cleanup | Alembic migration | pg_cron deletes expired sessions, idempotency keys older than 24 hours, and `billing_webhook_events` rows older than 30 days hourly, in batches of 1000, and skips silently where pg_cron is unavailable; the arq job `delete_expired_rows` does the same work and first checks `cron.job`, exiting when pg_cron already owns it |
+| Cleanup | arq cron job | `delete_expired_rows` runs hourly in the worker and deletes expired sessions, idempotency keys older than 24 hours, and `billing_webhook_events` rows older than 30 days, in batches of 1000. The Express template's pg_cron migration is not ported: the worker exists anyway, and one code path replaces two (stack audit, owner choice); if the worker is down, rows accumulate until it returns and nothing else is affected. This departs from the Python track's pg_cron section, which the next agent-governance change amends |
 | OpenAPI | `apps/server/docs/openapi.yaml` | Exported from the app and diffed in CI |
 
 ## Frontend feature map
@@ -159,7 +160,7 @@ Slice 07, observability and integrations:
 - B-25: Withdrawn. The circuit breaker was dropped by the owner after the stack audit; the number stays unused so later criteria keep their numbers.
 
 Slice 08, cleanup and closing:
-- B-26: Expired sessions, idempotency keys older than 24 hours, and webhook ledger rows older than 30 days are deleted hourly in batches of 1000, by pg_cron where it exists and by the arq job where it does not, and the arq job does nothing when pg_cron owns the work.
+- B-26: The hourly `delete_expired_rows` job deletes expired sessions, idempotency keys older than 24 hours, and webhook ledger rows older than 30 days in batches of 1000, and leaves every unexpired row in place.
 - B-27: Lighthouse accessibility scores 100 on all seven pages.
 - B-28: The smoke suite passes against the deployed Railway URLs.
 
@@ -249,7 +250,7 @@ Three Railway services built from their Dockerfiles. The API service's `preDeplo
 | 05 | Idempotency and admin: `request_idempotency_keys` and its middleware, `users.role`, `require_admin`, `GET /admin/users`, and the admin page | 3 h |
 | 06 | Billing: `user_subscriptions`, `billing_webhook_events`, checkout, portal, and webhook, the dashboard's billing buttons, and stripe-mock as an `e2e` compose profile | 4.5 h |
 | 07 | Observability and integrations: PostHog on both sides, Sentry on both sides, R2, and the theme composable | 3 h |
-| 08 | Cleanup and closing: pg_cron and the arq fallback, the smoke suite, the Lighthouse assertion, a README and features-list parity audit against `template-express-next`, and the first Railway deploy | 3 h |
+| 08 | Cleanup and closing: the hourly cleanup job, the smoke suite, the Lighthouse assertion, a README and features-list parity audit against `template-express-next`, and the first Railway deploy | 3 h |
 
 Middleware criteria in slices 02 and 05 (B-7's auth bucket, B-17, B-18, B-40, B-44) are exercised through a test-only router mounted by the test app factory, because the auth routes arrive in slice 03 and the first replayable authenticated `POST` arrives in slice 06; the real routes then carry the same behavior in their own slices' end-to-end tests.
 
