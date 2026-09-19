@@ -1,0 +1,57 @@
+# PR: Backend skeleton (slice 01 PR 1)
+
+Ticket: IAN-124 (slice IAN-123). Branch: `feat/slice01-backend-skeleton`. Spec: `docs/superpowers/specs/2026-09-19-template-fastapi-nuxt-design.md`, criteria B-1 and B-2. Plan: `docs/slices/slice-01-walking-skeleton.md`, PR 1.
+
+## Summary
+
+This PR creates the FastAPI backend that every later slice builds on. It adds the app factory, the settings, the structlog configuration, one database engine per process, request IDs on every response and log line, a 100 KB request body limit, and the liveness and readiness endpoints. It carries no feature a user can see, and nothing in it runs at import time, so tests can build the app from a patched environment.
+
+## What changed
+
+- **Scaffold:** `apps/server` is a uv project whose package is `app`, with runtime dependencies (FastAPI, uvicorn, SQLAlchemy with asyncpg, pydantic-settings, structlog, asgi-correlation-id), dev dependencies (pytest, pytest-asyncio, pytest-cov, httpx, ruff, black, mypy), and ruff, black, mypy, and pytest configured in `pyproject.toml`.
+- **`app/main.py`:** `create_app()` reads settings, configures logging, and attaches a lifespan that creates the engine on `app.state` and disposes it. It also registers the middleware and includes the health router.
+- **`app/core/settings.py`:** `Settings` reads `DATABASE_URL` as a secret and `ENVIRONMENT`, and `get_settings()` caches it once per process.
+- **`app/core/logging.py`:** a structlog chain that merges per-request context before the renderer, with console output in development and JSON everywhere else.
+- **`app/db/engine.py`:** the one async engine, with a bounded pool, a 5-second connect timeout, a 10-second statement timeout, and, in staging and production, TLS with the server certificate verified and the hostname checked (optional `DATABASE_CA_CERT` for a private CA).
+- **`app/middleware/request_context.py`:** binds the request ID into structlog's context for the length of a request and restores the previous context afterwards, and rejects a body over 100 KB with 413, whether the body declares its length or streams.
+- **`app/routers/health.py`:** `/health` answers 200 without touching a dependency. `/health/ready` opens its own connection and answers 503 when Postgres cannot be reached.
+- **Product docs (R-607):** Infrastructure rows in `docs/feature-list/features.md` and stories US-INFRA-001 and US-INFRA-002 in `docs/user-stories/infrastructure.md`.
+
+## Architectural decisions
+
+- **asgi-correlation-id outermost, the request-context middleware inside it.** The library validates or mints the ID and writes it on every response, so the 413 this PR's middleware sends still carries `X-Request-Id`. The library never resets its context variable, so the inner middleware binds the ID into structlog's own context with `bound_contextvars`, which restores whatever was bound before when the request ends; that keeps an ID from leaking into later log lines and keeps an outer caller's own binding intact. The alternative was a single hand-written middleware doing both jobs, which the stack audit replaced with the maintained library.
+- **The body limit counts streamed bytes, not only the declared length.** A chunked request has no `Content-Length`, so a check on the header alone would let an unbounded body through. The middleware therefore reads the whole body, up to the limit, before calling the app, and replays it; an oversized body is answered with 413 and the app never runs, even on a route that would not have read its body (spec B-43, and Copilot's review). An earlier version counted bytes as the app read them, which missed routes that never read the body; raising from `receive` also fails, because FastAPI turns an exception raised while it reads a Pydantic body into a 400. Holding at most 100 KB per request is cheap, because uploads go to R2 through presigned URLs.
+- **The 413 already uses the `{ code, error }` envelope** with `INPUT_PAYLOAD_TOO_LARGE`, so slice 02's error handlers need not change this middleware.
+
+## Testing
+
+- **Who wrote the tests:** the test-author agent, before any implementation existed, as the fallback for Codex, which was out of quota (owner rule, 2026-09-19). It also checked that the tests can fail: it ran them against a throwaway implementation and four deliberately broken versions, and each broken version failed at least one test.
+- **RED:** `tdd.sh red` locked the 3 unit test files with 25 tests, all failing on the missing module. **GREEN:** `tdd.sh green` then passed all 25.
+- **Integration:** `/health/ready` answers 200 against a real local Postgres when `TEST_DATABASE_URL` is set, for 26 of 26 passing. CI runs it once PR 4 adds the integration job.
+- **Checks:** ruff, black, and mypy in strict mode are clean, and with all review fixes the suite is 48 of 48 including the real-Postgres test, at about 95 percent coverage against an 80 percent floor.
+- **Not yet runnable:** `e2e/health.spec.ts` is written, but it runs only once PR 4 installs Playwright and starts the containers.
+
+## Codex review
+
+**Reviewer:** a separate agent on Claude Fable, the stronger model, standing in for Codex, which was out of quota (owner rule, 2026-09-19). It reviewed the diff against the spec, the slice plan, and the Python track, ran probes, and reported ten findings. All ten are fixed in `f77478e`, with tests written first by the test-author agent.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | HIGH | The readiness failure log rendered frame locals, including the database password from asyncpg's connect frame | Fixed: tracebacks render through `ExceptionDictTransformer(show_locals=False)`; a test asserts a marker password never reaches a log event or stdout. The Python track's own logging example has the same defect and is queued for the next agent-governance change |
+| 2 | HIGH | A streamed oversized body became a 400 on routes with a Pydantic body, because FastAPI converts exceptions raised while reading the body | Fixed: the middleware answers 413 itself, reports a disconnect to the app, and drops whatever the app sends afterwards; a test covers a Pydantic-body route |
+| 3 | MEDIUM | Readiness had no client-side deadline, so a hanging connection stalled the probe | Fixed: a 2-second `asyncio.timeout`, with a test using a hanging fake engine |
+| 4 | MEDIUM | The body-limit tests could not catch a wrong limit | Fixed: boundary tests at exactly 100 KB and 100 KB plus one byte, declared and streamed |
+| 5 | MEDIUM | Standard-library records (uvicorn, asgi-correlation-id) bypassed the JSON renderer | Fixed: a root handler with structlog's `ProcessorFormatter` renders them as JSON |
+| 6 | LOW | Leaving the request cleared an outer `request_id` binding instead of restoring it | Fixed: `bound_contextvars` saves and restores |
+| 7 | LOW | A 5,000-digit `Content-Length` raised a 500 | Fixed: more than 19 digits is treated as oversized |
+| 8 | LOW | The request-ID validator lived in `main.py` | Fixed: moved into `app/middleware/request_context.py` |
+| 9 | LOW | The 413 body lacked the `{ code, error }` envelope | Fixed: `INPUT_PAYLOAD_TOO_LARGE`, asserted by tests |
+| 10 | LOW | The test tree did not mirror the modules, and there was no coverage floor | Fixed: `tests/unit/test_main.py` and `tests/unit/core/test_logging.py`; a coverage floor of 80 percent, the spec's server floor (first set at 60 and raised after Copilot's review), currently at about 95 percent |
+
+**Copilot's review** raised three more points. Two were valid and are fixed in `3784948`, test-first under `tdd.sh`: deployed environments did not verify the Postgres certificate, and the body cap missed chunked bodies sent to routes that never read them. A later round found that a zero-padded `Content-Length` within the limit was rejected (fixed test-first) and that the coverage floor was below the spec's 80 percent (raised); its claim that `asyncio.timeout`'s `TimeoutError` escapes the readiness handler was answered, since the built-in `TimeoutError` subclasses `OSError`. The earlier invalid point, that a parametrized fixture was not in the test's signature, was answered in its thread: pytest overrides any fixture in a test's closure, and the RED run proved the marker DSN was in use.
+
+A tooling limit surfaced along the way: `tdd.sh red` requires every test in each named file to fail, so tests added beside passing tests in an existing file cannot be locked as RED. This fix round therefore recorded RED by hand (8 failed, 29 passed, 1 skipped) in the commit message. The limit is queued for agent-governance.
+
+## Reflection
+
+Implementation started at 07:22Z and this document was written at about 08:10Z, most of it waiting for the pytest runner that `tdd.sh` gained in agent-governance PR #72 so that this PR could run under the slice lock. I first assumed asgi-correlation-id cleans up its context variable after each request. Reading its source showed it does not, and the test for "no carry-over after the request" would have caught that only because the test author wrote that exact case.
