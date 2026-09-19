@@ -1,0 +1,26 @@
+{
+    "name": "@repo/tokens",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./scss": "./dist/_tokens.scss"
+    },
+    "scripts": {
+        "build": "tsc && node dist/writeTokensScss.js",
+        "prepare": "pnpm run build",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "@types/node": "22.20.4",
+        "typescript": "5.9.3",
+        "vitest": "5.0.1"
+    }
+}

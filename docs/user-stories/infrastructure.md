@@ -28,3 +28,16 @@
 
 **E2E test:** `e2e/health.spec.ts`
 **Ticket:** IAN-124
+
+## US-INFRA-003: Web server health check
+
+**As** an operator running the web server on Railway
+**I want to** probe whether the Nuxt server process is alive without it calling the backend
+**So that** a web container is restarted only for its own failures, not for an API outage
+
+**Acceptance criteria:**
+
+- [ ] `GET /api/health` on the Nuxt server answers 200 `{"status": "ok"}` without contacting the backend.
+
+**E2E test:** `e2e/landing.spec.ts`
+**Ticket:** IAN-125

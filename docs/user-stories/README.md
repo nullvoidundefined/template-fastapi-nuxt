@@ -14,3 +14,4 @@ Every user-facing feature in template-fastapi-nuxt is documented as a user story
 | File | Covers |
 | ---- | ------ |
 | `infrastructure.md` | Health endpoints and request IDs (US-INFRA) |
+| `landing.md` | The landing page (US-LANDING) |

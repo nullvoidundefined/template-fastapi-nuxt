@@ -1,0 +1,34 @@
+{
+    "name": "@repo/web",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "nuxt dev --port 3000",
+        "build": "pnpm --filter @repo/tokens run build && nuxt build",
+        "preview": "nuxt preview",
+        "postinstall": "nuxt prepare",
+        "lint": "eslint .",
+        "typecheck": "vue-tsc --noEmit -p .nuxt/tsconfig.json",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "nuxt": "4.5.2",
+        "vue": "3.5.43",
+        "vue-router": "5.3.1"
+    },
+    "devDependencies": {
+        "@nuxt/eslint": "1.17.0",
+        "@nuxt/test-utils": "4.3.2",
+        "@repo/tokens": "workspace:*",
+        "@testing-library/vue": "8.1.0",
+        "@vue/test-utils": "2.5.1",
+        "eslint": "10.11.0",
+        "eslint-plugin-vuejs-accessibility": "2.6.0",
+        "happy-dom": "20.14.5",
+        "sass": "1.104.1",
+        "typescript": "5.9.3",
+        "vitest": "5.0.1",
+        "vue-tsc": "3.3.11"
+    }
+}
