@@ -8,8 +8,8 @@
 
 **Acceptance criteria:**
 
-- [ ] `GET /health` answers 200 without touching any dependency, even when Postgres is unreachable (spec B-1).
-- [ ] `GET /health/ready` answers 200 when Postgres answers and 503 when it cannot connect (spec B-1).
+- [x] `GET /health` answers 200 without touching any dependency, even when Postgres is unreachable (spec B-1).
+- [x] `GET /health/ready` answers 200 when Postgres answers and 503 when it cannot connect (spec B-1).
 
 **E2E test:** `e2e/health.spec.ts`
 **Ticket:** IAN-124
@@ -22,9 +22,9 @@
 
 **Acceptance criteria:**
 
-- [ ] A valid inbound `X-Request-Id` matching `^[A-Za-z0-9._-]{1,64}$` is echoed on the response (spec B-2).
-- [ ] An invalid or missing one is replaced by a new UUID (spec B-2).
-- [ ] Every log line emitted during the request carries the same ID (spec B-2).
+- [x] A valid inbound `X-Request-Id` matching `^[A-Za-z0-9._-]{1,64}$` is echoed on the response (spec B-2).
+- [x] An invalid or missing one is replaced by a new UUID (spec B-2).
+- [x] Every log line emitted during the request carries the same ID (spec B-2).
 
 **E2E test:** `e2e/health.spec.ts`
 **Ticket:** IAN-124
@@ -37,7 +37,7 @@
 
 **Acceptance criteria:**
 
-- [ ] `GET /api/health` on the Nuxt server answers 200 `{"status": "ok"}` without contacting the backend.
+- [x] `GET /api/health` on the Nuxt server answers 200 `{"status": "ok"}` without contacting the backend.
 
 **E2E test:** `e2e/landing.spec.ts`
 **Ticket:** IAN-125

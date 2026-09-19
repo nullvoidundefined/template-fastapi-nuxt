@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-19 (slice 01 PR 4)
+Last updated: 2026-09-19 (slice 01 complete)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -23,17 +23,17 @@ the date and what changed. Section shape:
 
 ## Infrastructure
 
-| Feature                                                                                                 | Status       | Notes                                                                                                      |
-| ------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`)                                   | **Partial**  | US-INFRA-001; spec B-1; shipped in PR #6, e2e runs once PR 4 adds Playwright                               |
-| Request IDs on every response and log line                                                              | **Partial**  | US-INFRA-002; spec B-2; shipped in PR #6, e2e runs once PR 4 adds Playwright                               |
-| Web server health check (`GET /api/health` on the Nuxt server)                                          | **Partial**  | US-INFRA-003; shipped in PR #7, e2e runs once PR 4 adds Playwright                                         |
-| API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check               | **Partial**  | spec B-4; `pnpm check:contract` runs locally, CI's `openapi-drift` job arrives in PR 4                     |
-| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test                            |
-| Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Partial**  | spec B-3; every container reports healthy locally, and the first CI run on this branch proves the pipeline |
+| Feature                                                                                                 | Status       | Notes                                                                           |
+| ------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------- |
+| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`)                                   | **Complete** | US-INFRA-001; spec B-1; PR #6, with `e2e/health.spec.ts` in CI since PR #10     |
+| Request IDs on every response and log line                                                              | **Complete** | US-INFRA-002; spec B-2; PR #6, with `e2e/health.spec.ts` in CI since PR #10     |
+| Web server health check (`GET /api/health` on the Nuxt server)                                          | **Complete** | US-INFRA-003; PR #7, with `e2e/landing.spec.ts` in CI since PR #10              |
+| API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check               | **Complete** | spec B-4; PR #9, and CI's `openapi-drift` job since PR #10                      |
+| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test |
+| Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Complete** | spec B-3; PR #10; every job green on `main`                                     |
 
 ## Landing
 
-| Feature                                        | Status      | Notes                     |
-| ---------------------------------------------- | ----------- | ------------------------- |
-| Landing page with links to log in and register | **Planned** | US-LANDING-001; spec B-49 |
+| Feature                                        | Status       | Notes                                                                                         |
+| ---------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------- |
+| Landing page with links to log in and register | **Complete** | US-LANDING-001; spec B-49; PR #7; the log-in and register pages themselves arrive in slice 03 |
