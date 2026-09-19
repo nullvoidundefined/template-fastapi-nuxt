@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    '/health': {
+    "/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -15,7 +15,7 @@ export interface paths {
          * Read Liveness
          * @description Answer 200 without touching any dependency.
          */
-        get: operations['read_liveness_health_get'];
+        get: operations["read_liveness_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -24,7 +24,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/health/ready': {
+    "/health/ready": {
         parameters: {
             query?: never;
             header?: never;
@@ -35,7 +35,7 @@ export interface paths {
          * Read Readiness
          * @description Answer 200 when Postgres answers within the deadline, and 503 otherwise.
          */
-        get: operations['read_readiness_health_ready_get'];
+        get: operations["read_readiness_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -57,7 +57,7 @@ export interface components {
              * Status
              * @constant
              */
-            status: 'ok';
+            status: "ok";
         };
         /**
          * HealthReadiness
@@ -68,12 +68,12 @@ export interface components {
              * Db
              * @enum {string}
              */
-            db: 'connected' | 'disconnected';
+            db: "connected" | "disconnected";
             /**
              * Status
              * @enum {string}
              */
-            status: 'ok' | 'degraded';
+            status: "ok" | "degraded";
         };
     };
     responses: never;
@@ -99,7 +99,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HealthLiveness'];
+                    "application/json": components["schemas"]["HealthLiveness"];
                 };
             };
         };
@@ -119,7 +119,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HealthReadiness'];
+                    "application/json": components["schemas"]["HealthReadiness"];
                 };
             };
         };

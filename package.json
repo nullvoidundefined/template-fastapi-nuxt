@@ -16,7 +16,8 @@
         "typecheck": "pnpm -r run typecheck",
         "test": "pnpm -r run test",
         "format": "prettier --write .",
-        "format:check": "prettier --check ."
+        "format:check": "prettier --check .",
+        "check:contract": "scripts/check-contract-drift.sh"
     },
     "devDependencies": {
         "prettier": "3.9.8",
