@@ -105,4 +105,4 @@ Replace the baseline CI workflow with the spec's jobs: `lint`, `typecheck`, `uni
 
 ## Later list
 
-Nothing yet.
+- **Slice 03, Nitro request ID:** Nitro middleware that mints an `X-Request-Id` when the page request has none and echoes it on the page response, so every server-side API call is correlated with its page (R-341). Until then, `useApiClient()` forwards the page request's ID only when one arrived, and FastAPI mints its own otherwise. Raised by the PR 3 pre-merge review.

@@ -14,12 +14,14 @@
     },
     "dependencies": {
         "nuxt": "4.5.2",
+        "openapi-fetch": "0.17.0",
         "vue": "3.5.43",
         "vue-router": "5.3.1"
     },
     "devDependencies": {
         "@nuxt/eslint": "1.17.0",
         "@nuxt/test-utils": "4.3.2",
+        "@repo/api-types": "workspace:*",
         "@repo/tokens": "workspace:*",
         "@testing-library/vue": "8.1.0",
         "@vue/test-utils": "2.5.1",

@@ -4,3 +4,6 @@ apps/server/
 **/dist/
 pnpm-lock.yaml
 **/generated/
+
+# Generated API types: byte-compared by scripts/check-contract-drift.sh, never reformatted
+packages/api-types/src/schema.ts
