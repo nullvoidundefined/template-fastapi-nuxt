@@ -2,7 +2,9 @@
 # pre-commit checks the staged files; commit-msg enforces the fix-needs-a-test rule; pre-push runs
 # the affected tests and the builds. The full suites run in CI (R-408, R-509).
 pre-commit:
-  parallel: true
+  # Sequential, because the fixers rewrite files: ruff and black, and Prettier and ESLint, touch
+  # the same files, and running them in parallel lets one overwrite the other's fix.
+  piped: true
   commands:
     prettier:
       glob: '*.{ts,mts,vue,js,mjs,json,md,yml,yaml,scss}'

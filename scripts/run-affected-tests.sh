@@ -2,7 +2,9 @@
 # Pre-push: runs only the tests the pushed changes affect (spec: lefthook); CI runs the full suites.
 #
 # Changes are measured against the merge base with origin/main. Changed pytest modules run
-# directly, and a changed server source file runs its mirrored test module when one exists.
+# directly, and a changed server source file runs every test module whose name contains the
+# source module's name (app/workers/health.py runs test_health.py, test_worker_health.py, and
+# test_health_redis.py), so a module's tests are not missed for a naming difference.
 # Vitest runs the tests related to the changed files (`--changed`). Playwright runs the specs
 # affected by the changes (`--only-changed`) when the compose stack answers on WEB_BASE_URL, and
 # says so and skips when it does not, because end-to-end tests need the running stack.
@@ -26,7 +28,7 @@ list_affected_pytest_modules() {
                 ;;
             apps/server/app/*.py)
                 module_name="$(basename "$changed_file" .py)"
-                find apps/server/tests -name "test_${module_name}.py" | sed 's|^apps/server/||'
+                find apps/server/tests -name "test_*${module_name}*.py" | sed 's|^apps/server/||'
                 ;;
         esac
     done <<<"$changed_files" | sort -u
