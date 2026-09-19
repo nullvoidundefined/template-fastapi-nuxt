@@ -5,7 +5,8 @@
 # it, both into a temporary directory, then compares them with the committed
 # apps/server/docs/openapi.yaml and packages/api-types/src/schema.ts. Prints a unified diff that
 # names each differing committed file and exits 1 on any difference, 0 when both match, and 2 when
-# a required tool is missing, so a broken runner is never mistaken for drift. It never writes into
+# a required tool or a committed file is missing or unreadable, so a broken runner or checkout is
+# never mistaken for drift. It never writes into
 # the working tree: `uv run --frozen` neither re-locks nor syncs. CI's openapi-drift job and the
 # lefthook pre-push hook run it.
 #
@@ -35,6 +36,17 @@ require_tools() {
     fi
 }
 
+# Exit 2 naming the file when a committed contract file is missing or unreadable.
+require_committed_files() {
+    local committed_path
+    for committed_path in "$COMMITTED_DOCUMENT" "$COMMITTED_TYPES"; do
+        if [ ! -r "$repo_root/$committed_path" ]; then
+            echo "check-contract-drift: committed file $committed_path is missing or unreadable" >&2
+            exit 2
+        fi
+    done
+}
+
 # Export the OpenAPI document from the app into the work directory, without bytecode files.
 export_fresh_document() {
     (cd "$repo_root/apps/server" &&
@@ -49,12 +61,18 @@ generate_fresh_types() {
             --output "$work_dir/schema.ts" >/dev/null)
 }
 
-# Print a unified diff and return 1 when the committed file differs from its fresh copy.
+# Print a unified diff and return 1 when the committed file differs from its fresh copy; exit 2
+# when diff itself fails, which is trouble reading a file rather than drift.
 compare_with_committed() {
-    local committed_path="$1" fresh_path="$2"
-    if diff -u --label "$committed_path (committed)" --label "$committed_path (regenerated)" \
-        "$repo_root/$committed_path" "$fresh_path"; then
+    local committed_path="$1" fresh_path="$2" diff_status=0
+    diff -u --label "$committed_path (committed)" --label "$committed_path (regenerated)" \
+        "$repo_root/$committed_path" "$fresh_path" || diff_status=$?
+    if [ "$diff_status" -eq 0 ]; then
         return 0
+    fi
+    if [ "$diff_status" -ne 1 ]; then
+        echo "check-contract-drift: could not compare $committed_path (diff exit $diff_status)" >&2
+        exit 2
     fi
     echo "contract drift: $committed_path does not match the code" >&2
     return 1
@@ -63,6 +81,7 @@ compare_with_committed() {
 # Regenerate both files, compare each, and report every drifted file before failing.
 main() {
     require_tools
+    require_committed_files
     export_fresh_document
     generate_fresh_types
     local drift_status=0

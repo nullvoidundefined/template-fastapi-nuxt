@@ -8,8 +8,9 @@
 # files, and its diff shows the added field; after that same change, regenerating both committed
 # files makes it exit 0 again; a hand edit to only the committed types, or to only the committed
 # OpenAPI document, exits 1 and names that file alone; an unmodified copy still exits 0 with
-# APP_NAME set, so the document does not depend on the environment; and no run writes anything
-# into the copy's tree. Prints PASS or FAIL per case and exits non-zero when any case fails.
+# APP_NAME set, so the document does not depend on the environment; deleting either committed
+# contract file exits 2, names the missing path, and does not report drift, so a broken checkout
+# is never mistaken for drift; and no run writes anything into the copy's tree. Prints PASS or FAIL per case and exits non-zero when any case fails.
 
 set -uo pipefail
 
@@ -19,6 +20,17 @@ DRIFT_SCRIPT_RELATIVE="scripts/check-contract-drift.sh"
 OPENAPI_RELATIVE="apps/server/docs/openapi.yaml"
 SCHEMA_TS_RELATIVE="packages/api-types/src/schema.ts"
 HEALTH_SCHEMA_RELATIVE="apps/server/app/schemas/health.py"
+
+# Pick the SHA-256 tool the runner has: GNU coreutils ships sha256sum, macOS ships shasum. Both
+# print "<hex digest>  <path>" per file, so the snapshot digest means the same thing either way.
+if command -v sha256sum >/dev/null 2>&1; then
+    SHA256_COMMAND=(sha256sum)
+elif command -v shasum >/dev/null 2>&1; then
+    SHA256_COMMAND=(shasum -a 256)
+else
+    echo "setup: neither sha256sum nor shasum is installed; install coreutils or perl's shasum" >&2
+    exit 2
+fi
 
 WORK_DIRECTORY="$(mktemp -d)"
 FAILED_CASE_COUNT=0
@@ -87,7 +99,7 @@ snapshot_tree_digest() {
         find . \( -name node_modules -o -name .venv -o -name __pycache__ \) -prune \
             -o -type f -print0 |
             LC_ALL=C sort -z |
-            xargs -0 shasum -a 256
+            xargs -0 "${SHA256_COMMAND[@]}"
     )
 }
 
@@ -375,12 +387,44 @@ test_app_name_does_not_change_document() {
     report_case "$outcome" "$case_name" "exit $exit_code; output: $(cat "$output_file")"
 }
 
+# A committed contract file that is missing is a broken checkout, not drift: the script exits 2,
+# names the missing path, and does not report "contract drift".
+# Arguments: $1 path relative to the repo root to delete, $2 directory name for the copy.
+test_missing_committed_file_exits_2() {
+    local missing_relative="$1"
+    local copy_root="$WORK_DIRECTORY/$2"
+    local output_file="$WORK_DIRECTORY/$2.out"
+    local case_name="missing $missing_relative"
+    local exit_code outcome
+    prepare_case_copy "$copy_root" "$case_name" || return
+    rm -f "${copy_root:?}/$missing_relative"
+    [ ! -e "$copy_root/$missing_relative" ] || {
+        report_case 1 "setup: delete $missing_relative" "the file is still present"
+        return
+    }
+    run_drift_script "$copy_root" "$output_file"
+    exit_code=$?
+    outcome=0
+    [ "$exit_code" -eq 2 ] || outcome=1
+    report_case "$outcome" "$case_name exits 2" "exit $exit_code; output: $(cat "$output_file")"
+    outcome=0
+    grep -qF "$missing_relative" "$output_file" || outcome=1
+    report_case "$outcome" "$case_name output names $missing_relative" \
+        "output: $(cat "$output_file")"
+    outcome=0
+    if grep -qF "contract drift" "$output_file"; then outcome=1; fi
+    report_case "$outcome" "$case_name output does not report contract drift" \
+        "output: $(cat "$output_file")"
+}
+
 test_unmodified_tree_passes
 test_schema_change_without_regeneration_fails
 test_types_only_edit_names_types_alone
 test_document_only_edit_names_document_alone
 test_schema_change_diff_and_regeneration
 test_app_name_does_not_change_document
+test_missing_committed_file_exits_2 "$SCHEMA_TS_RELATIVE" "types-missing"
+test_missing_committed_file_exits_2 "$OPENAPI_RELATIVE" "document-missing"
 
 if [ "$FAILED_CASE_COUNT" -gt 0 ]; then
     echo "$FAILED_CASE_COUNT case(s) failed"
