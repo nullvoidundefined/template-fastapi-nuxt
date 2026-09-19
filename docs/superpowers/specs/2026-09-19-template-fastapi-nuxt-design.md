@@ -1,0 +1,287 @@
+# template-fastapi-nuxt: Design
+
+Date: 2026-09-19
+Status: draft; all five design sections approved by the owner in a brainstorming session on 2026-09-19
+Ticket: IAN-101 (Linear project template-fastapi-nuxt); slice tickets are opened when this spec is accepted
+Workstream: 2 of 3 (convention tracks, then this template, then Voyager 2.0)
+
+## Goal
+
+This repository becomes a full-stack application template with a FastAPI backend, an arq worker, and a Nuxt 4 frontend, and it carries every user-facing and infrastructure feature of `template-express-next` except three the owner excluded. It exists for two reasons. Future projects that choose Python for the backend start from a baseline that already has sessions, CSRF protection, rate limits, billing, observability, and four levels of tests. And Voyager 2.0 forks it as its first slice, so the template is the foundation that project's agent graph is built on.
+
+Every rule comes from the convention tracks that agent-governance slice 01 finished on 2026-09-18: `CLAUDE-PYTHON.md` for the server and worker, `CLAUDE-FRONTEND-VUE.md` and `CLAUDE-FRONTEND-NUXT.md` for the client, and `CLAUDE-FRONTEND.md` and `CLAUDE-STYLING.md` for what both frontends share. Where this spec and a track disagree, the track wins and the spec is corrected.
+
+## Decisions already made
+
+Settled with the owner, one question at a time, on 2026-09-19:
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Repository name | `template-fastapi-nuxt` | Mirrors `template-express-next`: backend framework, then frontend framework |
+| Excluded from parity | The `address-copilot-review` workflow, `vercel.json`, the `posts` sample resource | The Copilot coding agent was dropped for cost on 2026-09-18; the Docker image on Railway is the only deploy path (R-351); every fork deletes the sample resource |
+| Kept from parity | Storybook with Playwright visual regression | The Vue track lists it, and dropping it would mean amending the track |
+| Shared types | Generated from OpenAPI into `packages/api-types` | Pydantic schemas stay the single source; a backend change that breaks the frontend fails the type check |
+| Monorepo | pnpm workspace at the root, uv project in `apps/server` | The R-301 canonical shape; root `package.json` scripts are the one entry point, as in the Express template |
+| Build order | Vertical slices | Each slice ships one feature end to end and is checked for parity feature by feature |
+| Password-reset email | Sent by an arq job | The request stays fast, and the job gets retries that the Express template's unawaited call never had |
+| Typed API client | openapi-fetch over the generated types | Types every call straight from the OpenAPI document with no per-route typing by hand; about 6 kB and no codegen (stack audit, owner choice) |
+| Request-ID middleware | asgi-correlation-id | A maintained pure-ASGI package that validates, caps, and binds the ID to structlog, replacing about 40 hand-written lines (stack audit, owner choice) |
+| Circuit breaker | Dropped | The Express breaker is never called, so parity is nominal; no provider needs one yet (R-309). This departs from the Python track, which lists one, and the track is amended in the next agent-governance change (stack audit, owner choice) |
+| Scheduled cleanup | arq cron job only, no pg_cron | One code path for one job; the worker exists anyway (stack audit, owner choice) |
+| Client app state | Nuxt `useState` composables, no Pinia | Only the theme and the modal stack are app state, which `useState` holds with no dependency. This departs from the Vue track, which names Pinia, and the track is amended in the next agent-governance change (stack audit, owner choice) |
+
+## Architecture
+
+```
+apps/server/          FastAPI app and arq worker; uv project; package `app`; layout per CLAUDE-PYTHON.md
+apps/client/web/      Nuxt 4; app/ and server/ roots; layout per CLAUDE-FRONTEND-NUXT.md
+packages/api-types/   TypeScript generated from apps/server/docs/openapi.yaml by openapi-typescript
+packages/tokens/      design tokens compiled to SCSS custom properties (ported unchanged)
+e2e/                  Playwright: auth, billing, admin, accessibility, smoke, visual-regression
+```
+
+**Deployables.** Three images, each with its own Dockerfile (R-351): the API (`Dockerfile`), the worker (`Dockerfile.worker`), and the web server (`apps/client/web/Dockerfile`, Nitro `node-server` preset). `docker-compose.yml` runs all three with Postgres 17, Redis 7, and stripe-mock for local work and for the end-to-end suite.
+
+**Request path.** The browser talks only to the Nuxt origin. A page request is rendered by Nuxt, whose `api/apiClient.ts` creates one openapi-fetch client typed by `packages/api-types` and passes it `useRequestFetch()` as its fetch function, so the incoming cookie reaches FastAPI during server-side rendering. Browser calls to `/api/**` go through the Nitro catch-all `server/api/[...path].ts`, which proxies to FastAPI's `/v1/**`. PostHog traffic goes through `server/api/ingest/[...path].ts`.
+
+**Client IP trust chain.** Every browser request reaches FastAPI through Railway's edge and then Nitro, so FastAPI's direct peer is always Nitro. Railway's edge appends the connecting client's address as the last `X-Forwarded-For` entry; every earlier entry is client-supplied and untrusted. The Nitro proxy therefore forwards only that last entry, as a single-value `X-Forwarded-For`, and drops the rest. FastAPI honors forwarded headers only from Nitro: uvicorn runs with `--proxy-headers --forwarded-allow-ips` set to the web service's private-network address (`TRUSTED_PROXY_IPS`), so a request from anywhere else is keyed on its peer address. The rate limiter reads the resolved `request.client.host` and never parses the header itself.
+
+**Type flow.** A Pydantic schema is the definition. FastAPI generates the OpenAPI document from the routes, `uv run python -m app.export_openapi` writes it to `apps/server/docs/openapi.yaml`, and `pnpm --filter @repo/api-types generate` turns it into TypeScript. Both files are committed, and CI regenerates them and fails on any difference, so the backend, the document, and the frontend cannot drift apart.
+
+**Analytics registry.** Server events (the six auth events) live in `app/analytics/events.py` as a `StrEnum` (R-343). The browser sends only PostHog's built-in pageview, identify, and reset calls, so there is no browser event registry and no `packages/constants` until a custom browser event exists (R-309); the Express template's `@repo/constants` package is not ported for that reason.
+
+## Inputs
+
+HTTP requests from the browser through the Nuxt origin; Stripe webhook deliveries to `POST /v1/billing/webhook`; arq jobs enqueued by the API; environment variables read once at startup by pydantic-settings on the server and by `runtimeConfig` on the client. Request bodies are the Pydantic schemas in `apps/server/app/schemas/`.
+
+## Outputs
+
+JSON responses in the `{ data }` envelope (with `meta` for pages) on success and the `{ code, error }` envelope on failure, with the error codes of `constants/error_codes.py`; server-rendered HTML from Nuxt; emails through Resend; analytics events through PostHog; error reports through Sentry; structured JSON logs carrying the request ID.
+
+## Backend feature map
+
+Every path in this section's table and in the acceptance criteria is relative to the `/v1` prefix, so `/auth/login` means `/v1/auth/login`; only the health endpoints sit outside it. The Stripe webhook moves from the Express template's `/webhooks/stripe` to `/v1/billing/webhook`, the path the Python track fixes, so the Stripe dashboard's endpoint is updated at deploy (see Deployment).
+
+| Feature | Endpoint or unit | Parity notes |
+|---|---|---|
+| Register | `POST /auth/register` | bcrypt with 12 rounds, run in a worker thread; a SHA-256 session token; the email is trimmed and lowercased before insert and lookup, and the unique index is on the lowercased value, so `Foo@x.com` and `foo@x.com` are one account; 409 `AUTH_EMAIL_ALREADY_REGISTERED` on a duplicate |
+| Log in | `POST /auth/login` | Timing equalized against a dummy hash; the same `AUTH_INVALID_CREDENTIALS` for a wrong email or a wrong password; deletes the user's expired sessions on success, as the Express template does |
+| Log out | `POST /auth/logout` | Always 204; deletes the session row and clears the cookie |
+| Current user | `GET /auth/me` | Returns `{ data: user }`, the Python track's success envelope; the Express template returns `{ user }`, and this template follows the track so generated clients see one success shape |
+| Update profile | `PATCH /auth/me` | Verifies the current password before setting a new one; deletes the user's other sessions |
+| Forgot password | `POST /auth/forgot-password` | Always 200, and the handler enqueues `send_password_reset_email` for a known and an unknown email alike, so neither the response nor the queue work differs; the job looks the email up and sends nothing when it is unknown |
+| Reset password | `POST /auth/reset-password` | A 32-byte token with a 1-hour expiry; issuing a new reset deletes the user's earlier unused resets, so only the latest link works; consumption is one atomic statement, `UPDATE user_password_resets SET used_at = now() WHERE token_hash = :hash AND used_at IS NULL AND expires_at > now() RETURNING user_id`, so two concurrent submissions of one token cannot both succeed; deletes every session of the user |
+| Admin gate | `require_admin` dependency and `GET /admin/users` | Reads `users.role`. The Express template exports its admin guard but mounts it on no route, so the port adds one admin endpoint for the guard to protect and the admin page to show: `GET /admin/users` returns a paginated list of `{ id, email, role, created_at }` |
+| Checkout | `POST /billing/checkout` | Body `{ price_id }` validated against `^price_[A-Za-z0-9]+$`; creates a Checkout session in `subscription` mode with `metadata.user_id` (the only link the webhook has back to the user), a success URL of `{client_url}/dashboard?checkout=success`, and a cancel URL of `{client_url}/dashboard?checkout=cancelled`; the client sends an idempotency key |
+| Portal | `POST /billing/portal` | Return URL `{client_url}/dashboard`; 400 `BILLING_NO_ACCOUNT` when the user has no Stripe customer |
+| Webhook | `POST /billing/webhook` | Raw body and signature verification; exempt from CSRF and rate limiting; an allowlist of the five events the Express template handles (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`), each writing the `user_subscriptions` columns below. The `billing_webhook_events` claim is `INSERT ... ON CONFLICT (stripe_event_id) DO UPDATE SET status = 'claimed', attempted_at = now() WHERE billing_webhook_events.status = 'failed' OR (billing_webhook_events.status = 'claimed' AND billing_webhook_events.attempted_at < now() - interval '10 minutes') RETURNING id`, so a redelivery after a failure or a crash is processed again, which the Express template's `ON CONFLICT DO NOTHING` never does |
+| Health | `GET /health`, `GET /health/ready` | Registered before every router; readiness opens its own connection so a failed connect still answers 503 |
+| Middleware | Six pure ASGI classes plus asgi-correlation-id | Request ID through asgi-correlation-id, whose validator keeps an inbound `X-Request-Id` only when it matches `^[A-Za-z0-9._-]{1,64}$` and otherwise mints a UUID, bound into structlog's context; a request-context class that rejects bodies over 100 KB with 413 `INPUT_PAYLOAD_TOO_LARGE`; security headers, CORS, rate limit (keyed on the client IP resolved through the trust chain under Architecture, never on a client-supplied header; 100 per 15 minutes globally; 10 per 15 minutes on exactly `/v1/auth/login`, `/v1/auth/register`, `/v1/auth/forgot-password`, and `/v1/auth/reset-password`, matched on the full path the middleware sees; the health routes and the webhook exempt), a 30-second timeout, the `X-Requested-With` CSRF guard, idempotency |
+| Errors | `{ code, error }` | The Express template's codes plus `ROUTING_METHOD_NOT_ALLOWED`, `INPUT_PAYLOAD_TOO_LARGE`, and `IDEMPOTENCY_KEY_REUSED`; five exception handlers as the Python track specifies |
+| Integrations | `app/clients/` | Resend, PostHog (server events carry the user ID, never the email), Cloudflare R2 (presigned uploads, with no caller yet), Sentry, Stripe, and `with_client_telemetry`, which arrives with the first client in slice 04 so no client ships uninstrumented (R-346) |
+| Worker | `app/workers/` | Jobs `send_password_reset_email` and `delete_expired_rows`; HTTP health probes on port 3002 |
+| Cleanup | arq cron job | `delete_expired_rows` runs hourly in the worker and deletes expired sessions, idempotency keys older than 24 hours, and `billing_webhook_events` rows older than 30 days, in batches of 1000. The Express template's pg_cron migration is not ported: the worker exists anyway, and one code path replaces two (stack audit, owner choice); if the worker is down, rows accumulate until it returns and nothing else is affected. This departs from the Python track's pg_cron section, which the next agent-governance change amends |
+| OpenAPI | `apps/server/docs/openapi.yaml` | Exported from the app and diffed in CI |
+
+## Frontend feature map
+
+| Page | Route | Layout and middleware | Parity notes |
+|---|---|---|---|
+| Landing | `/` | `default` | Links to log in and register |
+| Log in | `/login` | `auth`, `redirect-if-session` | Shows the reset-success banner on `?reset=true`; a signed-in user is sent to `/dashboard`, as the Next middleware does |
+| Register | `/register` | `auth`, `redirect-if-session` | Field-level errors from `INPUT_VALIDATION_ERROR`; a signed-in user is sent to `/dashboard` |
+| Forgot password | `/forgot-password` | `auth` | Shows a submitted state after the request is sent |
+| Reset password | `/reset-password` | `auth` | Reads `?token=`; checks that the two passwords match before submitting |
+| Dashboard | `/dashboard` | `protected`, `require-session` | Profile editing and the billing checkout and portal buttons |
+| Admin | `/admin` | `protected`, `require-session`, `require-admin` | Lists users from `GET /admin/users`; a regular user is redirected |
+
+- **Auth gate.** The three pieces the Nuxt track specifies: the Nitro `sessionCookieGate` middleware redirects a full page load that carries no session cookie; the `require-session` route middleware calls `useSessionQuery` on every navigation; and the protected layout renders only after the session resolves.
+- **Data.** One function per backend route in `app/api/`, each a one-line call on the openapi-fetch client, so its request and response types come from the OpenAPI document; every query behind a TanStack Query composable (`useSessionQuery`, `useCheckoutMutation`, and so on); `useState` composables hold only the theme and the modal stack, never server data.
+- **UI kit.** `components/ui/` carries Button, Modal, and Toast on Reka UI, with `ToastRegion` driven by `useToast()` and a modal stack driven by `useModal()` (open, close, `closeAllModals`, and a `preventClose` option, held in a `useState` composable), styled by SCSS modules from `packages/tokens`.
+- **Observability.** PostHog pageviews, identify with the user ID only (the Express client also sends the email; the port does not, per R-104), and reset on log out, all through the `/ingest` proxy; `@sentry/nuxt` with the request ID as a tag.
+- **Theme.** A `useThemePreference` composable over `useState` with three modes (`light`, `dark`, and `system`, which follows the operating system through a media-query listener), persisted to `localStorage`, applied as a `data-theme` attribute by an inline anti-flash script in the document head.
+- **Storybook.** `@storybook/vue3-vite` with the accessibility addon, stories for every `components/ui/` component, snapshotted by the Playwright `visual-regression` project.
+
+## Data model
+
+Tables follow R-334: the aggregate root takes no prefix, and every entity inside it repeats the root.
+
+| Express table | Template table | Columns | Why the name |
+|---|---|---|---|
+| `users` | `users` | `id` uuid, `email` (unique index on `lower(email)`), `password_hash`, `role` enum `user_role` (member, admin) `NOT NULL DEFAULT 'member'`, added in slice 05 by a revision that backfills every existing row to `member`, `created_at`, `updated_at` maintained by a shared `set_updated_at` trigger created in this revision | The aggregate root |
+| `sessions` | `user_sessions` | `id` uuid, `user_id`, `token_hash` unique, `expires_at`, `created_at`, `last_seen_at` (written at most once every 5 minutes per session, so reads do not become writes) | Owned by a user |
+| `password_resets` | `user_password_resets` | `id` uuid, `user_id`, `token_hash` unique, `expires_at`, `used_at`, `created_at` | Owned by a user |
+| `subscriptions` | `user_subscriptions` | `id` uuid, `user_id` unique, `stripe_customer_id` unique, `stripe_subscription_id` unique, `plan_id`, `status` enum `user_subscription_status` (the Express template's values), `current_period_start`, `current_period_end`, `is_canceling_at_period_end`, timestamps | One per user, owned by the user; the boolean takes its `is_` prefix per R-316 |
+| `stripe_events` | `billing_webhook_events` | `id` uuid, `stripe_event_id` unique, `event_type`, `status` (claimed, processed, failed), `attempted_at`, `processed_at` | The name the Python track uses; the ledger outlives any one user. `billing` names the bounded context rather than an aggregate table, a documented exception the owner approved with this vocabulary |
+| `idempotency_keys` | `request_idempotency_keys` | `key`, `user_id`, `request_method`, `request_path`, `request_body_hash`, `state` (`in_progress` or `completed`), `locked_until` timestamptz (a 60-second lease set when the claim is taken), `status_code` and `response_body` jsonb (null until completed), `created_at`; a claim whose state is `in_progress` and whose lease has expired is taken over by the next request with the same key, so a crash between claim and completion never strands the key; unique on `(key, user_id)` | Declared as its own root, as in Voyager 2.0. The `request_` is part of the root's own noun (an idempotency key belongs to a request), not the name of an owning aggregate, which is what R-334 forbids on a root; the owner approved this name in the brainstorming session. The stored method, path, and body hash bind a key to one request, so a key reused on a different endpoint or with a different body is rejected rather than replaying another request's response; this is stricter than the Express template and the Python track, which scope by `(key, user_id)` alone |
+| `posts` | none | | Excluded by the owner |
+
+Each table arrives in the slice that first needs it, as its own Alembic revision, and a column that only a later slice uses arrives with that slice: `users.role` is added in slice 05, not slice 02.
+
+## Acceptance criteria
+
+Grouped by the slice that makes each one pass. Each is one behavior and one test.
+
+Slice 01, the walking skeleton:
+- B-1: `GET /health` answers 200 without touching a dependency, and `GET /health/ready` answers 503 when Postgres is unreachable.
+- B-2: Every response carries an `X-Request-Id` header, which echoes an inbound one that matches `^[A-Za-z0-9._-]{1,64}$` and otherwise carries a new UUID, and every log line for that request carries the same ID.
+- B-3: `docker compose up` starts the API, the worker, the web server, Postgres, and Redis, and each image's `HEALTHCHECK` passes.
+- B-4: CI regenerates `openapi.yaml` and `packages/api-types` and fails when either differs from the committed copy.
+
+Slice 02, data and errors:
+- B-5: An unknown path answers 404 `ROUTING_NOT_FOUND` with a fixed message that never contains the requested path, a wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and neither ever returns FastAPI's default `{ detail }`.
+- B-6: A state-changing request without `X-Requested-With: XMLHttpRequest` answers 403 `CSRF_HEADER_MISSING`, while the health routes and the Stripe webhook are exempt.
+- B-7: The eleventh request inside 15 minutes from one client to the four limited auth paths answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and so does the one hundred and first request of any kind; two distinct client IPs arriving through Nitro count in two buckets, while a client that prepends forged `X-Forwarded-For` entries stays in its own bucket, and a request reaching FastAPI directly rather than through Nitro is keyed on its peer address; `GET /auth/me` never counts against the auth bucket but does count against the global one; the health routes and the webhook are exempt from both buckets and never receive 429.
+- B-8: A handler that runs longer than 30 seconds answers 408 `SERVER_REQUEST_TIMEOUT`.
+- B-9: A database outage during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, and an unexpected error answers 500 with no stack trace in production.
+
+Slice 03, auth:
+- B-10: Registering stores a bcrypt hash with cost 12, stores the email trimmed and lowercased, treats a mixed-case duplicate of an existing email as a duplicate (409), sets an `httpOnly`, `SameSite=Lax` session cookie with a 7-day lifetime that is also `Secure` in every environment except local development, and stores only the SHA-256 hash of its token; a test asserts each attribute, including `Secure` under the production setting.
+- B-11: Logging in with a wrong password and with an unknown email both answer `AUTH_INVALID_CREDENTIALS`, and a correct login sets a session cookie with the same attributes B-10 requires and a new `user_sessions` row; the unknown-email path still runs a bcrypt comparison against the dummy hash, and a successful login deletes that user's expired sessions while leaving live ones.
+- B-12: A signed-out browser that loads `/dashboard` is redirected to `/login` on the first request, and a client-side navigation to `/dashboard` with an expired session is redirected as well.
+- B-13: Changing the password through `PATCH /auth/me` requires the current password and signs out every other session of the user.
+
+Slice 04, password reset:
+- B-14: `POST /auth/forgot-password` answers 200 and enqueues exactly one job for a known and an unknown email alike, and only the known email's job sends a message.
+- B-15: A reset token works once, fails after one hour, fails once a newer reset has been issued, and a successful reset signs out every session of the user; two concurrent submissions of one token produce exactly one success.
+- B-16: The worker's `/health/ready` answers 503 when Redis is unreachable.
+
+Slice 05, idempotency and admin:
+- B-17: A repeated `POST` with the same `Idempotency-Key` from the same user within 24 hours replays the stored status and body without running the handler again.
+- B-18: A handler that fails releases its idempotency claim, so the client's retry runs again instead of answering 409.
+- B-19: A member calling `GET /admin/users` receives 403 `AUTH_ADMIN_REQUIRED` while an admin receives `{ data, meta: { total, limit, offset } }` whose items carry exactly `id`, `email`, `role`, and `created_at` and never a password hash, a member visiting `/admin` is redirected, and `GET /auth/me` now includes the user's `role`.
+
+Slice 06, billing:
+- B-20: A webhook with a bad signature answers 400 `BILLING_WEBHOOK_INVALID_SIGNATURE` and writes nothing.
+- B-21: The same Stripe event delivered twice changes `user_subscriptions` once, and a `checkout.session.completed` event is mapped to its user through `metadata.user_id`.
+- B-22: The portal request for a user with no Stripe customer answers 400 `BILLING_NO_ACCOUNT`, and for a user with one answers the portal URL created with a return URL of `{client_url}/dashboard`.
+
+Slice 07, observability and integrations:
+- B-23: Every outbound provider call logs the provider, the operation, the duration, and the outcome, carries the request ID, and has an explicit timeout.
+- B-24: The six auth events reach PostHog from the server, the browser's pageview events reach it through `/ingest`, the browser calls `identify` with the user ID after log in and registration and `reset` after log out, and no event or identify call carries an email address.
+- B-25: Withdrawn. The circuit breaker was dropped by the owner after the stack audit; the number stays unused so later criteria keep their numbers.
+
+Slice 08, cleanup and closing:
+- B-26: The hourly `delete_expired_rows` job deletes expired sessions, idempotency keys older than 24 hours, and webhook ledger rows older than 30 days in batches of 1000, and leaves every unexpired row in place.
+- B-27: Lighthouse accessibility scores 100 on all seven pages.
+- B-28: The smoke suite passes against the deployed Railway URLs.
+
+Criteria added after review keep the earlier numbers stable, so they are listed here with the slice each belongs to:
+
+- B-29 (slice 07): An R2 upload URL is presigned for a server-generated key of the form `{user_id}/{uuid}.{extension}`, with an extension from the upload purpose's allowlist and a 15-minute expiry; a client-supplied key or a disallowed extension is rejected before any R2 call.
+- B-30 (slice 07): Sentry initializes only when `SENTRY_DSN` is set, an unhandled error's event carries the request ID tag and the user's ID (never the email), and cookies and the `Authorization` header are scrubbed from the event.
+- B-31 (slice 03): `POST /auth/logout` answers 204 whether or not a session exists, deletes the session row, and clears the cookie, so the same cookie then fails `GET /auth/me` with 401.
+- B-32 (slice 03): `GET /auth/me` answers `{ data: user }` with the user's ID and email and never the password hash (the role joins the response in slice 05, under B-19), and answers 401 `AUTH_REQUIRED` without a session.
+- B-33 (slice 06): `POST /billing/checkout` answers the Stripe Checkout URL for the signed-in user, and the same request repeated with the same `Idempotency-Key` returns the same URL without creating a second Checkout session; the Stripe request carries `mode: subscription`, the given `price_id`, `metadata.user_id`, and the success and cancel URLs of the backend map, and a `price_id` that fails `^price_[A-Za-z0-9]+$` answers 400 `INPUT_VALIDATION_ERROR` without calling Stripe.
+- B-34 (slice 06): A verified webhook for an event type outside the allowlist answers 200 and changes no row.
+- B-35 (slice 02): Every response carries the security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy`, and `Strict-Transport-Security` in production), and a preflight from an origin other than `CORS_ORIGIN` receives no `Access-Control-Allow-Origin` header.
+- B-36 (slice 04): `/login?reset=true` shows the reset-success banner, `/forgot-password` shows its submitted state after a request, and `/reset-password` refuses to submit when the two passwords differ.
+- B-37 (slice 07): A chosen theme survives a reload: the inline script in the document head reads the theme from `localStorage` and sets `data-theme` on `<html>` before first paint, so the page never flashes the other theme. Server-side rendering cannot read `localStorage`, so the server never renders a theme attribute itself.
+- B-38 (slice 03): Registering with an invalid email shows the field-level error from `INPUT_VALIDATION_ERROR` beside the email input.
+- B-40 (slice 05): Reusing an `Idempotency-Key` for a different method, path, or request body answers 422 `IDEMPOTENCY_KEY_REUSED` and runs no handler, so a key sent to `/billing/checkout` can never replay into `/billing/portal`.
+- B-39 (slice 03): Every `components/ui/` component has a Storybook story, and the `visual-regression` project fails when a story's rendering changes without an updated snapshot.
+- B-41 (slice 06): A Stripe event whose first processing attempt failed is processed and marked `processed` when Stripe redelivers it, and so is an event left `claimed` for more than 10 minutes by a crash.
+- B-42 (slice 06): A webhook handler exception marks the event `failed` and answers 500 `BILLING_WEBHOOK_PROCESSING_FAILED`, and a delivery without a `Stripe-Signature` header answers 400 `BILLING_WEBHOOK_MISCONFIGURED` and writes nothing.
+- B-43 (slice 02): A request body over 100 KB answers 413 `INPUT_PAYLOAD_TOO_LARGE` before the route runs.
+- B-44 (slice 05): Two simultaneous `POST`s with one `Idempotency-Key` from one user run the handler once and produce one success and one 409, and a claim left `in_progress` past its 60-second lease by a crashed process is taken over and runs the handler once.
+- B-45 (slice 03): A signed-in user who opens `/login` or `/register` is sent to `/dashboard`.
+- B-46 (slice 02): Settings refuse to load with `environment="production"` and no `REDIS_URL`, and under `environment="test"` without Redis the rate limiter counts in memory and logs `rate_limiter_in_memory` exactly once.
+- B-47 (slice 04): Running `send_password_reset_email` against a fake Resend client sends one email to the requester whose link carries a token whose SHA-256 equals the stored `token_hash`, and a Resend error raises so arq retries the job (up to three tries).
+- B-49 (slice 01): The landing page links to `/login` and `/register` by accessible name, and each link navigates to its route.
+- B-50 (slices 03 and 06): The dashboard's profile form changes the password through `PATCH /auth/me` and shows the result; in slice 06 its checkout button redirects to the Stripe Checkout URL and its portal button to the portal URL.
+- B-51 (slice 06): Each of the five allowlisted Stripe events writes its `user_subscriptions` columns: `checkout.session.completed` links the customer and subscription to the user from `metadata.user_id`; the three subscription events set `status`, `plan_id`, the period dates, and `is_canceling_at_period_end`; `invoice.payment_failed` sets `status` to `past_due`.
+- B-48 (slices 03 to 08, each for the pages it ships, and across all seven in slice 08): Every page is fully operable by keyboard with a visible focus indicator, and with `prefers-reduced-motion: reduce` no element animates.
+
+## Invariants
+
+- The database never holds a raw session token or a raw password-reset token, only their SHA-256 hashes.
+- Every query on a user-owned table is scoped by `user_id`.
+- Every error response uses the `{ code, error }` envelope with a code from the registry.
+- `openapi.yaml` and `packages/api-types` always match the code on `main`.
+
+## Failure modes
+
+- Invalid input answers 400 `INPUT_VALIDATION_ERROR` with the field errors; each handler has one negative-input test for an oversized body, an injection string, and malformed encoding (R-406).
+- Redis unavailable: in development and test the rate limiter falls back to in-process counters with a startup warning; production refuses to start without `REDIS_URL`.
+- Resend, PostHog, or Sentry unconfigured: each client logs one warning and becomes a no-op. PostHog or Sentry erroring: the error is logged and the request continues. Resend erroring: the error raises out of the email job so arq retries it, because a swallowed send would lose the reset email silently.
+- Stripe slow or down: the client times out after 10 seconds and the call fails with a logged provider error, and the webhook answers 500 so Stripe retries.
+- A second concurrent request with the same idempotency key answers 409 until the first finishes.
+
+## State transitions
+
+- `billing_webhook_events.status`: claimed, then processed or failed; a failed event, or one left claimed for more than 10 minutes, is claimed again by the conditional upsert in the backend map when Stripe redelivers it; a processed event is never claimed again.
+- `user_subscriptions.status`: mirrors the Stripe subscription status, written only by the webhook handler.
+- `user_password_resets`: unused, then used (`used_at` set), expired, or deleted when a newer reset is issued; none returns to unused.
+
+## Testing
+
+Four levels, each a named CI job:
+
+| Level | Runner | What it covers |
+|---|---|---|
+| Unit | pytest; Vitest with `@vue/test-utils` and `@nuxt/test-utils` | Services, schemas, and middleware in isolation; composables and components; one negative-input test per handler |
+| Integration | pytest against real Postgres and Redis service containers | Repositories, the session flow, idempotency replay, the webhook ledger, the rate limiter, the arq jobs; each test rolls back its transaction |
+| End-to-end | Playwright against the three built images, Postgres, Redis, and stripe-mock | Laid out as `CLAUDE-FRONTEND.md` prescribes: one spec file per user-story file, `journeys/`, `fixtures/`, and `helpers/`, test names carrying their `US-<AREA>-NNN` story ID, and `@fast` tags. A global setup runs `alembic upgrade head` and a seed script against the e2e database before the run |
+| Smoke | Playwright smoke config against a deployed URL | Health, one log in, one error path |
+
+The CI workflow runs `lint`, `typecheck`, `unit`, `integration`, `e2e`, `openapi-drift`, and `docker-build`, and a final `ci` job requires all of them and fails when any of them fails or is skipped, so `ci` stays the single check the `protect-merge` ruleset names. The baseline workflow's R-607 feature-checklist step, its `concurrency` group, and its read-only `permissions` are kept. Visual regression runs when a Storybook story or a ui component changes. Coverage floors are 80 percent on `apps/server/app`, matching the Express server so the port does not regress, and 60 percent on `apps/client/web/app`.
+
+lefthook runs ruff, black, mypy, ESLint, Prettier, and vue-tsc on staged files at commit, plus the Express template's content checks: the em-dash check, the Alembic form of the migration-defaults guard (R-328), and the commit-message gate that a `fix:` commit carries a test. At push it runs the affected tests only (changed pytest modules and `--only-changed` for Playwright) and the builds; the full suites run in CI, as both tracks require.
+
+## Observability
+
+A request ID bound at the edge and carried through every log line, error report, and outbound call (R-341); structlog JSON in deployed environments (R-342); analytics only through the registries (R-343); no swallowed exceptions (R-344); the two health endpoints on the API and the worker (R-345); every client call instrumented with a timeout (R-346).
+
+## Evals
+
+Not applicable: the template contains no agentic feature. A fork that adds one, such as Voyager 2.0, brings its own eval harness.
+
+## Security
+
+Cookie sessions with hashed tokens; CSRF by required header; CORS restricted to `CORS_ORIGIN` with credentials; rate limits on auth routes; admin endpoints behind `require_admin`; Stripe webhooks verified by signature; secrets only in environment variables as `SecretStr`, never logged or echoed (R-102, R-104); presigned R2 URLs with server-generated keys; Postgres over TLS with certificate verification (`sslmode=verify-full`, with an optional `DATABASE_CA_CERT` for a private CA), matching the Express template's `rejectUnauthorized: true`.
+
+## Deployment
+
+Three Railway services built from their Dockerfiles. The API service's `preDeployCommand` in `railway.toml` runs `alembic upgrade head` once per deploy, before any replica takes traffic, so replicas never race to migrate. The deploy step updates the Stripe dashboard's webhook endpoint to `/v1/billing/webhook`. Settings gain `client_url`, the web origin from which the reset-email link and the Stripe redirect URLs are built. After a deploy, the smoke suite runs against the live URLs, and the health endpoints are polled until green, as the workspace deploy-monitoring rule requires.
+
+## Slice plan
+
+| Slice | Delivers | Estimate |
+|---|---|---|
+| 01 | Walking skeleton: the uv and pnpm workspaces; the FastAPI app factory with request context, structlog, the engine factory, and health; a worker with no jobs yet but its health probes, so its container is healthy; the Nuxt shell and landing page; the three Dockerfiles and compose file; the full CI workflow green on the skeleton; lefthook; `packages/tokens`; the OpenAPI export and `api-types` generation | 4.5 h |
+| 02 | Data and errors: the connection dependency, Alembic with `users` and the `set_updated_at` trigger, the envelope and the five exception handlers, and the remaining middleware | 3 h |
+| 03 | Auth: `user_sessions`, the five auth endpoints for the session, the three-part Nuxt auth gate, the log-in, register, and dashboard pages, and the ui kit with Storybook | 5 h |
+| 04 | Password reset: `user_password_resets`, the first arq job, `with_client_telemetry`, Resend, the email job, and both password pages | 3 h |
+| 05 | Idempotency and admin: `request_idempotency_keys` and its middleware, `users.role`, `require_admin`, `GET /admin/users`, and the admin page | 3 h |
+| 06 | Billing: `user_subscriptions`, `billing_webhook_events`, checkout, portal, and webhook, the dashboard's billing buttons, and stripe-mock as an `e2e` compose profile | 4.5 h |
+| 07 | Observability and integrations: PostHog on both sides, Sentry on both sides, R2, and the theme composable | 3 h |
+| 08 | Cleanup and closing: the hourly cleanup job, the smoke suite, the Lighthouse assertion, a README and features-list parity audit against `template-express-next`, and the first Railway deploy | 3 h |
+
+Middleware criteria in slices 02 and 05 (B-7's auth bucket, B-17, B-18, B-40, B-44) are exercised through a test-only router mounted by the test app factory, because the auth routes arrive in slice 03 and the first replayable authenticated `POST` arrives in slice 06; the real routes then carry the same behavior in their own slices' end-to-end tests.
+
+The root `package.json` keeps the Express template's developer scripts that still apply: `dev`, `dev:worker`, `dev:payments` (forwarding Stripe events with `stripe listen` to the webhook), `test:e2e:ui`, and `test:visual:update`.
+
+The total is about 29 hours of agent time, which already includes the 1.2 overrun ratio that code slices ran at in agent-governance slice 01. Each slice has its own Linear ticket, blocked by the one before it; slice 08 blocks Voyager 2.0's slice 01 (IAN-80). Each slice runs under the TDD lock with its feature-list row and user story written first (R-607), and its pull request merges when CI is green and Copilot's review is addressed.
+
+## Non-goals
+
+- The Copilot coding-agent workflow, a Vercel deployment, and the `posts` sample resource.
+- Any agentic feature, eval harness, or LLM integration, including the Anthropic client the Python track lists for agentic services.
+- OAuth sign-in, multi-factor authentication, and email verification, which the Express template does not have either.
+- A mobile client.
+
+## Dependencies
+
+- Reused: the convention tracks and the enforcement hooks on agent-governance `main`; `packages/tokens` from `template-express-next`, copied as is.
+- New third-party packages, each needed because no existing module provides it (R-331): FastAPI, uvicorn, SQLAlchemy, asyncpg, Alembic, pydantic-settings, redis, arq, structlog, asgi-correlation-id, bcrypt, httpx, stripe, resend, posthog, boto3, sentry-sdk on the server; nuxt, @tanstack/vue-query, reka-ui, @nuxt/fonts, @sentry/nuxt, posthog-js, openapi-typescript, openapi-fetch on the client; Storybook, Playwright, Vitest, and their Vue integrations for tests.
+
+## Domain vocabulary
+
+- **User** - an account that can sign in - chosen over: "account" and "member", because "member" is already a value of the role enum.
+- **Session** - one signed-in browser, stored as `user_sessions` - chosen over: "login" and "token", because a token is only what the cookie carries.
+- **Password reset** - a single-use, expiring right to set a new password, stored as `user_password_resets` - chosen over: "reset token", which names the secret rather than the record.
+- **Subscription** - a user's Stripe billing state, stored as `user_subscriptions` - chosen over: "plan", which names the product rather than the user's state.
+- **Webhook event** - one Stripe delivery recorded in the idempotent ledger `billing_webhook_events` - chosen over: "stripe event", because the ledger records deliveries, not Stripe's events themselves.
+- **Idempotency key** - a client-supplied key that makes a `POST` or `PUT` safe to retry, stored as `request_idempotency_keys` - chosen over: "request key", which does not say what the key guarantees.
+- **Job** - one arq task run by the worker - chosen over: "task", which the ticket tracker already uses for work items.
+- **Role** - a user's permission level, `member` or `admin` - chosen over: "is_admin", because a boolean cannot grow a third level.
