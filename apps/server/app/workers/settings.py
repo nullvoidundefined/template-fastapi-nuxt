@@ -34,7 +34,11 @@ async def start_worker_resources(ctx: WorkerContext) -> None:
     health_app = create_worker_health_app(ctx["engine"], ctx["redis"])
     server = uvicorn.Server(
         uvicorn.Config(
-            health_app, host=HEALTH_SERVER_HOST, port=settings.worker_port, log_config=None
+            health_app,
+            host=HEALTH_SERVER_HOST,
+            port=settings.worker_port,
+            log_config=None,
+            access_log=False,  # the HEALTHCHECK calls it every 10 seconds
         )
     )
     ctx["health_server"] = server

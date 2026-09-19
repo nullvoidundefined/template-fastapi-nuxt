@@ -5,7 +5,7 @@ clears the settings cache, drops any earlier import of the module, and imports i
 the test body; a missing module therefore fails each test rather than collection. The lifecycle
 test drives `start_worker_resources` with a context holding a fake Redis, as arq would supply
 the real one, and checks over a real socket that the probe server answers on WORKER_PORT and
-that `stop_worker_resources` releases the port.
+that `stop_worker_resources` releases the port and disposes the engine.
 """
 
 import asyncio
@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 import pytest
 import structlog
+from sqlalchemy import event
 
 from tests.conftest import UNREACHABLE_DATABASE_URL, clear_settings_cache
 
@@ -93,11 +94,23 @@ async def is_port_accepting_connections(port: int) -> bool:
 
 
 @pytest.mark.usefixtures("worker_environment")
-def test_b3_worker_settings_register_no_jobs() -> None:
-    """B-3: the worker starts with an empty job registry until slice 04 adds the first job."""
+def test_review2_importing_worker_settings_without_redis_url_raises_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review item 2: the worker refuses to start without REDIS_URL instead of using localhost."""
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    clear_settings_cache()
+
+    with pytest.raises(RuntimeError, match="REDIS_URL"):
+        import_worker_settings_module()
+
+
+@pytest.mark.usefixtures("worker_environment")
+def test_review5_probe_server_listens_on_all_interfaces() -> None:
+    """Review item 5: the probe binds 0.0.0.0, so the platform's probe reaches it from outside."""
     worker_settings_module = import_worker_settings_module()
 
-    assert worker_settings_module.WorkerSettings.functions == []
+    assert worker_settings_module.HEALTH_SERVER_HOST == "0.0.0.0"  # noqa: S104 (the asserted bind)
 
 
 @pytest.mark.usefixtures("worker_environment")
@@ -126,15 +139,26 @@ def test_b3_worker_settings_wire_the_lifecycle_hooks() -> None:
 async def test_b3_worker_lifecycle_serves_the_probe_on_worker_port_and_releases_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """B-3: startup serves GET /health on WORKER_PORT; shutdown stops the server and the port."""
+    """B-3: startup serves GET /health on WORKER_PORT; shutdown frees the port and the engine.
+
+    Review item 3: SQLAlchemy's `engine_disposed` event records the dispose() call on shutdown.
+    """
     probe_port = find_free_port()
     monkeypatch.setenv("WORKER_PORT", str(probe_port))
     clear_settings_cache()
     worker_settings_module = import_worker_settings_module()
     worker_context: dict[str, Any] = {"redis": FakeRedis()}
 
+    disposed_engine_urls: list[str] = []
+
+    def record_engine_disposal(sync_engine: Any) -> None:
+        disposed_engine_urls.append(str(sync_engine.url))
+
     await worker_settings_module.start_worker_resources(worker_context)
     try:
+        event.listen(
+            worker_context["engine"].sync_engine, "engine_disposed", record_engine_disposal
+        )
         liveness_response = await get_probe_liveness(probe_port)
     finally:
         await worker_settings_module.stop_worker_resources(worker_context)
@@ -143,6 +167,7 @@ async def test_b3_worker_lifecycle_serves_the_probe_on_worker_port_and_releases_
     assert liveness_response.json() == {"status": "ok"}
     assert "engine" in worker_context
     assert not await is_port_accepting_connections(probe_port)
+    assert len(disposed_engine_urls) == 1, "stop_worker_resources did not dispose the engine"
 
 
 HEARTBEAT_JOB_NAME = "log_worker_heartbeat"
