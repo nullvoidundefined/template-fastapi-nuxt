@@ -1,4 +1,8 @@
-<!-- Root component: every route renders inside its layout (the default layout unless a page names another). -->
+<script setup lang="ts">
+/** Root component: every route renders inside its layout (the default layout unless a page names another). */
+defineOptions({ name: 'App' });
+</script>
+
 <template>
     <NuxtLayout>
         <NuxtPage />

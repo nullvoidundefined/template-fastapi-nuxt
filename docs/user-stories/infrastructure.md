@@ -41,4 +41,3 @@
 
 **E2E test:** `e2e/landing.spec.ts`
 **Ticket:** IAN-125
-

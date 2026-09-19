@@ -12,8 +12,8 @@
  */
 export const tokens = {
     colors: {
-        accent: '#e8651a',
-        accentHover: '#c85411',
+        accent: '#bf4f10',
+        accentHover: '#a8440c',
         accentLight: '#fdecd9',
         background: '#ffffff',
         backgroundTranslucent: 'rgba(255, 255, 255, 0.92)',
