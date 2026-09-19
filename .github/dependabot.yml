@@ -1,12 +1,16 @@
 # dependabot.yml: weekly update PRs for the workflow actions, the server's uv lockfile, the pnpm
 # workspace, and the Docker base images, grouped so one PR per ecosystem carries the week's minor
-# and patch bumps.
+# and patch bumps. Majors that are coupled to the Node 22 runtime or need a planned migration
+# (@types/node, typescript, the node image) are ignored so they only move deliberately.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
   - package-ecosystem: uv
     directory: /apps/server
     schedule:
@@ -21,7 +25,15 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
   - package-ecosystem: docker
     directories: [/apps/server, /apps/client/web]
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
