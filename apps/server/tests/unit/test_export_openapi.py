@@ -138,3 +138,30 @@ def test_b4_document_builds_without_database_url(
 
     assert "/health" in document["paths"]
     assert "/health/ready" in document["paths"]
+
+
+def test_b4_document_title_ignores_app_name_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """B-4: APP_NAME in the environment does not reach info.title, so it cannot cause drift."""
+    from app.core.settings import Settings  # noqa: PLC0415
+
+    default_app_name = Settings.model_fields["app_name"].default
+    monkeypatch.setenv("APP_NAME", "renamed-app")
+    clear_settings_cache()
+
+    openapi_document = build_current_document()
+
+    assert default_app_name == "template-fastapi-nuxt"
+    assert openapi_document["info"]["title"] == default_app_name
+
+
+def test_b4_main_writes_lf_line_endings_only(tmp_path: Path) -> None:
+    """B-4: the written document uses LF line endings only, so it matches on every platform."""
+    export_openapi_module = load_export_openapi_module()
+    output_path = tmp_path / "openapi.yaml"
+
+    exit_code = export_openapi_module.main(["--output", str(output_path)])
+
+    written_bytes = output_path.read_bytes()
+    assert exit_code == 0
+    assert b"\n" in written_bytes
+    assert b"\r" not in written_bytes

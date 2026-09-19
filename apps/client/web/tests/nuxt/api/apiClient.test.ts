@@ -1,11 +1,14 @@
+// @vitest-environment node
 /**
  * Unit tests for the typed API client (spec B-4, "Type flow" and "Request path").
  * createApiClient() returns one openapi-fetch client typed by the generated `paths` from
  * @repo/api-types, so every backend call is checked against the committed OpenAPI document.
  * The global fetch is stubbed before each client is created, so the tests observe the exact
  * request the client sends and the way it surfaces a 2xx body in `data` and a non-2xx body in
- * `error`. The header test uses X-Request-Id rather than a cookie because happy-dom's Request
- * drops forbidden headers such as Cookie, which would hide the client's behavior. A never-run
+ * `error`. The file runs in Vitest's node environment rather than the Nuxt happy-dom one: the
+ * client is plain openapi-fetch with no Nuxt runtime, and Node's Fetch classes keep the Cookie
+ * header a server-side caller forwards, where happy-dom's Request drops it as a forbidden header.
+ * The header tests therefore check both a forwarded cookie and an X-Request-Id. A never-run
  * branch holds a @ts-expect-error call on an undefined path, so `vue-tsc` in the typecheck script
  * fails if the client stops rejecting routes the document does not define.
  */
@@ -50,7 +53,19 @@ describe('createApiClient', () => {
         expect(error).toBeUndefined();
     });
 
-    it('B-4: sends the headers passed to createApiClient on every request', async () => {
+    it('B-4: forwards the cookie header passed to createApiClient', async () => {
+        const sentRequests = stubFetchResponding({ status: 'ok' }, 200);
+        const apiClient = createApiClient({
+            baseUrl: apiBaseUrl,
+            headers: { cookie: 'session=abc' },
+        });
+
+        await apiClient.GET('/health');
+
+        expect(sentRequests[0]?.headers.get('cookie')).toBe('session=abc');
+    });
+
+    it('B-4: sends the X-Request-Id header passed to createApiClient', async () => {
         const sentRequests = stubFetchResponding({ status: 'ok' }, 200);
         const apiClient = createApiClient({
             baseUrl: apiBaseUrl,

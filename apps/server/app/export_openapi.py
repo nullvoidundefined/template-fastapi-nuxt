@@ -4,7 +4,9 @@ Run as `uv run python -m app.export_openapi [--output PATH]`. The document is bu
 `create_app()` uvicorn runs, and rendered with keys sorted at every level and no timestamps, so an
 unchanged API always exports byte-identical YAML and the CI drift check fails only on real change.
 Building the document never connects to Postgres, so when DATABASE_URL is unset (the drift job
-has no database) a placeholder URL with no credentials stands in for it.
+has no database) a placeholder URL with no credentials stands in for it. The document's title is
+always the default app name, never APP_NAME from the environment or a local `.env`, so a renamed
+deployment exports the same contract as everyone else.
 """
 
 import argparse
@@ -21,9 +23,13 @@ PLACEHOLDER_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/openapi-export"
 def build_openapi_document() -> dict[str, Any]:
     """Build the app through its factory and return the OpenAPI document FastAPI generates."""
     os.environ.setdefault("DATABASE_URL", PLACEHOLDER_DATABASE_URL)
-    from app.main import create_app  # noqa: PLC0415 (settings must see the placeholder first)
+    # Imported here so the settings read the placeholder URL set above.
+    from app.core.settings import Settings  # noqa: PLC0415
+    from app.main import create_app  # noqa: PLC0415
 
-    return create_app().openapi()
+    app = create_app()
+    app.title = Settings.model_fields["app_name"].default
+    return app.openapi()
 
 
 def render_openapi_yaml(document: dict[str, Any]) -> str:
@@ -37,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     arguments = parser.parse_args(argv)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    arguments.output.write_text(render_openapi_yaml(build_openapi_document()), encoding="utf-8")
+    rendered_document = render_openapi_yaml(build_openapi_document())
+    arguments.output.write_text(rendered_document, encoding="utf-8", newline="\n")
     return 0
 
 
