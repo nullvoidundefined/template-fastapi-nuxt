@@ -12,12 +12,15 @@ credential-shaped literal appears in the source.
 
 import json
 import logging
+import logging.config
 import uuid
 from collections.abc import Iterator
 from typing import Any
 
 import httpx
 import pytest
+import structlog
+from arq.logs import default_log_config
 from fastapi import FastAPI
 
 DSN_SCHEME = "postgresql+asyncpg"
@@ -25,6 +28,7 @@ DSN_USER = "probe_user"
 DSN_UNREACHABLE_HOST_AND_DATABASE = "127.0.0.1:1/none"
 PASSWORD_MARKER = "pw-marker-" + uuid.uuid4().hex
 STDLIB_PROBE_MESSAGE = "probe-message"
+ARQ_PROBE_MESSAGE = "arq-probe-message"
 
 
 def build_database_url_with_password(password: str) -> str:
@@ -49,8 +53,8 @@ def parse_json_lines(text: str) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def restored_stdlib_logging() -> Iterator[None]:
-    """Snapshot the root and uvicorn loggers and restore them, so a test's config never leaks."""
-    logger_names = ["", "uvicorn", "uvicorn.error", "uvicorn.access"]
+    """Snapshot the root, uvicorn, and arq loggers and restore them, so no test's config leaks."""
+    logger_names = ["", "uvicorn", "uvicorn.error", "uvicorn.access", "arq", "arq.worker"]
     snapshots = {
         name: (
             list(logging.getLogger(name).handlers),
@@ -136,3 +140,55 @@ def test_defect5_b2_stdlib_log_record_is_rendered_as_one_json_line_in_production
     probe_line = probe_lines[0]
     assert str(probe_line.get("level", "")).lower() == "warning"
     assert probe_line.get("timestamp"), "the JSON line has no timestamp"
+
+
+def test_review1_arq_log_record_is_rendered_once_as_json_after_arq_installs_its_handler(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    restored_stdlib_logging: None,
+) -> None:
+    """Review item 1: arq's own plain-text handler is removed, so its records go through structlog.
+
+    arq's CLI runs logging.config.dictConfig(default_log_config(...)) before the worker's startup
+    hook, which leaves a plain-text StreamHandler on the `arq` logger. configure_logging() must
+    strip that handler and let `arq` and its children propagate to root, so an `arq.worker` record
+    reaches stdout exactly once, as JSON, and nothing reaches stderr.
+    """
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from app.core.logging import configure_logging  # noqa: PLC0415 (read after the env is patched)
+    from app.core.settings import get_settings  # noqa: PLC0415 (read after the env is patched)
+
+    original_structlog_config = structlog.get_config()
+    get_settings.cache_clear()
+    try:
+        logging.config.dictConfig(default_log_config(verbose=False))
+        assert logging.getLogger("arq").handlers, "arq's dictConfig should install a handler"
+
+        configure_logging(get_settings())
+        capsys.readouterr()
+        logging.getLogger("arq.worker").info(ARQ_PROBE_MESSAGE)
+        captured_output = capsys.readouterr()
+    finally:
+        get_settings.cache_clear()
+        structlog.configure(**original_structlog_config)
+
+    arq_logger = logging.getLogger("arq")
+    arq_worker_logger = logging.getLogger("arq.worker")
+    assert arq_logger.handlers == [], "the arq logger keeps a handler of its own"
+    assert arq_logger.propagate is True
+    assert arq_worker_logger.handlers == []
+    assert arq_worker_logger.propagate is True
+    probe_lines = [
+        line_object
+        for line_object in parse_json_lines(captured_output.out)
+        if ARQ_PROBE_MESSAGE in (line_object.get("event"), line_object.get("message"))
+    ]
+    assert len(probe_lines) == 1, (
+        f"expected one JSON line on stdout; stdout={captured_output.out!r} "
+        f"stderr={captured_output.err!r}"
+    )
+    assert captured_output.out.count(ARQ_PROBE_MESSAGE) == 1, "the arq record is rendered twice"
+    assert ARQ_PROBE_MESSAGE not in captured_output.err, "arq's plain-text handler still writes"
+    assert str(probe_lines[0].get("level", "")).lower() == "info"
