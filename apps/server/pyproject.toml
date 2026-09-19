@@ -50,6 +50,7 @@ target-version = ["py313"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
