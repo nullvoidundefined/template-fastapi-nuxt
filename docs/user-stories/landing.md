@@ -8,8 +8,8 @@
 
 **Acceptance criteria:**
 
-- [ ] The landing page renders one `<h1>` naming the product (spec B-49).
-- [ ] It links to `/login` and `/register` by accessible name, and each link navigates to its route (spec B-49).
+- [x] The landing page renders one `<h1>` naming the product (spec B-49).
+- [x] It links to `/login` and `/register` by accessible name, and each link navigates to its route (spec B-49).
 
 **E2E test:** `e2e/landing.spec.ts`
 **Ticket:** IAN-125
