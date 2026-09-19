@@ -1,0 +1,35 @@
+# Composite action shared by the CI jobs: installs uv with the locked server environment and
+# pnpm with the locked workspace, each only when the job asks for it.
+name: setup-toolchain
+description: Install uv and the server dependencies, and pnpm and the workspace dependencies
+inputs:
+  python:
+    description: Install uv and sync apps/server
+    default: 'true'
+  node:
+    description: Install pnpm, Node, and the workspace
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - if: inputs.python == 'true'
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        cache-dependency-glob: apps/server/uv.lock
+    - if: inputs.python == 'true'
+      name: Sync the server environment
+      shell: bash
+      working-directory: apps/server
+      run: uv sync --frozen
+    - if: inputs.node == 'true'
+      uses: pnpm/action-setup@v4
+    - if: inputs.node == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: pnpm
+    - if: inputs.node == 'true'
+      name: Install the workspace
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -1,7 +1,7 @@
-# ci.yml: lint and test on every pull request and on pushes to the protected
-# branches. The job is named "ci" because the protect-merge ruleset requires
-# a status check with exactly that context. Written by the repo-setup skill;
-# edit freely once it exists, the skill never overwrites.
+# ci.yml: the full pipeline for every pull request and every push to the protected branches
+# (spec: CI). Seven jobs run in parallel, and the final `ci` job, the one status check the
+# protect-merge ruleset requires, fails unless every one of them succeeded. A job that was skipped
+# or cancelled therefore fails `ci` instead of passing it.
 name: ci
 
 on:
@@ -18,20 +18,18 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: ci
+  lint:
+    name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # R-607 product-docs check: a pull request that adds a user-facing route
-      # must also change the features list, a user story, and an e2e spec.
-      # It needs the full history to diff against the base commit, and a base
-      # that does not resolve fails the step, because the script itself exits
-      # 0 on an unresolved base and the check would silently no-op. A library
-      # or tooling repository opted out with productDocs false in .enforce.json
-      # has no script and skips; a missing script without that opt-out fails.
+      # R-607 product-docs check: a pull request that adds a user-facing route must also change
+      # the features list, a user story, and an e2e spec. It needs the full history to diff
+      # against the base commit, and a base that does not resolve fails the step, because the
+      # script itself exits 0 on an unresolved base and the check would silently no-op.
       - name: R-607 feature checklist
         if: github.event_name == 'pull_request'
         env:
@@ -48,21 +46,157 @@ jobs:
             echo "scripts/require-feature-checklist.sh is missing: restore it with the repo-setup skill, or set productDocs to false in .enforce.json." >&2
             exit 1
           fi
-      # Scaffold gate: the repository holds no Python project until the spec's
-      # first slice lands, so the Python steps run only once pyproject.toml
-      # exists. Slice 01 replaces this workflow with the full backend and
-      # frontend pipeline and drops these conditions.
-      - uses: astral-sh/setup-uv@v5
-        if: hashFiles('pyproject.toml') != ''
-      - uses: actions/setup-python@v5
-        if: hashFiles('pyproject.toml') != ''
+      - uses: ./.github/actions/setup-toolchain
+      - name: Python lint and format
+        working-directory: apps/server
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: ESLint
+        run: pnpm lint
+      - name: Prettier
+        run: pnpm format:check
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      - name: mypy (strict)
+        working-directory: apps/server
+        run: uv run mypy app
+      - name: vue-tsc and tsc
+        run: pnpm typecheck
+
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      # The server floor (80 percent) is fail_under in apps/server/pyproject.toml.
+      - name: pytest (unit, with coverage)
+        working-directory: apps/server
+        run: uv run pytest tests/unit --cov=app --cov-report=term-missing
+      # The web floor (60 percent of apps/client/web/app) is in apps/client/web/vitest.config.ts.
+      - name: Vitest (with coverage)
+        run: pnpm exec vitest run --coverage
+      - name: Drift script test
+        run: bash scripts/tests/check-contract-drift.test.sh
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_DB: app
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
         with:
-          python-version-file: pyproject.toml
-      - run: uv sync --frozen
-        if: hashFiles('pyproject.toml') != ''
-      - run: uv run ruff check .
-        if: hashFiles('pyproject.toml') != ''
-      - run: uv run ruff format --check .
-        if: hashFiles('pyproject.toml') != ''
-      - run: uv run pytest
-        if: hashFiles('pyproject.toml') != ''
+          node: 'false'
+      # The env vars point every integration test at a real service, and -rs prints the reason
+      # for any skip, so a missing service is visible in the log rather than silently skipped.
+      - name: pytest (integration against Postgres 17 and Redis 7)
+        working-directory: apps/server
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://app@localhost:5432/app
+          TEST_REDIS_URL: redis://localhost:6379/0
+        run: uv run pytest tests/integration -rs
+
+  openapi-drift:
+    name: openapi-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      - name: Contract drift check (B-4)
+        run: scripts/check-contract-drift.sh
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # B-3: build all three images, start compose, and fail unless every container's
+      # HEALTHCHECK reports healthy within the timeout.
+      - name: Build and start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: Show container state and logs on failure
+        if: failure()
+        run: |
+          docker compose ps --all
+          docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          python: 'false'
+      - name: Build and start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright
+        env:
+          CI: 'true'
+        run: pnpm exec playwright test
+      - name: Upload the Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  ci:
+    name: ci
+    if: always()
+    needs: [lint, typecheck, unit, integration, openapi-drift, docker-build, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # needs.<job>.result is success, failure, cancelled, or skipped; anything but success fails.
+      - name: Require every job to succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed_jobs=$(echo "$NEEDS_JSON" | jq -r 'to_entries[] | select(.value.result != "success") | .key')
+          if [ -n "$failed_jobs" ]; then
+            echo "These jobs did not succeed: $failed_jobs" >&2
+            exit 1
+          fi

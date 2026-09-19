@@ -1,0 +1,21 @@
+# Worker image (R-351): the API image's dependencies and code, running the arq worker, whose
+# health probes answer on WORKER_PORT (default 3002). Build context: apps/server.
+FROM python:3.13-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY app/ app/
+RUN uv sync --frozen --no-dev
+
+FROM python:3.13-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" WORKER_PORT=3002
+RUN useradd --create-home --uid 10001 app
+COPY --from=builder --chown=app:app /app /app
+USER app
+EXPOSE 3002
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"WORKER_PORT\"]}/health/ready', timeout=2)" || exit 1
+CMD ["arq", "app.workers.settings.WorkerSettings"]

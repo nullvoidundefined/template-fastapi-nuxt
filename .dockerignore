@@ -1,0 +1,13 @@
+# Build context for the web image (repository root): only the workspace the Nuxt app needs.
+.git
+**/node_modules
+**/.nuxt
+**/.output
+**/dist
+**/coverage
+.env*
+apps/server
+e2e
+docs
+test-results
+playwright-report

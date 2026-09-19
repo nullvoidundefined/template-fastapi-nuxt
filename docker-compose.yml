@@ -1,0 +1,84 @@
+# Runs the API, the worker, and the web server with Postgres 17 and Redis 7 (spec B-3, R-351).
+# `docker compose up --build --wait` returns once every container's HEALTHCHECK passes. This file
+# is for local development and CI only: Postgres accepts passwordless connections on the compose
+# network, so no credential appears here or in any env file (R-103, R-108). Deployed environments
+# set DATABASE_URL and REDIS_URL from the platform's secrets. Postgres and Redis publish on host
+# ports 5433 and 6380 by default, so a locally installed Postgres or Redis on the standard ports
+# does not shadow them; override with POSTGRES_HOST_PORT and REDIS_HOST_PORT. The app services
+# restart on exit, as the platform restarts them: arq exits when it loses Redis and comes back
+# healthy once Redis does.
+name: template-fastapi-nuxt
+
+x-server-environment: &server-environment
+  ENVIRONMENT: development
+  DATABASE_URL: postgresql+asyncpg://app@postgres:5432/app
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_DB: app
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '${POSTGRES_HOST_PORT:-5433}:5432'
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'app', '-d', 'app']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - '${REDIS_HOST_PORT:-6380}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    restart: unless-stopped
+    build:
+      context: apps/server
+      dockerfile: Dockerfile
+    environment:
+      <<: *server-environment
+      PORT: '3001'
+      FORWARDED_ALLOW_IPS: 172.16.0.0/12
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    restart: unless-stopped
+    build:
+      context: apps/server
+      dockerfile: Dockerfile.worker
+    environment:
+      <<: *server-environment
+      WORKER_PORT: '3002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/client/web/Dockerfile
+    environment:
+      NUXT_API_BASE_URL: http://api:3001
+    ports:
+      - '3000:3000'
+    depends_on:
+      api:
+        condition: service_healthy
