@@ -106,3 +106,5 @@ Replace the baseline CI workflow with the spec's jobs: `lint`, `typecheck`, `uni
 ## Later list
 
 - **Slice 03, Nitro request ID:** Nitro middleware that mints an `X-Request-Id` when the page request has none and echoes it on the page response, so every server-side API call is correlated with its page (R-341). Until then, `useApiClient()` forwards the page request's ID only when one arrived, and FastAPI mints its own otherwise. Raised by the PR 3 pre-merge review.
+- **Slice 02, lint coverage:** a root ESLint config and `lint` scripts so `e2e/`, `packages/tokens`, and the root config files are linted in CI and at commit; today only the web package runs ESLint. Raised by the PR 4 pre-merge review.
+- **Slice 02, CI build cache:** the `docker-build` and `e2e` jobs each build all three images without a cache; add `docker/setup-buildx-action` with the GitHub Actions cache, or let `e2e` alone prove B-3. Raised by the PR 4 pre-merge review.
