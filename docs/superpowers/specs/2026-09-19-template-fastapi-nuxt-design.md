@@ -154,15 +154,25 @@ Slice 07, observability and integrations:
 - B-23: Every outbound provider call logs the provider, the operation, the duration, and the outcome, carries the request ID, and has an explicit timeout.
 - B-24: The six auth events reach PostHog from the server, and the browser's pageview events reach it through `/ingest`.
 - B-25: After five failures inside 60 seconds, the circuit breaker fails calls to that provider fast for 30 seconds.
-- B-29: An R2 upload URL is presigned for a server-generated key of the form `{user_id}/{uuid}.{extension}`, with an extension from the upload purpose's allowlist and a 15-minute expiry; a client-supplied key or a disallowed extension is rejected before any R2 call.
-- B-30: Sentry initializes only when `SENTRY_DSN` is set, an unhandled error's event carries the request ID tag and the user's ID (never the email), and cookies and the `Authorization` header are scrubbed from the event.
 
 Slice 08, cleanup and closing:
 - B-26: Expired sessions and idempotency keys older than 24 hours are deleted hourly, by pg_cron where it exists and by the arq job where it does not.
 - B-27: Lighthouse accessibility scores 100 on the landing, log-in, and dashboard pages.
 - B-28: The smoke suite passes against the deployed Railway URLs.
 
-B-29 and B-30 were added after review and belong to slice 07; the numbering keeps earlier criteria stable.
+Criteria added after review keep the earlier numbers stable, so they are listed here with the slice each belongs to:
+
+- B-29 (slice 07): An R2 upload URL is presigned for a server-generated key of the form `{user_id}/{uuid}.{extension}`, with an extension from the upload purpose's allowlist and a 15-minute expiry; a client-supplied key or a disallowed extension is rejected before any R2 call.
+- B-30 (slice 07): Sentry initializes only when `SENTRY_DSN` is set, an unhandled error's event carries the request ID tag and the user's ID (never the email), and cookies and the `Authorization` header are scrubbed from the event.
+- B-31 (slice 03): `POST /auth/logout` answers 204 whether or not a session exists, deletes the session row, and clears the cookie, so the same cookie then fails `GET /auth/me` with 401.
+- B-32 (slice 03): `GET /auth/me` answers `{ data: user }` with the user's ID, email, and role and never the password hash, and answers 401 `AUTH_REQUIRED` without a session.
+- B-33 (slice 06): `POST /billing/checkout` answers the Stripe Checkout URL for the signed-in user, and the same request repeated with the same `Idempotency-Key` returns the same URL without creating a second Checkout session.
+- B-34 (slice 06): A verified webhook for an event type outside the allowlist answers 200 and changes no row.
+- B-35 (slice 02): Every response carries the security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy`, and `Strict-Transport-Security` in production), and a preflight from an origin other than `CORS_ORIGIN` receives no `Access-Control-Allow-Origin` header.
+- B-36 (slice 04): `/login?reset=true` shows the reset-success banner, `/forgot-password` shows its submitted state after a request, and `/reset-password` refuses to submit when the two passwords differ.
+- B-37 (slice 07): A chosen theme survives a reload, and the server-rendered page carries the stored `data-theme` before first paint, so the page never flashes the other theme.
+- B-38 (slice 03): Registering with an invalid email shows the field-level error from `INPUT_VALIDATION_ERROR` beside the email input.
+- B-39 (slice 03): Every `components/ui/` component has a Storybook story, and the `visual-regression` project fails when a story's rendering changes without an updated snapshot.
 
 ## Invariants
 
