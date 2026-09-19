@@ -54,7 +54,7 @@ jobs:
       # frontend pipeline and drops these conditions.
       - uses: astral-sh/setup-uv@v5
         if: hashFiles('pyproject.toml') != ''
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: hashFiles('pyproject.toml') != ''
         with:
           python-version-file: pyproject.toml
