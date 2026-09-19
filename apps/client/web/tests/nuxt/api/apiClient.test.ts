@@ -40,6 +40,29 @@ afterEach(() => {
 });
 
 describe('createApiClient', () => {
+    it('B-6: sends X-Requested-With without caller headers', async () => {
+        const sentRequests = stubFetchResponding({ status: 'ok' }, 200);
+        const apiClient = createApiClient({ baseUrl: apiBaseUrl });
+
+        await apiClient.GET('/health');
+
+        expect(sentRequests[0]?.headers.get('X-Requested-With')).toBe('XMLHttpRequest');
+    });
+
+    it('B-6: merges X-Requested-With with caller headers', async () => {
+        const sentRequests = stubFetchResponding({ status: 'ok' }, 200);
+        const apiClient = createApiClient({
+            baseUrl: apiBaseUrl,
+            headers: { cookie: 'session=abc', 'X-Request-Id': 'req-apiclient-002' },
+        });
+
+        await apiClient.GET('/health');
+
+        expect(sentRequests[0]?.headers.get('cookie')).toBe('session=abc');
+        expect(sentRequests[0]?.headers.get('X-Request-Id')).toBe('req-apiclient-002');
+        expect(sentRequests[0]?.headers.get('X-Requested-With')).toBe('XMLHttpRequest');
+    });
+
     it('B-4: GET /health requests `${baseUrl}/health` with GET and resolves data', async () => {
         const sentRequests = stubFetchResponding({ status: 'ok' }, 200);
         const apiClient = createApiClient({ baseUrl: apiBaseUrl });
