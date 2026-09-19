@@ -1,10 +1,11 @@
 /**
  * Unit test for the Nitro route GET /api/health (story US-INFRA-003).
- * The web container's health check must answer 200 { status: 'ok' } from the Nuxt server alone,
- * so the real handler is invoked with a minimal H3-shaped event while every outbound fetch throws.
+ * The web container's health check must answer { status: 'ok' } from the Nuxt server alone, so
+ * the real handler is invoked with a minimal H3-shaped event while every outbound fetch throws.
  * The route is imported directly because the Vitest config runs the nuxt client environment,
- * which @nuxt/test-utils does not support for setup({ server: true }); e2e/landing.spec.ts covers
- * the same route over HTTP.
+ * which @nuxt/test-utils does not support for setup({ server: true }). The status code is not
+ * asserted here, because a fresh ServerResponse already defaults to 200 and that check could not
+ * fail; e2e/landing.spec.ts asserts the status and the body over HTTP.
  */
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
@@ -36,7 +37,7 @@ beforeAll(async () => {
     vi.stubGlobal('defineEventHandler', (handler: HealthHandler) => handler);
     vi.stubGlobal('fetch', throwOutboundRequest);
     vi.stubGlobal('$fetch', throwOutboundRequest);
-    const healthRouteModule = await import('../../../server/api/health.get');
+    const healthRouteModule = await import('../../../../server/api/health.get');
     healthHandler = healthRouteModule.default as HealthHandler;
 });
 
@@ -45,12 +46,11 @@ afterAll(() => {
 });
 
 describe('GET /api/health', () => {
-    it('US-INFRA-003: answers 200 with { status: "ok" } without contacting the backend', async () => {
+    it('US-INFRA-003: answers { status: "ok" } without contacting the backend', async () => {
         const healthEvent = createHealthEvent();
 
         const responseBody = await healthHandler(healthEvent);
 
-        expect(healthEvent.node.res.statusCode).toBe(200);
         expect(responseBody).toEqual({ status: 'ok' });
     });
 });
