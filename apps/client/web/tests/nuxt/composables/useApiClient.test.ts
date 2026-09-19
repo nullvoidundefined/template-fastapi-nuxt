@@ -2,6 +2,8 @@
  * Nuxt runtime tests for the browser client (spec: Architecture, "Request path").
  * Calls run in the Nuxt app context, as they do during component setup. Fetch is stubbed
  * before client creation so the real typed client exposes its URL and outgoing headers.
+ * runWithContext is typed to return the callback's value or a promise of it, so each call is
+ * awaited; awaiting a non-promise yields the same object, which keeps the identity check exact.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { useNuxtApp } from '#app';
@@ -21,7 +23,7 @@ describe('useApiClient', () => {
             });
         });
         const { useApiClient } = await import('~/composables/useApiClient');
-        const apiClient = useNuxtApp().runWithContext(() => useApiClient());
+        const apiClient = await useNuxtApp().runWithContext(() => useApiClient());
 
         await apiClient.GET('/health');
 
@@ -35,8 +37,8 @@ describe('useApiClient', () => {
         const { useApiClient } = await import('~/composables/useApiClient');
         const nuxtApp = useNuxtApp();
 
-        const firstClient = nuxtApp.runWithContext(() => useApiClient());
-        const secondClient = nuxtApp.runWithContext(() => useApiClient());
+        const firstClient = await nuxtApp.runWithContext(() => useApiClient());
+        const secondClient = await nuxtApp.runWithContext(() => useApiClient());
 
         expect(firstClient).toBeDefined();
         expect(secondClient).toBe(firstClient);
