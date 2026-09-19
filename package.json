@@ -1,0 +1,25 @@
+{
+    "name": "template-fastapi-nuxt",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@10.10.0",
+    "engines": {
+        "node": ">=22.0.0"
+    },
+    "scripts": {
+        "dev": "pnpm run --parallel \"/^dev:(api|web)$/\"",
+        "dev:api": "cd apps/server && uv run uvicorn app.main:create_app --factory --reload --port 3001",
+        "dev:web": "pnpm --filter @repo/web dev",
+        "build": "pnpm -r run build",
+        "lint": "pnpm -r run lint",
+        "typecheck": "pnpm -r run typecheck",
+        "test": "pnpm -r run test",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "devDependencies": {
+        "prettier": "3.9.8",
+        "vitest": "5.0.1"
+    }
+}

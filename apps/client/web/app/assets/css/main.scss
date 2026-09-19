@@ -1,0 +1,50 @@
+// Global styles: the design tokens as CSS custom properties, then the base element rules.
+@use '@repo/tokens/scss';
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    overflow-x: hidden;
+}
+
+body {
+    margin: 0;
+    font-family:
+        system-ui,
+        -apple-system,
+        'Segoe UI',
+        sans-serif;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    background: var(--background);
+    color: var(--foreground);
+}
+
+h1,
+p {
+    margin: 0;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
