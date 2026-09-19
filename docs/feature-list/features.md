@@ -23,15 +23,15 @@ the date and what changed. Section shape:
 
 ## Infrastructure
 
-| Feature | Status | Notes |
-| ------- | ------ | ----- |
-| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`) | **Partial** | US-INFRA-001; spec B-1; shipped in PR #6, e2e runs once PR 4 adds Playwright |
-| Request IDs on every response and log line | **Partial** | US-INFRA-002; spec B-2; shipped in PR #6, e2e runs once PR 4 adds Playwright |
-| Web server health check (`GET /api/health` on the Nuxt server) | **Partial** | US-INFRA-003; shipped in PR #7, e2e runs once PR 4 adds Playwright |
+| Feature                                                                                   | Status      | Notes                                                                                  |
+| ----------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`)                     | **Partial** | US-INFRA-001; spec B-1; shipped in PR #6, e2e runs once PR 4 adds Playwright           |
+| Request IDs on every response and log line                                                | **Partial** | US-INFRA-002; spec B-2; shipped in PR #6, e2e runs once PR 4 adds Playwright           |
+| Web server health check (`GET /api/health` on the Nuxt server)                            | **Partial** | US-INFRA-003; shipped in PR #7, e2e runs once PR 4 adds Playwright                     |
 | API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check | **Partial** | spec B-4; `pnpm check:contract` runs locally, CI's `openapi-drift` job arrives in PR 4 |
 
 ## Landing
 
-| Feature | Status | Notes |
-| ------- | ------ | ----- |
+| Feature                                        | Status      | Notes                     |
+| ---------------------------------------------- | ----------- | ------------------------- |
 | Landing page with links to log in and register | **Planned** | US-LANDING-001; spec B-49 |
