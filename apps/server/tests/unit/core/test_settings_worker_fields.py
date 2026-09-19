@@ -7,12 +7,14 @@ to 3002, the port the workspace reserves for worker health.
 from collections.abc import Iterator
 
 import pytest
+from pydantic import SecretStr
 
 from tests.conftest import UNREACHABLE_DATABASE_URL, clear_settings_cache
 
 WORKER_REDIS_URL = "redis://127.0.0.1:6390/2"
 DEFAULT_WORKER_PORT = 3002
 CONFIGURED_WORKER_PORT = 4102
+MISSING_FIELD = object()
 
 
 @pytest.fixture
@@ -32,9 +34,12 @@ def test_b3_settings_default_to_no_redis_url_and_worker_port_3002() -> None:
     from app.core.settings import get_settings  # noqa: PLC0415
 
     settings = get_settings()
+    redis_url = getattr(settings, "redis_url", MISSING_FIELD)
+    worker_port = getattr(settings, "worker_port", MISSING_FIELD)
 
-    assert settings.redis_url is None
-    assert settings.worker_port == DEFAULT_WORKER_PORT
+    assert redis_url is not MISSING_FIELD, "Settings must declare redis_url"
+    assert redis_url is None
+    assert worker_port == DEFAULT_WORKER_PORT
 
 
 @pytest.mark.usefixtures("settings_environment")
@@ -47,8 +52,11 @@ def test_b3_settings_read_redis_url_as_a_secret_and_worker_port_from_the_environ
     from app.core.settings import get_settings  # noqa: PLC0415
 
     settings = get_settings()
+    redis_url = getattr(settings, "redis_url", MISSING_FIELD)
+    worker_port = getattr(settings, "worker_port", MISSING_FIELD)
 
-    assert settings.redis_url is not None
-    assert settings.redis_url.get_secret_value() == WORKER_REDIS_URL
+    assert redis_url is not MISSING_FIELD, "Settings must declare redis_url"
+    assert isinstance(redis_url, SecretStr)
+    assert redis_url.get_secret_value() == WORKER_REDIS_URL
     assert WORKER_REDIS_URL not in repr(settings)
-    assert settings.worker_port == CONFIGURED_WORKER_PORT
+    assert worker_port == CONFIGURED_WORKER_PORT
