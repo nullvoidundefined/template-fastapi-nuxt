@@ -1,0 +1,10 @@
+# Keeps the API and worker build context to the code and the lockfile (R-102: no env files).
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.env*
+tests/
+docs/

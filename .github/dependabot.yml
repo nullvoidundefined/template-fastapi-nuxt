@@ -1,16 +1,27 @@
-# dependabot.yml: weekly update PRs for the workflow actions and the package
-# ecosystem, grouped so one PR carries the week's minor and patch bumps.
-# Written by the repo-setup skill; edit freely once it exists.
+# dependabot.yml: weekly update PRs for the workflow actions, the server's uv lockfile, the pnpm
+# workspace, and the Docker base images, grouped so one PR per ecosystem carries the week's minor
+# and patch bumps.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: pip
+  - package-ecosystem: uv
+    directory: /apps/server
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+  - package-ecosystem: docker
+    directories: [/apps/server, /apps/client/web]
+    schedule:
+      interval: weekly

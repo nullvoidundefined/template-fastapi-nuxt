@@ -1,6 +1,6 @@
 """Configures structlog once per process: JSON in deployed environments, console locally.
 
-Records from the standard library (uvicorn, asgi-correlation-id, SQLAlchemy) are routed
+Records from the standard library (uvicorn, asgi-correlation-id, arq, SQLAlchemy) are routed
 through the same processors, so every line in production is one JSON object. Tracebacks are
 rendered without frame locals, because a frame's locals can hold secrets such as the database
 password inside asyncpg's connect call (R-104).
@@ -19,6 +19,7 @@ STDLIB_LOGGERS_ROUTED_TO_ROOT = (
     "uvicorn.access",
     "uvicorn.error",
     "asgi_correlation_id",
+    "arq",
 )
 
 

@@ -41,3 +41,19 @@
 
 **E2E test:** `e2e/landing.spec.ts`
 **Ticket:** IAN-125
+
+## US-INFRA-004: Worker health probes
+
+**As** an operator running the background worker on Railway
+**I want to** probe whether the worker process is alive, and separately whether it can reach Postgres and Redis
+**So that** a stuck worker is restarted, while a dependency outage shows as not ready without restarting a working process
+
+**Acceptance criteria:**
+
+- [x] `GET /health` on `WORKER_PORT` (default 3002) answers 200 `{"status": "ok"}` without touching Postgres or Redis, and the worker image's `HEALTHCHECK` calls it.
+- [x] `GET /health/ready` answers 200 with `db` and `redis` both `connected` when both answer within 2 seconds, and 503 `degraded` naming each unreachable dependency otherwise.
+- [x] The worker starts under arq with a five-minute `worker_heartbeat` log line as its only job until slice 04.
+- [x] After losing Redis the worker exits, and the platform (or compose's restart policy) brings it back healthy once Redis returns.
+
+**E2E test:** the `docker-build` CI job (`docker compose up --wait`, which waits on the worker's readiness), plus `apps/server/tests/integration/workers/test_health_redis.py` against a real Redis
+**Ticket:** IAN-127

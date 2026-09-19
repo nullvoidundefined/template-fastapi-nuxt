@@ -7,5 +7,13 @@
     "printWidth": 100,
     "arrowParens": "always",
     "bracketSpacing": true,
-    "vueIndentScriptAndStyle": false
+    "vueIndentScriptAndStyle": false,
+    "overrides": [
+        {
+            "files": ["*.yml", "*.yaml"],
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
 }

@@ -28,16 +28,16 @@ A documentation-only change with no code to run. B-52 and B-53 name the tests th
 
 **Reviewer:** Claude subagent (fable). Fallback reason: Codex usage limit reached until 18:00. It used the `codex-pr-review-prompt.md` prompt and verified the library claims against the installed openapi-fetch, nuxt 4.5.2, and FastAPI sources and the PostgreSQL concurrency documentation. It reported eight findings, and all eight are fixed in this PR.
 
-| # | Severity | Finding | Disposition |
-|---|---|---|---|
-| 1 | MEDIUM | Both base URLs added `/v1`, which the generated paths already carry, giving `/v1/v1/...` | Fixed: the browser base is `/api`, the server base is `apiBaseUrl`, and the proxy maps `/api/<rest>` to `/<rest>` |
-| 2 | LOW | Server-side calls dropped `X-Request-Id` (R-341) | Fixed: the request ID is in the server-side headers |
-| 3 | LOW | Nothing set `X-Requested-With`, so every browser `POST` would answer 403 (B-6) | Fixed: a base header in both environments |
-| 4 | LOW | `api/` functions calling `useApiClient()` throw after an `await` drops the Nuxt context | Fixed: `useApiClient()` runs in setup, and `api/` functions take the client as a parameter |
-| 5 | LOW | A claim inside the request transaction is invisible to other requests until commit | Fixed: claim, takeover, completion, and release each run in their own short transaction |
-| 6 | LOW | The response to a takeover that returns no row was unstated | Fixed: re-read, then 422, 409, or replay |
-| 7 | LOW | The takeover could let a request with a different body take over an expired claim (B-40) | Fixed: the takeover `WHERE` matches method, path, and body hash |
-| 8 | LOW | The shared `X-Forwarded-For` function had no module, the proxy had no slice, and PR 3's Contents omitted `useApiClient.ts` | Fixed: `shared/services/resolveClientAddress.ts`, slice 03 ships the proxy, and PR 3's Contents is updated |
+| #   | Severity | Finding                                                                                                                    | Disposition                                                                                                       |
+| --- | -------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | MEDIUM   | Both base URLs added `/v1`, which the generated paths already carry, giving `/v1/v1/...`                                   | Fixed: the browser base is `/api`, the server base is `apiBaseUrl`, and the proxy maps `/api/<rest>` to `/<rest>` |
+| 2   | LOW      | Server-side calls dropped `X-Request-Id` (R-341)                                                                           | Fixed: the request ID is in the server-side headers                                                               |
+| 3   | LOW      | Nothing set `X-Requested-With`, so every browser `POST` would answer 403 (B-6)                                             | Fixed: a base header in both environments                                                                         |
+| 4   | LOW      | `api/` functions calling `useApiClient()` throw after an `await` drops the Nuxt context                                    | Fixed: `useApiClient()` runs in setup, and `api/` functions take the client as a parameter                        |
+| 5   | LOW      | A claim inside the request transaction is invisible to other requests until commit                                         | Fixed: claim, takeover, completion, and release each run in their own short transaction                           |
+| 6   | LOW      | The response to a takeover that returns no row was unstated                                                                | Fixed: re-read, then 422, 409, or replay                                                                          |
+| 7   | LOW      | The takeover could let a request with a different body take over an expired claim (B-40)                                   | Fixed: the takeover `WHERE` matches method, path, and body hash                                                   |
+| 8   | LOW      | The shared `X-Forwarded-For` function had no module, the proxy had no slice, and PR 3's Contents omitted `useApiClient.ts` | Fixed: `shared/services/resolveClientAddress.ts`, slice 03 ships the proxy, and PR 3's Contents is updated        |
 
 **Copilot's review** raised one point: the takeover's re-read can find no row when the holder releases its claim just before the takeover, and the spec gave no answer for that case. Fixed: the request retries the initial claim insert once, and B-53 covers the race.
 

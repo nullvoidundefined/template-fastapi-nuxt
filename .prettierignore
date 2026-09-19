@@ -7,3 +7,8 @@ pnpm-lock.yaml
 
 # Generated API types: byte-compared by scripts/check-contract-drift.sh, never reformatted
 packages/api-types/src/schema.ts
+
+# Tool state and test output
+.claude/
+test-results/
+playwright-report/

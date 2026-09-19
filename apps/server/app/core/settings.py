@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "staging", "production"] = "development"
     database_url: SecretStr
     database_ca_cert: str | None = None
+    redis_url: SecretStr | None = None
+    worker_port: int = 3002
 
 
 @lru_cache
