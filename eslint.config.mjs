@@ -16,9 +16,15 @@ export default typescriptEslint.config(
             '**/dist/',
             '**/.nuxt/',
             '**/.output/',
+            // Parallel-session worktrees live here, each a full second copy of the tree (R-501).
+            // Flat config does not skip dot-directories, and the patterns below are anchored at
+            // the repository root, so without this line a checkout that holds a worktree would
+            // lint that worktree's web sources under these rules and its generated schema too.
+            // `.prettierignore` excludes the same directory for the same reason.
+            '.claude/',
             'apps/',
-            'playwright-report/',
-            'test-results/',
+            '**/playwright-report/',
+            '**/test-results/',
             // Generated from apps/server/docs/openapi.yaml by openapi-typescript (spec B-4).
             'packages/api-types/src/schema.ts',
         ],
