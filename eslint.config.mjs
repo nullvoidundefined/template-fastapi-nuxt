@@ -26,7 +26,7 @@ export default typescriptEslint.config(
             '**/playwright-report/',
             '**/test-results/',
             // Generated from apps/server/docs/openapi.yaml by openapi-typescript (spec B-4).
-            'packages/api-types/src/schema.ts',
+            'packages/api-types/src/schemas.ts',
         ],
     },
     js.configs.recommended,

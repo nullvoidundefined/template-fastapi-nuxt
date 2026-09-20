@@ -57,3 +57,22 @@
 
 **E2E test:** the `docker-build` CI job (`docker compose up --wait`, which waits on the worker's readiness), plus `apps/server/tests/integration/workers/test_health_redis.py` against a real Redis
 **Ticket:** IAN-127
+
+## US-INFRA-005: One error shape for every failure
+
+**As** a developer writing a client against this API
+**I want to** handle every failure by switching on one machine-readable code in one body shape
+**So that** I never parse a message, and a new endpoint's errors need no new client code
+
+**Acceptance criteria:**
+
+- [x] An unknown path answers 404 `ROUTING_NOT_FOUND` and the body never repeats the requested path (spec B-5).
+- [x] A wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and no error response carries FastAPI's default `detail` body (spec B-5).
+- [x] A database failure during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, whether it arrives as SQLAlchemy's `OperationalError`, as the `DBAPIError` a connection lost mid-request is wrapped in, or as the `ConnectionRefusedError` a refused connect raises before SQLAlchemy sees it (spec B-9).
+- [x] An unexpected error answers 500 with no traceback, and the exception's own message only outside production (spec B-9).
+- [x] An invalid body answers 400 `INPUT_VALIDATION_ERROR` naming the offending field (R-406).
+- [x] The 413 for an oversized body carries the same registry code rather than a local literal (spec B-43).
+- [x] The envelope is declared in `openapi.yaml`, so `@repo/api-types` types it for the frontend.
+
+**E2E test:** covered by unit tests in `apps/server/tests/unit/test_main_exception_handlers.py`; no new route ships in this PR, so no new e2e spec.
+**Ticket:** IAN-168

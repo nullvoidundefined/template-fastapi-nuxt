@@ -1,1 +1,1 @@
-export type { components, paths } from './schema.js';
+export type { components, paths } from './schemas.js';

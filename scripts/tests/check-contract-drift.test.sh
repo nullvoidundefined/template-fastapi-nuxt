@@ -21,7 +21,7 @@ TEST_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_ROOT="$(cd "$TEST_DIRECTORY/../.." && pwd)"
 DRIFT_SCRIPT_RELATIVE="scripts/check-contract-drift.sh"
 OPENAPI_RELATIVE="apps/server/docs/openapi.yaml"
-SCHEMA_TS_RELATIVE="packages/api-types/src/schema.ts"
+SCHEMA_TS_RELATIVE="packages/api-types/src/schemas.ts"
 HEALTH_SCHEMA_RELATIVE="apps/server/app/schemas/health.py"
 
 # Pick the SHA-256 tool the runner has: GNU coreutils ships sha256sum, macOS ships shasum. Both
@@ -279,7 +279,7 @@ regenerate_committed_contract() {
     (
         cd "$copy_root/packages/api-types" || exit 1
         ./node_modules/.bin/openapi-typescript ../../apps/server/docs/openapi.yaml \
-            --output src/schema.ts >/dev/null
+            --output src/schemas.ts >/dev/null
     )
 }
 
@@ -299,7 +299,7 @@ report_names_only() {
         "output: $(cat "$output_file")"
 }
 
-# A hand edit to only the committed TypeScript types fails and names schema.ts alone.
+# A hand edit to only the committed TypeScript types fails and names schemas.ts alone.
 # Arguments: none.
 test_types_only_edit_names_types_alone() {
     local copy_root="$WORK_DIRECTORY/types-edited"
@@ -320,7 +320,7 @@ test_types_only_edit_names_types_alone() {
 }
 
 # A hand edit to only the committed OpenAPI document fails and names openapi.yaml alone: the
-# script generates the types from a fresh export, so the committed schema.ts still matches.
+# script generates the types from a fresh export, so the committed schemas.ts still matches.
 # Arguments: none.
 test_document_only_edit_names_document_alone() {
     local copy_root="$WORK_DIRECTORY/document-edited"

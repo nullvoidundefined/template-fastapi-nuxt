@@ -56,6 +56,12 @@ strict = true
 python_version = "3.13"
 plugins = ["pydantic.mypy"]
 
+# asyncpg ships no py.typed marker and has no stub package. The exception classes are imported
+# only to recognize a lost connection, so the missing types cost nothing here.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

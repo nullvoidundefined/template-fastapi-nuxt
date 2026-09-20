@@ -3,7 +3,7 @@
 #
 # Exports a fresh OpenAPI document from the FastAPI app and regenerates the TypeScript types from
 # it, both into a temporary directory, then compares them with the committed
-# apps/server/docs/openapi.yaml and packages/api-types/src/schema.ts. Prints a unified diff that
+# apps/server/docs/openapi.yaml and packages/api-types/src/schemas.ts. Prints a unified diff that
 # names each differing committed file and exits 1 on any difference, 0 when both match, and 2 when
 # a required tool or a committed file is missing or unreadable, so a broken runner or checkout is
 # never mistaken for drift. It never writes into
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 readonly COMMITTED_DOCUMENT='apps/server/docs/openapi.yaml'
-readonly COMMITTED_TYPES='packages/api-types/src/schema.ts'
+readonly COMMITTED_TYPES='packages/api-types/src/schemas.ts'
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
@@ -58,7 +58,7 @@ export_fresh_document() {
 generate_fresh_types() {
     (cd "$repo_root/packages/api-types" &&
         "$OPENAPI_TYPESCRIPT" "$work_dir/openapi.yaml" \
-            --output "$work_dir/schema.ts" >/dev/null)
+            --output "$work_dir/schemas.ts" >/dev/null)
 }
 
 # Print a unified diff and return 1 when the committed file differs from its fresh copy; exit 2
@@ -86,7 +86,7 @@ main() {
     generate_fresh_types
     local drift_status=0
     compare_with_committed "$COMMITTED_DOCUMENT" "$work_dir/openapi.yaml" || drift_status=1
-    compare_with_committed "$COMMITTED_TYPES" "$work_dir/schema.ts" || drift_status=1
+    compare_with_committed "$COMMITTED_TYPES" "$work_dir/schemas.ts" || drift_status=1
     if [ "$drift_status" -eq 0 ]; then
         echo "contract in sync: $COMMITTED_DOCUMENT and $COMMITTED_TYPES match the code"
     fi

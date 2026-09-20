@@ -27,6 +27,9 @@ def create_database_engine(settings: Settings) -> AsyncEngine:
         pool_timeout=5,
         pool_recycle=1800,
         pool_pre_ping=True,
+        # A failed statement's exception text otherwise carries the bound parameters, which from
+        # slice 03 onward include email addresses and password hashes (R-104).
+        hide_parameters=True,
         connect_args=build_connect_args(settings),
     )
 

@@ -1,3 +1,3 @@
 # Generated contract files are byte-compared by scripts/check-contract-drift.sh, so keep LF everywhere.
 apps/server/docs/openapi.yaml text eol=lf
-packages/api-types/src/schema.ts text eol=lf
+packages/api-types/src/schemas.ts text eol=lf
