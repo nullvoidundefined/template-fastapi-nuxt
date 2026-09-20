@@ -16,11 +16,13 @@ the exception's own message reaches the body. Neither may carry a traceback.
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 
+import asyncpg
 import httpx
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.constants.error_codes import ErrorCode
 from app.errors import ConflictError, ForbiddenError, NotFoundError
@@ -66,7 +68,7 @@ def build_test_only_router() -> APIRouter:
 
     @router.get(OS_ERROR_PATH)
     async def raise_os_error() -> dict[str, str]:
-        raise OSError(DATABASE_FAILURE_MESSAGE)
+        raise ConnectionRefusedError(DATABASE_FAILURE_MESSAGE)
 
     @router.get(UNEXPECTED_ERROR_PATH)
     async def raise_unexpected_error() -> dict[str, str]:
@@ -143,13 +145,16 @@ async def test_b9_operational_error_answers_503_server_database_unavailable(
     assert_error_envelope(response, 503, ErrorCode.SERVER_DATABASE_UNAVAILABLE)
 
 
-async def test_b9_os_error_from_a_failed_connect_answers_503_server_database_unavailable(
+async def test_b9_refused_connect_answers_503_server_database_unavailable(
     build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
 ) -> None:
-    """B-9: a bare OSError, the shape a failed asyncpg connect takes, answers 503 and not 500.
+    """B-9: a refused connect answers 503 and not 500, although SQLAlchemy never wraps it.
 
-    Slice 01's readiness route catches `(OSError, SQLAlchemyError)`, which is the evidence that a
-    real connect failure can arrive as an OSError the SQLAlchemy hierarchy never wraps.
+    Narrowed from a bare `OSError` after the pre-merge review: connecting the engine to a closed
+    port raises `ConnectionRefusedError`, which is the shape a real failed connect takes, while
+    `OSError` itself also covers `TimeoutError` and `FileNotFoundError`. Asserting the base class
+    would have required the handler to call any of those a database outage, which the companion
+    test `test_review5_a_non_database_os_error_answers_500_not_a_database_outage` now forbids.
     """
     application = build_server_app(test_only_router=build_test_only_router())
 
@@ -241,3 +246,119 @@ async def test_app_error_subclasses_answer_their_own_status_and_code_not_500(
 
     response_body = assert_error_envelope(response, expected_status, expected_code)
     assert response_body["error"] == APP_ERROR_MESSAGE, response_body
+
+
+DBAPI_ERROR_PATH = "/test-only/raise-dbapi-error"
+FILE_ERROR_PATH = "/test-only/raise-file-not-found"
+HTTP_400_PATH = "/test-only/raise-http-400"
+HTTP_401_PATH = "/test-only/raise-http-401"
+INBOUND_REQUEST_ID = "review1-inbound-id"
+
+
+def build_lost_connection_error() -> Exception:
+    """Return the exception SQLAlchemy raises when asyncpg loses the connection mid-request.
+
+    Built through the dialect rather than by hand, because the point of the test is that the
+    driver's real wrapper class reaches the handler: `DBAPIError` is neither `OperationalError`
+    nor `OSError`, which is how a real outage previously fell through to the 500 handler.
+    """
+    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()
+    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)
+    raw = dbapi.Error(asyncpg.exceptions.ConnectionDoesNotExistError("connection was closed"))
+    return DBAPIError.instance("SELECT 1", {}, raw, dbapi.Error, dialect=dialect)
+
+
+def build_review_router() -> APIRouter:
+    """Return a router covering the failure shapes the pre-merge review of PR 2 identified."""
+    router = APIRouter()
+
+    @router.get(DBAPI_ERROR_PATH)
+    async def raise_dbapi_error() -> dict[str, str]:
+        raise build_lost_connection_error()
+
+    @router.get(FILE_ERROR_PATH)
+    async def raise_file_not_found() -> dict[str, str]:
+        raise FileNotFoundError("a provider's cache file is missing")
+
+    @router.get(HTTP_400_PATH)
+    async def raise_http_400() -> dict[str, str]:
+        raise HTTPException(status_code=400, detail="malformed multipart body")
+
+    @router.get(HTTP_401_PATH)
+    async def raise_http_401() -> dict[str, str]:
+        raise HTTPException(status_code=401, detail="no credentials")
+
+    return router
+
+
+async def test_review1_b2_a_500_echoes_the_inbound_request_id_header(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """B-2: the 500 answers with the request's own ID, although it is built outside the stack."""
+    application = build_server_app(test_only_router=build_test_only_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(
+            UNEXPECTED_ERROR_PATH, headers={"X-Request-Id": INBOUND_REQUEST_ID}
+        )
+
+    assert response.status_code == 500, response.text
+    assert response.headers.get("X-Request-Id") == INBOUND_REQUEST_ID, dict(response.headers)
+
+
+async def test_review2_b9_a_connection_lost_mid_request_answers_503_not_500(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """B-9: the DBAPIError asyncpg's lost connection becomes answers 503, not an unexpected 500."""
+    application = build_server_app(test_only_router=build_review_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(DBAPI_ERROR_PATH)
+
+    assert_error_envelope(response, 503, ErrorCode.SERVER_DATABASE_UNAVAILABLE)
+
+
+async def test_review5_a_non_database_os_error_answers_500_not_a_database_outage(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """FileNotFoundError is an OSError but not a database failure, so it must not answer 503."""
+    application = build_server_app(test_only_router=build_review_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(FILE_ERROR_PATH)
+
+    assert_error_envelope(response, 500, ErrorCode.SERVER_INTERNAL_ERROR)
+
+
+async def test_review6_a_405_keeps_the_allow_header_starlette_sets(
+    api_client: httpx.AsyncClient,
+) -> None:
+    """The envelope must not discard the headers the raised HTTPException carried."""
+    response = await api_client.post("/health")
+
+    assert response.status_code == 405, response.text
+    assert response.headers.get("Allow"), dict(response.headers)
+
+
+async def test_review6_a_400_http_exception_answers_the_validation_code_not_the_500_code(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """A 400 raised as an HTTPException is invalid input, not an unexpected server error."""
+    application = build_server_app(test_only_router=build_review_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(HTTP_400_PATH)
+
+    assert_error_envelope(response, 400, ErrorCode.INPUT_VALIDATION_ERROR)
+
+
+async def test_review6_a_401_http_exception_answers_the_auth_required_code(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """A 401 raised by a security dependency is an auth failure, not an unexpected error."""
+    application = build_server_app(test_only_router=build_review_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(HTTP_401_PATH)
+
+    assert_error_envelope(response, 401, ErrorCode.AUTH_REQUIRED)

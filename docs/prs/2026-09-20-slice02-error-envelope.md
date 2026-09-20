@@ -45,6 +45,18 @@ RED was recorded before any implementation existed: three new test files failing
 
 The four existing body-limit test files under `apps/server/tests/unit/middleware/` are byte-for-byte untouched and still pass, which is the evidence that re-homing the 413 constant preserved the middleware's behavior. The new registry assertion for B-43 lives in a fifth file rather than inside them, because adding an `ErrorCode` import to any of the four would have broken their collection during RED and destroyed that evidence.
 
+## The pre-merge review changed the handler set
+
+The review found three defects in the first version of this PR, each verified against the driver before it was accepted.
+
+A mid-request connection loss did not answer 503. SQLAlchemy's asyncpg dialect wraps `asyncpg.exceptions.ConnectionDoesNotExistError` as a plain `sqlalchemy.exc.DBAPIError`, which is neither `OperationalError` nor `OSError`, so the outage B-9 names would have reached the 500 handler. Confirmed by building the exception through the real dialect rather than by reading the source. A guarded `DBAPIError` handler now answers 503 only when the wrapped driver error says the connection itself failed, and anything else, such as an integrity violation, still falls through to the 500 where it belongs.
+
+Registering bare `OSError` was too broad. `TimeoutError` and `FileNotFoundError` are subclasses, so a provider's timeout would have answered `SERVER_DATABASE_UNAVAILABLE` and been logged as a warning rather than an error. The registration is now `OperationalError`, `ConnectionError`, and `socket.gaierror`. This also narrowed one of this PR's own tests: it asserted that a bare `OSError` answers 503, which is exactly the over-broad rule, so it now raises `ConnectionRefusedError`, the class a refused connect actually produces, verified by pointing the engine at a closed port.
+
+A 500 carried no request ID. Starlette moves a handler keyed on `Exception` into `ServerErrorMiddleware`, the outermost layer, so the response never passes back through the correlation middleware and the structlog binding has already unwound. B-2 requires the header and the log field on every response, and no test asserted either on a 500. The handler now reads the contextvar, which is still set, and puts the ID on both.
+
+Two smaller findings landed with them: the envelope dropped the headers a raised `HTTPException` carried, so a 405 lost its `Allow` header, and any `HTTPException` outside 404 and 405 was labelled `SERVER_INTERNAL_ERROR`, including the 400 FastAPI raises for a malformed body and the 401 a security dependency will raise in slice 03. The engine now also sets `hide_parameters=True`, so a failed statement's exception text cannot carry the email addresses and password hashes slice 03 will bind to it (R-104).
+
 ## Reflection
 
 Time since implementation: written immediately after the suite went green, about fifty minutes after the branch was cut.

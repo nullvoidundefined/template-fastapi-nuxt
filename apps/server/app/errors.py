@@ -5,6 +5,8 @@ handler in `main.py` turns it into the envelope without a mapping table in betwe
 that is not an `AppError` is unexpected by definition and reaches the 500 handler.
 """
 
+from collections.abc import Mapping
+
 from fastapi.responses import JSONResponse
 
 from app.constants.error_codes import ErrorCode
@@ -46,7 +48,14 @@ class ForbiddenError(AppError):
         super().__init__(status_code=403, code=code, message=message)
 
 
-def build_error_response(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
+def build_error_response(
+    status_code: int,
+    code: ErrorCode,
+    message: str,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
     """Return the `{ code, error }` envelope as a JSON response with the given status."""
     envelope = ErrorResponse(code=code, error=message)
-    return JSONResponse(status_code=status_code, content=envelope.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=status_code, content=envelope.model_dump(mode="json"), headers=headers
+    )
