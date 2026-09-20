@@ -19,6 +19,7 @@ from contextlib import AbstractAsyncContextManager
 import asyncpg
 import httpx
 import pytest
+import structlog
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
@@ -362,3 +363,33 @@ async def test_review6_a_401_http_exception_answers_the_auth_required_code(
         response = await client.get(HTTP_401_PATH)
 
     assert_error_envelope(response, 401, ErrorCode.AUTH_REQUIRED)
+
+
+async def test_review2_b2_the_500_log_line_carries_the_request_id(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """B-2: the unhandled-exception log line carries the same ID the response header does.
+
+    Asserted separately from the header, because the outer correlation middleware appends the
+    header on its own: a header-only test passes whether or not the handler ever resolved the ID,
+    so it cannot show that the log line has it too.
+    """
+    application = build_server_app(test_only_router=build_test_only_router())
+    original_config = structlog.get_config()
+    configured = list(original_config["processors"])
+    recorded: list[dict[str, object]] = []
+
+    def record(_logger: object, _name: str, event_dict: dict[str, object]) -> dict[str, object]:
+        recorded.append(dict(event_dict))
+        return event_dict
+
+    structlog.configure(processors=[*configured[:-1], record, configured[-1]])
+    try:
+        async with build_api_client(application) as client:
+            await client.get(UNEXPECTED_ERROR_PATH, headers={"X-Request-Id": INBOUND_REQUEST_ID})
+    finally:
+        structlog.configure(**original_config)
+
+    unhandled = [e for e in recorded if e.get("event") == "request_unhandled_exception"]
+    assert unhandled, [e.get("event") for e in recorded]
+    assert unhandled[0].get("request_id") == INBOUND_REQUEST_ID, unhandled[0]
