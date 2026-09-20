@@ -1,5 +1,40 @@
 components:
   schemas:
+    ErrorCode:
+      description: Every error code this application answers with, namespaced DOMAIN_REASON.
+      enum:
+      - AUTH_ADMIN_REQUIRED
+      - AUTH_INVALID_CREDENTIALS
+      - AUTH_REQUIRED
+      - AUTH_SESSION_EXPIRED
+      - CSRF_HEADER_MISSING
+      - IDEMPOTENCY_KEY_REUSED
+      - INPUT_PAYLOAD_TOO_LARGE
+      - INPUT_VALIDATION_ERROR
+      - RATE_LIMIT_EXCEEDED
+      - ROUTING_METHOD_NOT_ALLOWED
+      - ROUTING_NOT_FOUND
+      - SERVER_DATABASE_UNAVAILABLE
+      - SERVER_INTERNAL_ERROR
+      - SERVER_RATE_LIMIT_UNAVAILABLE
+      - SERVER_REQUEST_TIMEOUT
+      title: ErrorCode
+      type: string
+    ErrorResponse:
+      description: 'One failed request: a registry code the client switches on and a human-readable message.'
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+          description: Machine-readable code from the error registry.
+        error:
+          description: Human-readable message; never parsed by clients.
+          title: Error
+          type: string
+      required:
+      - code
+      - error
+      title: ErrorResponse
+      type: object
     HealthLiveness:
       description: 'Body of `GET /health`: the process is up.'
       properties:
@@ -47,6 +82,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthLiveness'
           description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: An unexpected error occurred
       summary: Read Liveness
       tags:
       - health
@@ -61,6 +108,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthReadiness'
           description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: An unexpected error occurred
         '503':
           content:
             application/json:

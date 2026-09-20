@@ -25,7 +25,7 @@ STDLIB_LOGGERS_ROUTED_TO_ROOT = (
 
 def configure_logging(settings: Settings) -> None:
     """Install the structlog chain and route standard-library records through the same renderer."""
-    shared_processors = build_shared_processors()
+    shared_processors = build_shared_processors(settings)
     structlog.configure(
         processors=[*shared_processors, select_renderer(settings)],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
@@ -34,14 +34,26 @@ def configure_logging(settings: Settings) -> None:
     route_stdlib_records(settings, shared_processors)
 
 
-def build_shared_processors() -> list[structlog.typing.Processor]:
-    """Return the processors both structlog and standard-library records pass through."""
-    return [
+def build_shared_processors(settings: Settings) -> list[structlog.typing.Processor]:
+    """Return the processors both structlog and standard-library records pass through.
+
+    `ExceptionRenderer` turns `exc_info` into a list of frame dictionaries, which is what the JSON
+    renderer needs and what `ConsoleRenderer` cannot accept: handed a list where it expects a
+    rendered string, it raises `TypeError` and takes the whole log call with it, so a handler that
+    logs an exception in development would answer an empty 500 instead of its response. Console
+    output therefore keeps `exc_info` intact and lets `ConsoleRenderer` format the traceback
+    itself, which also shows no frame locals and so keeps R-104.
+    """
+    processors: list[structlog.typing.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
-        structlog.processors.ExceptionRenderer(ExceptionDictTransformer(show_locals=False)),
     ]
+    if settings.environment != "development":
+        processors.append(
+            structlog.processors.ExceptionRenderer(ExceptionDictTransformer(show_locals=False))
+        )
+    return processors
 
 
 def select_renderer(settings: Settings) -> structlog.typing.Processor:

@@ -19,10 +19,12 @@ import structlog
 from asgi_correlation_id import correlation_id
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.constants.error_codes import ErrorCode
+
 MAX_BODY_BYTES = 100 * 1024
 MAX_CONTENT_LENGTH_DIGITS = 19
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-PAYLOAD_TOO_LARGE_CODE = "INPUT_PAYLOAD_TOO_LARGE"
+PAYLOAD_TOO_LARGE_CODE = ErrorCode.INPUT_PAYLOAD_TOO_LARGE
 PAYLOAD_TOO_LARGE_MESSAGE = "Request body exceeds 100 KB"
 
 

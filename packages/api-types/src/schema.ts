@@ -49,6 +49,25 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ErrorCode
+         * @description Every error code this application answers with, namespaced DOMAIN_REASON.
+         * @enum {string}
+         */
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+        /**
+         * ErrorResponse
+         * @description One failed request: a registry code the client switches on and a human-readable message.
+         */
+        ErrorResponse: {
+            /** @description Machine-readable code from the error registry. */
+            code: components["schemas"]["ErrorCode"];
+            /**
+             * Error
+             * @description Human-readable message; never parsed by clients.
+             */
+            error: string;
+        };
+        /**
          * HealthLiveness
          * @description Body of `GET /health`: the process is up.
          */
@@ -102,6 +121,24 @@ export interface operations {
                     "application/json": components["schemas"]["HealthLiveness"];
                 };
             };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     read_readiness_health_ready_get: {
@@ -120,6 +157,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReadiness"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Postgres did not answer within the deadline */
