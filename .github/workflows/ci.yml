@@ -77,10 +77,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-toolchain
-      # The server floor (80 percent) is fail_under in apps/server/pyproject.toml.
+      # Coverage data only: the floor is checked once, by the coverage job, against this suite
+      # combined with the integration one. COVERAGE_FILE keeps the two suites' data files apart,
+      # because pytest-cov erases `.coverage*` when it starts.
       - name: pytest (unit, with coverage)
         working-directory: apps/server
-        run: uv run pytest tests/unit --cov=app --cov-report=term-missing
+        env:
+          COVERAGE_FILE: .coverage.unit
+        run: uv run pytest tests/unit --cov=app --cov-report=term-missing --cov-fail-under=0
+      - name: Upload the unit coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-unit
+          path: apps/server/.coverage.unit
+          include-hidden-files: true
+          retention-days: 1
       # The web floor (60 percent of apps/client/web/app) is in the root vitest.config.ts.
       - name: Vitest (with coverage)
         run: pnpm exec vitest run --coverage
@@ -120,7 +131,15 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://app@localhost:5432/app
           TEST_REDIS_URL: redis://localhost:6379/0
-        run: uv run pytest tests/integration -rs
+          COVERAGE_FILE: .coverage.integration
+        run: uv run pytest tests/integration -rs --cov=app --cov-report= --cov-fail-under=0
+      - name: Upload the integration coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: apps/server/.coverage.integration
+          include-hidden-files: true
+          retention-days: 1
 
   openapi-drift:
     name: openapi-drift
@@ -184,10 +203,48 @@ jobs:
         if: always()
         run: docker compose down --volumes
 
+  # The 80 percent floor is enforced here and nowhere else, so it measures what the whole suite
+  # exercises. Before this job existed the floor ran inside the unit job alone, which counted a
+  # module proved only by an integration test against real Postgres and Redis as entirely
+  # uncovered, penalising exactly the tests that carry the most risk.
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [unit, integration]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          node: 'false'
+      - name: Download the unit coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-unit
+          path: apps/server
+      - name: Download the integration coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-integration
+          path: apps/server
+      # `coverage combine` consumes both files, so a missing one would silently lower the total
+      # rather than fail; the count it prints is checked before the floor is.
+      - name: Combine both suites
+        working-directory: apps/server
+        run: |
+          combined=$(uv run coverage combine 2>&1 | tee /dev/stderr)
+          if ! echo "$combined" | grep -q "Combined 2 files"; then
+            echo "Expected both suites' coverage data; got: $combined" >&2
+            exit 1
+          fi
+      - name: Enforce the floor against the combined data
+        working-directory: apps/server
+        run: uv run coverage report --show-missing
+
   ci:
     name: ci
     if: always()
-    needs: [lint, typecheck, unit, integration, openapi-drift, docker-build, e2e]
+    needs: [lint, typecheck, unit, integration, coverage, openapi-drift, docker-build, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

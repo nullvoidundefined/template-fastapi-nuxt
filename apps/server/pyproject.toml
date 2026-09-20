@@ -64,6 +64,14 @@ markers = ["integration: needs a real Postgres reachable through TEST_DATABASE_U
 
 [tool.coverage.run]
 source = ["app"]
+# The unit and integration suites run as separate CI jobs on separate runners, so each writes its
+# own `.coverage.<host>.<pid>` file and a third job combines them before the floor is checked.
+# Without `parallel`, the second job's data would overwrite the first's; without `relative_files`,
+# the recorded paths would carry each runner's absolute working directory and never match.
+parallel = true
+relative_files = true
 
 [tool.coverage.report]
+# Checked once, against the combined data. The per-suite runs pass --cov-fail-under=0, because a
+# suite that covers its own half of the code is not a failure.
 fail_under = 80
