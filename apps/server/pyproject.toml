@@ -64,11 +64,11 @@ markers = ["integration: needs a real Postgres reachable through TEST_DATABASE_U
 
 [tool.coverage.run]
 source = ["app"]
-# The unit and integration suites run as separate CI jobs on separate runners, so each writes its
-# own `.coverage.<host>.<pid>` file and a third job combines them before the floor is checked.
-# Without `parallel`, the second job's data would overwrite the first's; without `relative_files`,
-# the recorded paths would carry each runner's absolute working directory and never match.
-parallel = true
+# The unit and integration suites run as separate CI jobs on separate runners, and a third job
+# combines their data before the floor is checked. `relative_files` is what makes that possible:
+# without it each runner records its own absolute working directory and the two sets of data
+# refer to files that never match. Keeping the suites' data apart is done with `COVERAGE_FILE`
+# per job, not with `parallel`, which pytest-cov does not need here.
 relative_files = true
 
 [tool.coverage.report]

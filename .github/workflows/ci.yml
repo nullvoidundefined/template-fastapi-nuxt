@@ -1,7 +1,8 @@
 # ci.yml: the full pipeline for every pull request and every push to the protected branches
-# (spec: CI). Seven jobs run in parallel, and the final `ci` job, the one status check the
-# protect-merge ruleset requires, fails unless every one of them succeeded. A job that was skipped
-# or cancelled therefore fails `ci` instead of passing it.
+# (spec: CI). Seven jobs run in parallel and `coverage` runs after `unit` and `integration`,
+# because it combines their data; the final `ci` job, the one status check the protect-merge
+# ruleset requires, fails unless all eight succeeded. A job that was skipped or cancelled
+# therefore fails `ci` instead of passing it.
 name: ci
 
 on:
@@ -78,8 +79,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-toolchain
       # Coverage data only: the floor is checked once, by the coverage job, against this suite
-      # combined with the integration one. COVERAGE_FILE keeps the two suites' data files apart,
-      # because pytest-cov erases `.coverage*` when it starts.
+      # combined with the integration one. COVERAGE_FILE gives each suite its own data file, so
+      # the two artifacts can be told apart and combined.
       - name: pytest (unit, with coverage)
         working-directory: apps/server
         env:
@@ -91,6 +92,9 @@ jobs:
           name: coverage-unit
           path: apps/server/.coverage.unit
           include-hidden-files: true
+          # A re-run of a job that failed after this step would otherwise hit 409 Conflict on the
+          # artifact it already uploaded, failing for a reason unrelated to the tests.
+          overwrite: true
           retention-days: 1
       # The web floor (60 percent of apps/client/web/app) is in the root vitest.config.ts.
       - name: Vitest (with coverage)
@@ -139,6 +143,7 @@ jobs:
           name: coverage-integration
           path: apps/server/.coverage.integration
           include-hidden-files: true
+          overwrite: true
           retention-days: 1
 
   openapi-drift:
