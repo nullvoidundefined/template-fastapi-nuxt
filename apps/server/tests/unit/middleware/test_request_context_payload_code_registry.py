@@ -9,6 +9,7 @@ cannot drift apart without a test failing.
 """
 
 import httpx
+
 from app.constants.error_codes import ErrorCode
 
 OVERSIZED_BODY_BYTES = 101 * 1024

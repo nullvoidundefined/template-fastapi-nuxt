@@ -41,7 +41,7 @@ This was latent from slice 01 because nothing logged an exception in development
 
 Tests came from the `test-author` fallback rather than Codex, which is at its ChatGPT usage limit until 2026-09-21 02:26 local (R-907); the PR records that, as slice 01's PRs did.
 
-RED was recorded before any implementation existed: three new test files failing on missing modules, with 77 tests passing outside them. GREEN is 100 unit tests passing, plus 3 integration tests against the real Postgres 17 and Redis 7 from compose. The contract drift check passes, and `ErrorCode` and `ErrorResponse` appear in the regenerated `packages/api-types/src/schema.ts`.
+RED was recorded before any implementation existed: three new test files failing on missing modules, with 77 tests passing outside them. GREEN is 100 unit tests passing, plus 3 integration tests against the real Postgres 17 and Redis 7 from compose. The contract drift check passes, and `ErrorCode` and `ErrorResponse` appear in the regenerated `packages/api-types/src/schemas.ts`.
 
 The four existing body-limit test files under `apps/server/tests/unit/middleware/` are byte-for-byte untouched and still pass, which is the evidence that re-homing the 413 constant preserved the middleware's behavior. The new registry assertion for B-43 lives in a fifth file rather than inside them, because adding an `ErrorCode` import to any of the four would have broken their collection during RED and destroyed that evidence.
 

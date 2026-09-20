@@ -21,7 +21,7 @@ TEST_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_ROOT="$(cd "$TEST_DIRECTORY/../.." && pwd)"
 DRIFT_SCRIPT_RELATIVE="scripts/check-contract-drift.sh"
 OPENAPI_RELATIVE="apps/server/docs/openapi.yaml"
-SCHEMA_TS_RELATIVE="packages/api-types/src/schema.ts"
+SCHEMA_TS_RELATIVE="packages/api-types/src/schemas.ts"
 HEALTH_SCHEMA_RELATIVE="apps/server/app/schemas/health.py"
 
 # Pick the SHA-256 tool the runner has: GNU coreutils ships sha256sum, macOS ships shasum. Both
@@ -279,7 +279,7 @@ regenerate_committed_contract() {
     (
         cd "$copy_root/packages/api-types" || exit 1
         ./node_modules/.bin/openapi-typescript ../../apps/server/docs/openapi.yaml \
-            --output src/schema.ts >/dev/null
+            --output src/schemas.ts >/dev/null
     )
 }
 

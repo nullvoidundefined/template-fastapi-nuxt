@@ -11,6 +11,7 @@ import json
 from enum import StrEnum
 
 import pytest
+
 from app.constants.error_codes import ErrorCode
 
 REQUIRED_CODE_NAMES = [
