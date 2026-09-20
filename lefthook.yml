@@ -15,6 +15,15 @@ pre-commit:
       glob: '*.{ts,vue}'
       run: pnpm exec eslint --fix {staged_files}
       stage_fixed: true
+    # The root config covers what the web package's own config cannot reach: e2e/, packages/,
+    # and the root configuration files. apps/ is excluded so a web file is linted once, by the
+    # command above, under the Nuxt-generated rules rather than the root's.
+    eslint-root:
+      glob: '*.{ts,mts,mjs}'
+      exclude:
+        - 'apps/**/*'
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
     vue-tsc:
       glob: 'apps/client/web/**/*.{ts,vue}'
       run: pnpm --filter @repo/web typecheck

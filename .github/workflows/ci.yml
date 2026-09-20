@@ -138,10 +138,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      # B-3: build all three images, start compose, and fail unless every container's
-      # HEALTHCHECK reports healthy within the timeout.
-      - name: Build and start the stack
-        run: docker compose up --build --detach --wait --wait-timeout 180
+      - uses: ./.github/actions/build-images
+      # B-3: all three images are built by the step above, with the layer cache; compose starts
+      # them and fails unless every container's HEALTHCHECK reports healthy within the timeout.
+      - name: Start the stack
+        run: docker compose up --detach --wait --wait-timeout 180 --no-build
       - name: Show container state and logs on failure
         if: failure()
         run: |
@@ -160,8 +161,9 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
         with:
           python: 'false'
-      - name: Build and start the stack
-        run: docker compose up --build --detach --wait --wait-timeout 180
+      - uses: ./.github/actions/build-images
+      - name: Start the stack
+        run: docker compose up --detach --wait --wait-timeout 180 --no-build
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright
