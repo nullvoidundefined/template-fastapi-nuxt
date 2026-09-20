@@ -42,6 +42,9 @@ services:
 
   api:
     restart: unless-stopped
+    # Named explicitly, which is the name compose would derive anyway, so CI can build this
+    # image with a layer cache and then start the stack with `up --no-build`.
+    image: template-fastapi-nuxt-api
     build:
       context: apps/server
       dockerfile: Dockerfile
@@ -61,6 +64,9 @@ services:
 
   worker:
     restart: unless-stopped
+    # Named explicitly, which is the name compose would derive anyway, so CI can build this
+    # image with a layer cache and then start the stack with `up --no-build`.
+    image: template-fastapi-nuxt-worker
     build:
       context: apps/server
       dockerfile: Dockerfile.worker
@@ -89,6 +95,9 @@ services:
 
   web:
     restart: unless-stopped
+    # Named explicitly, which is the name compose would derive anyway, so CI can build this
+    # image with a layer cache and then start the stack with `up --no-build`.
+    image: template-fastapi-nuxt-web
     build:
       context: .
       dockerfile: apps/client/web/Dockerfile
