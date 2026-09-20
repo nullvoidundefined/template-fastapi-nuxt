@@ -27,13 +27,13 @@ B-6 and B-7 describe behavior on routes that arrive in slice 03, and B-7's rate-
 
 ## Execution record
 
-| PR  | Concern                                    | Ticket  | PR number | Merged | Scope change |
-| --- | ------------------------------------------ | ------- | --------- | ------ | ------------ |
-| 1   | CI hardening: root lint and a build cache  | IAN-167 | pending   |        |              |
-| 2   | The error envelope and its five handlers   | IAN-168 | pending   |        |              |
-| 3   | Alembic, `users`, and the connection       | IAN-169 | pending   |        |              |
-| 4   | Security headers, CORS, CSRF, and timeout  | IAN-170 | pending   |        |              |
-| 5   | Rate limiting and the Redis settings guard | IAN-171 | pending   |        |              |
+| PR  | Concern                                    | Ticket  | PR number | Merged | Scope change                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------ | ------- | --------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | CI hardening: root lint and a build cache  | IAN-167 | #22       |        | The build cache is scoped per image rather than per job: both jobs build byte-identical images, so a per-job scope stores two copies and lets neither read the other's previous run. The pre-merge review also found that flat config does not skip dot-directories, so `.claude/` had to be ignored or a checkout holding a worktree would lint that copy too. |
+| 2   | The error envelope and its five handlers   | IAN-168 | pending   |        |                                                                                                                                                                                                                                                                                                                                                                 |
+| 3   | Alembic, `users`, and the connection       | IAN-169 | pending   |        |                                                                                                                                                                                                                                                                                                                                                                 |
+| 4   | Security headers, CORS, CSRF, and timeout  | IAN-170 | pending   |        |                                                                                                                                                                                                                                                                                                                                                                 |
+| 5   | Rate limiting and the Redis settings guard | IAN-171 | pending   |        |                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## PRs
 
@@ -45,7 +45,7 @@ B-6 and B-7 describe behavior on routes that arrive in slice 03, and B-7's rate-
 
 **Approach:** Add a root ESLint flat configuration that covers `e2e/`, `packages/`, and the root TypeScript and configuration files, and a root `lint` script that runs it alongside the existing per-package scripts. The web package keeps its own Nuxt-aware configuration, because the Nuxt ESLint integration generates rules from the app's own routes and layers, and flattening the two into one configuration would lose that.
 
-Add `docker/setup-buildx-action` with the GitHub Actions cache backend to the `docker-build` and `e2e` jobs, so the layers of the three images are restored between runs instead of rebuilt. The cache is scoped per job so that the two jobs do not evict each other's entries.
+Add `docker/setup-buildx-action` with the GitHub Actions cache backend to the `docker-build` and `e2e` jobs, so the layers of the three images are restored between runs instead of rebuilt. The cache is scoped per image, shared by both jobs: they build byte-identical images from the same commit, so one scope per image lets whichever job runs second read the entries the previous run wrote, and the repository's cache is not spent on two copies of the same layers.
 
 **Contents:** `eslint.config.mjs` at the repository root, its dependencies in the root `package.json`, the root `lint` script, the lint job's new step in `.github/workflows/ci.yml`, the buildx setup and cache configuration in the `docker-build` and `e2e` jobs, and the lefthook entry that lints the newly covered paths at commit.
 
