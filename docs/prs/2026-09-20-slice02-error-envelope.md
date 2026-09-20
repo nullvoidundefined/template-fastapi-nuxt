@@ -23,7 +23,9 @@ Two files changed that are not new. `app/middleware/request_context.py` now take
 
 ## Architectural decisions
 
-**The 503 handler covers `OSError` as well as `OperationalError`.** The Python track names "the connection-class `OperationalError` and asyncpg connection errors". Chosen: register both that and bare `OSError`, because slice 01's readiness route already catches `(OSError, SQLAlchemyError)`, which is standing evidence that a real asyncpg connect failure can arrive as an `OSError` the SQLAlchemy hierarchy never wraps. The alternative, following the track literally, would have left a real database outage falling through to the 500 handler, which is exactly what B-9 forbids. The pre-merge review of the plan raised this; the test for it was written before the handler.
+**The 503 handler covers more than the `OperationalError` the track names.** The Python track names "the connection-class `OperationalError` and asyncpg connection errors", and following it literally would leave a real outage falling through to the 500 handler, which is what B-9 forbids. Slice 01's readiness route already catches `(OSError, SQLAlchemyError)`, standing evidence that a connect failure reaches the caller as something SQLAlchemy never wrapped.
+
+The first version of this PR acted on that by registering bare `OSError`, which the pre-merge review then showed was both too broad and not broad enough. The final set is `OperationalError`, `ConnectionError`, and `socket.gaierror`, plus a `DBAPIError` handler guarded on the wrapped error being a lost connection. The section below records how each of those was established, because the exception a failure arrives as turned out to be an empirical question rather than one the convention file could settle.
 
 **Field errors go in the message, not a third key.** Chosen because the spec's invariant is that every error response uses the `{ code, error }` envelope, and a third key would make the validation case the one shape clients must special-case. The alternative, a structured `fields` object, is more useful to a form and is the obvious later change if slice 03's registration form wants it.
 

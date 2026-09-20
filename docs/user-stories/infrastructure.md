@@ -68,7 +68,7 @@
 
 - [x] An unknown path answers 404 `ROUTING_NOT_FOUND` and the body never repeats the requested path (spec B-5).
 - [x] A wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and no error response carries FastAPI's default `detail` body (spec B-5).
-- [x] A database failure during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, whether it arrives as SQLAlchemy's `OperationalError` or as a bare `OSError` from a failed connect (spec B-9).
+- [x] A database failure during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, whether it arrives as SQLAlchemy's `OperationalError`, as the `DBAPIError` a connection lost mid-request is wrapped in, or as the `ConnectionRefusedError` a refused connect raises before SQLAlchemy sees it (spec B-9).
 - [x] An unexpected error answers 500 with no traceback, and the exception's own message only outside production (spec B-9).
 - [x] An invalid body answers 400 `INPUT_VALIDATION_ERROR` naming the offending field (R-406).
 - [x] The 413 for an oversized body carries the same registry code rather than a local literal (spec B-43).

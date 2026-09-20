@@ -299,7 +299,7 @@ report_names_only() {
         "output: $(cat "$output_file")"
 }
 
-# A hand edit to only the committed TypeScript types fails and names schema.ts alone.
+# A hand edit to only the committed TypeScript types fails and names schemas.ts alone.
 # Arguments: none.
 test_types_only_edit_names_types_alone() {
     local copy_root="$WORK_DIRECTORY/types-edited"
@@ -320,7 +320,7 @@ test_types_only_edit_names_types_alone() {
 }
 
 # A hand edit to only the committed OpenAPI document fails and names openapi.yaml alone: the
-# script generates the types from a fresh export, so the committed schema.ts still matches.
+# script generates the types from a fresh export, so the committed schemas.ts still matches.
 # Arguments: none.
 test_document_only_edit_names_document_alone() {
     local copy_root="$WORK_DIRECTORY/document-edited"
