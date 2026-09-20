@@ -1,9 +1,9 @@
 # Slice 02: Data and Errors
 
 Spec: `docs/superpowers/specs/2026-09-19-template-fastapi-nuxt-design.md` (acceptance criteria B-5 to B-9, B-35, B-43, B-46)
-Status: planned; awaiting Gate 1 approval by the owner
-Tracker: Linear project template-fastapi-nuxt; the slice ticket and its five child tickets are opened at Gate 1 approval (R-605)
-Estimate: 3.5 hours of agent time across five PRs, of which 1 hour is the slice-01 Later list carried in here
+Status: Gate 1 approved by the owner on 2026-09-20; PR 1 in progress
+Tracker: IAN-166 (Linear project template-fastapi-nuxt), with IAN-167 to IAN-171 one per PR (R-605)
+Estimate: 4 hours of agent time across five PRs, of which 50 minutes is the slice-01 Later list carried in here as PR 1. The estimate is the R-906 heuristic rather than history: this project has four closed standard llm tickets carrying actuals, below the five-sample floor.
 
 ## Purpose
 
@@ -27,13 +27,13 @@ B-6 and B-7 describe behavior on routes that arrive in slice 03, and B-7's rate-
 
 ## Execution record
 
-| PR  | Concern                                    | PR number | Merged | Scope change |
-| --- | ------------------------------------------ | --------- | ------ | ------------ |
-| 1   | CI hardening: root lint and a build cache  | pending   |        |              |
-| 2   | The error envelope and its five handlers   | pending   |        |              |
-| 3   | Alembic, `users`, and the connection       | pending   |        |              |
-| 4   | Security headers, CORS, CSRF, and timeout  | pending   |        |              |
-| 5   | Rate limiting and the Redis settings guard | pending   |        |              |
+| PR  | Concern                                    | Ticket  | PR number | Merged | Scope change |
+| --- | ------------------------------------------ | ------- | --------- | ------ | ------------ |
+| 1   | CI hardening: root lint and a build cache  | IAN-167 | pending   |        |              |
+| 2   | The error envelope and its five handlers   | IAN-168 | pending   |        |              |
+| 3   | Alembic, `users`, and the connection       | IAN-169 | pending   |        |              |
+| 4   | Security headers, CORS, CSRF, and timeout  | IAN-170 | pending   |        |              |
+| 5   | Rate limiting and the Redis settings guard | IAN-171 | pending   |        |              |
 
 ## PRs
 
@@ -54,6 +54,8 @@ Add `docker/setup-buildx-action` with the GitHub Actions cache backend to the `d
 **Review focus:** That the root configuration does not shadow or weaken the web package's Nuxt rules, and that the build cache is keyed so a changed Dockerfile still rebuilds the layers below it rather than serving a stale image to the end-to-end suite.
 
 **Size:** About 6 files and 120 lines.
+
+**Estimate:** 50 minutes (IAN-167).
 
 ### PR 2: The error envelope and its five exception handlers
 
@@ -79,6 +81,8 @@ Because the envelope becomes a documented response shape, `app/schemas/errors.py
 
 **Size:** About 12 files and 400 lines.
 
+**Estimate:** 45 minutes (IAN-168).
+
 ### PR 3: Alembic, the users table, and the connection dependency
 
 **Context:** PRs 1 and 2 have landed. The engine is created at startup and disposed at shutdown, and readiness opens its own connection, but no request has a connection and no table exists.
@@ -100,6 +104,8 @@ Run migrations where each environment expects them: `alembic upgrade head` as a 
 **Review focus:** The transaction boundary. That a handler raising after a partial write rolls back rather than committing, that the connection is released back to the pool on every path including cancellation, and that a failed connect surfaces as the `OperationalError` PR 2's handler maps to 503 rather than as an unhandled error.
 
 **Size:** About 10 files and 350 lines.
+
+**Estimate:** 50 minutes (IAN-169).
 
 ### PR 4: Security headers, CORS, the CSRF guard, and the request timeout
 
@@ -123,6 +129,8 @@ Register the chain so that, from outermost inward, it reads: the correlation ID,
 
 **Size:** About 12 files and 400 lines.
 
+**Estimate:** 40 minutes (IAN-170).
+
 ### PR 5: Rate limiting and the Redis settings guard
 
 **Context:** PRs 1 to 4 have landed, and the middleware chain has a gap reserved for the rate limiter between CORS and the CSRF guard.
@@ -142,6 +150,8 @@ Add the settings validation B-46 requires: settings refuse to load when `environ
 **Review focus:** The key derivation, end to end. That no code path reads `X-Forwarded-For` directly, that the forged-header test would actually fail if it did, and that the in-memory fallback cannot be reached under `environment="production"` by any route, including a Redis connection that drops after a successful startup.
 
 **Size:** About 12 files and 450 lines.
+
+**Estimate:** 55 minutes (IAN-171).
 
 ## Later list
 
