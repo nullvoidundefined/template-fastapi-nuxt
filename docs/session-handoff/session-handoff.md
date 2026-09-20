@@ -6,7 +6,7 @@
 
 ## Production state
 
-- Nothing is deployed. The template runs locally with `docker compose up --detach --wait --no-build` after the three images are built, and the full CI graph, now eight jobs, is green on `main`.
+- Nothing is deployed. The template runs locally with `docker compose up --detach --wait --no-build` after the three images are built, and the full CI graph, now eight prerequisite jobs plus the `ci` aggregate, is green on `main`.
 - Postgres and Redis publish on host ports 5433 and 6380; integration tests need `TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app` and `TEST_REDIS_URL=redis://localhost:6380/0`.
 
 ## Session metrics
