@@ -64,6 +64,14 @@ markers = ["integration: needs a real Postgres reachable through TEST_DATABASE_U
 
 [tool.coverage.run]
 source = ["app"]
+# The unit and integration suites run as separate CI jobs on separate runners, and a third job
+# combines their data before the floor is checked. `relative_files` is what makes that possible:
+# without it each runner records its own absolute working directory and the two sets of data
+# refer to files that never match. Keeping the suites' data apart is done with `COVERAGE_FILE`
+# per job, not with `parallel`, which pytest-cov does not need here.
+relative_files = true
 
 [tool.coverage.report]
+# Checked once, against the combined data. The per-suite runs pass --cov-fail-under=0, because a
+# suite that covers its own half of the code is not a failure.
 fail_under = 80
