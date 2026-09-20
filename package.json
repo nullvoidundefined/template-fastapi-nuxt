@@ -12,7 +12,7 @@
         "dev:api": "cd apps/server && uv run uvicorn app.main:create_app --factory --reload --port 3001",
         "dev:web": "pnpm --filter @repo/web dev",
         "build": "pnpm -r run build",
-        "lint": "pnpm -r run lint",
+        "lint": "eslint . && pnpm -r run lint",
         "typecheck": "pnpm -r run typecheck",
         "test": "pnpm -r run test",
         "format": "prettier --write .",
@@ -22,10 +22,14 @@
         "test:e2e": "playwright test"
     },
     "devDependencies": {
+        "@eslint/js": "10.0.1",
         "@playwright/test": "1.63.0",
         "@vitest/coverage-v8": "5.0.1",
+        "eslint": "10.11.0",
+        "globals": "17.12.0",
         "lefthook": "2.1.14",
         "prettier": "3.9.8",
+        "typescript-eslint": "8.70.0",
         "vitest": "5.0.1"
     }
 }

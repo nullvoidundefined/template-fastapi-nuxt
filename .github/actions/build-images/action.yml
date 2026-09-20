@@ -1,0 +1,43 @@
+# Builds the API, worker, and web images into the runner's Docker daemon with the GitHub Actions
+# layer cache, so `docker compose up --no-build` starts them without rebuilding. The docker-build
+# and e2e jobs both need the same three images, so the steps live here rather than twice in the
+# workflow. The cache scope is per image rather than per job: the two jobs build byte-identical
+# images from the same commit, so one scope per image lets whichever job runs second reuse the
+# entries the previous run wrote, and the repository's cache is not spent on two copies.
+name: Build the compose images
+description: Build the three application images with the GitHub Actions layer cache and load them locally.
+
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v3
+
+    - name: Build the API image
+      uses: docker/build-push-action@v6
+      with:
+        context: apps/server
+        file: apps/server/Dockerfile
+        tags: template-fastapi-nuxt-api:latest
+        load: true
+        cache-from: type=gha,scope=api
+        cache-to: type=gha,mode=max,scope=api
+
+    - name: Build the worker image
+      uses: docker/build-push-action@v6
+      with:
+        context: apps/server
+        file: apps/server/Dockerfile.worker
+        tags: template-fastapi-nuxt-worker:latest
+        load: true
+        cache-from: type=gha,scope=worker
+        cache-to: type=gha,mode=max,scope=worker
+
+    - name: Build the web image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: apps/client/web/Dockerfile
+        tags: template-fastapi-nuxt-web:latest
+        load: true
+        cache-from: type=gha,scope=web
+        cache-to: type=gha,mode=max,scope=web
