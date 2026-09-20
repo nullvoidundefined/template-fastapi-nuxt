@@ -206,7 +206,7 @@ Criteria added after review keep the earlier numbers stable, so they are listed 
 
 - The database never holds a raw session token or a raw password-reset token, only their SHA-256 hashes.
 - Every query on a user-owned table is scoped by `user_id`.
-- Every error response uses the `{ code, error }` envelope with a code from the registry.
+- Every error response uses the `{ code, error }` envelope with a code from the registry, with one documented exception: the health routes. `GET /health/ready` answers its 503 as `{ status, db }`, because that response is a probe result an orchestrator reads to decide whether to route traffic, not an error returned to a client, and the `db` field is the part a human reads in a deploy log. Slice 01 shipped and tested that contract, `e2e/health.spec.ts` and the compose healthchecks depend on it, and no other route may take this exception (owner decision, 2026-09-20, after the Copilot review of the slice 02 plan raised the contradiction).
 - `openapi.yaml` and `packages/api-types` always match the code on `main`.
 
 ## Failure modes
