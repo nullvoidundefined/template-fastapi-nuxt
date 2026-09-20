@@ -250,6 +250,7 @@ async def test_app_error_subclasses_answer_their_own_status_and_code_not_500(
 
 
 DBAPI_ERROR_PATH = "/test-only/raise-dbapi-error"
+INTEGRITY_ERROR_PATH = "/test-only/raise-integrity-error"
 FILE_ERROR_PATH = "/test-only/raise-file-not-found"
 HTTP_400_PATH = "/test-only/raise-http-400"
 HTTP_401_PATH = "/test-only/raise-http-401"
@@ -269,6 +270,14 @@ def build_lost_connection_error() -> Exception:
     return DBAPIError.instance("SELECT 1", {}, raw, dbapi.Error, dialect=dialect)
 
 
+def build_integrity_error() -> Exception:
+    """Return the DBAPIError a constraint violation becomes, which is not a connection failure."""
+    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()
+    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)
+    raw = dbapi.Error(asyncpg.exceptions.UniqueViolationError("duplicate key value"))
+    return DBAPIError.instance("INSERT INTO users", {}, raw, dbapi.Error, dialect=dialect)
+
+
 def build_review_router() -> APIRouter:
     """Return a router covering the failure shapes the pre-merge review of PR 2 identified."""
     router = APIRouter()
@@ -276,6 +285,10 @@ def build_review_router() -> APIRouter:
     @router.get(DBAPI_ERROR_PATH)
     async def raise_dbapi_error() -> dict[str, str]:
         raise build_lost_connection_error()
+
+    @router.get(INTEGRITY_ERROR_PATH)
+    async def raise_integrity_error() -> dict[str, str]:
+        raise build_integrity_error()
 
     @router.get(FILE_ERROR_PATH)
     async def raise_file_not_found() -> dict[str, str]:
@@ -310,7 +323,7 @@ async def test_review1_b2_a_500_echoes_the_inbound_request_id_header(
 async def test_review2_b9_a_connection_lost_mid_request_answers_503_not_500(
     build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
 ) -> None:
-    """B-9: the DBAPIError asyncpg's lost connection becomes answers 503, not an unexpected 500."""
+    """B-9: the DBAPIError that asyncpg's lost connection becomes answers 503, not a 500."""
     application = build_server_app(test_only_router=build_review_router())
 
     async with build_api_client(application) as client:
@@ -393,3 +406,20 @@ async def test_review2_b2_the_500_log_line_carries_the_request_id(
     unhandled = [e for e in recorded if e.get("event") == "request_unhandled_exception"]
     assert unhandled, [e.get("event") for e in recorded]
     assert unhandled[0].get("request_id") == INBOUND_REQUEST_ID, unhandled[0]
+
+
+async def test_review2_b9_a_dbapi_error_that_is_not_a_lost_connection_answers_500(
+    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
+) -> None:
+    """A constraint violation is the client's fault, not an outage, so it must not answer 503.
+
+    This is the guard's false branch. Without it the suite would pass just as well if every
+    `DBAPIError` were routed to 503, which would tell a client to retry a request that can never
+    succeed and would hide a real integrity bug behind an availability-shaped status.
+    """
+    application = build_server_app(test_only_router=build_review_router())
+
+    async with build_api_client(application) as client:
+        response = await client.get(INTEGRITY_ERROR_PATH)
+
+    assert_error_envelope(response, 500, ErrorCode.SERVER_INTERNAL_ERROR)
