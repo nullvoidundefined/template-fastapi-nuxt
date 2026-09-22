@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from app.constants.error_codes import ErrorCode
 from app.schemas.errors import ErrorResponse
 
+DATABASE_UNAVAILABLE_MESSAGE = "The database is unavailable"
+
 
 class AppError(Exception):
     """An expected failure with the status and registry code the response should carry."""
@@ -46,6 +48,21 @@ class ForbiddenError(AppError):
     def __init__(self, code: ErrorCode, message: str) -> None:
         """Answer 403 with the given registry code."""
         super().__init__(status_code=403, code=code, message=message)
+
+
+class DatabaseUnavailableError(AppError):
+    """Postgres could not be reached, so the request cannot be served at all.
+
+    Raised by `app.db.session.get_connection`, the one place a request opens a connection. It is
+    an `AppError` rather than a case in a global handler so that only a real connect failure is
+    ever reported to a client as a database outage.
+    """
+
+    def __init__(self, message: str = DATABASE_UNAVAILABLE_MESSAGE) -> None:
+        """Answer 503 with the registry's database-unavailable code."""
+        super().__init__(
+            status_code=503, code=ErrorCode.SERVER_DATABASE_UNAVAILABLE, message=message
+        )
 
 
 def build_error_response(

@@ -40,6 +40,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot: brings the schema to head and exits, so no process ever serves traffic against an
+  # unmigrated database. It runs the API image rather than a checkout, which is what proves the
+  # image really carries `alembic.ini` and `migrations/`; a missing COPY fails compose rather than
+  # the first deploy. `restart: no` because a completed migration must stay completed for the
+  # `service_completed_successfully` conditions below.
+  migrate:
+    restart: 'no'
+    image: template-fastapi-nuxt-api
+    build:
+      context: apps/server
+      dockerfile: Dockerfile
+    command: ['alembic', 'upgrade', 'head']
+    environment:
+      <<: *server-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     restart: unless-stopped
     # Named explicitly, which is the name compose would derive anyway, so CI can build this
@@ -57,6 +75,8 @@ services:
     ports:
       - '3001:3001'
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -88,6 +108,8 @@ services:
       start_period: 15s
       retries: 3
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
