@@ -15,9 +15,10 @@ import sys
 
 from alembic import context
 from sqlalchemy import Connection, pool
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.core.settings import get_settings
+from app.db.engine import build_connect_args
 from app.db.tables import metadata
 
 config = context.config
@@ -47,6 +48,30 @@ def resolve_database_url() -> str:
     return get_settings().database_url.get_secret_value()
 
 
+def build_migration_engine() -> AsyncEngine:
+    """Build the engine the chain runs on, with the connect arguments the caller's case needs.
+
+    On the deployed path nothing configured `sqlalchemy.url`, so the engine is built from the same
+    Settings the service uses and through the same `build_connect_args`: in staging and production
+    that carries the verified TLS context, so a migration cannot be the one connection in the
+    system that accepts an unverified certificate or falls back to plaintext. A caller that did
+    configure the URL (the integration fixture, a one-off against a branch) owns that decision
+    itself and may have no Settings to build at all, so its URL is used as given.
+
+    `NullPool` in both cases, because the process exits as soon as the chain finishes and a pooled
+    engine would hold idle connections open for a lifetime that does not exist here.
+    """
+    configured_url = config.get_main_option("sqlalchemy.url", "")
+    if configured_url:
+        return create_async_engine(configured_url, poolclass=pool.NullPool)
+    settings = get_settings()
+    return create_async_engine(
+        settings.database_url.get_secret_value(),
+        poolclass=pool.NullPool,
+        connect_args=build_connect_args(settings),
+    )
+
+
 def run_migrations_offline() -> None:
     """Emit the chain as SQL against a URL, without connecting to anything."""
     context.configure(
@@ -67,12 +92,8 @@ def run_migrations_on_connection(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    """Open an async engine, run the chain on a connection borrowed from it, and dispose it.
-
-    `NullPool` is used because the process exits as soon as the chain finishes; a pooled engine
-    would hold idle connections open for a lifetime that does not exist here.
-    """
-    engine = create_async_engine(resolve_database_url(), poolclass=pool.NullPool)
+    """Open the migration engine, run the chain on a connection from it, and dispose it."""
+    engine = build_migration_engine()
     try:
         async with engine.connect() as connection:
             await connection.run_sync(run_migrations_on_connection)

@@ -5,7 +5,9 @@ Revises: ${down_revision | comma,n}
 Created: ${create_date}
 """
 
-${imports if imports else "import sqlalchemy as sa\nfrom alembic import op"}
+import sqlalchemy as sa
+from alembic import op
+${imports if imports else ''}
 
 revision = ${repr(up_revision)}
 down_revision = ${repr(down_revision)}
