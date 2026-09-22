@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-20 (slice 02 PR 2: the error envelope)
+Last updated: 2026-09-23 (slice 02 PR 3: Alembic, the users table, and the connection dependency)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -32,6 +32,7 @@ the date and what changed. Section shape:
 | Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test        |
 | Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Complete** | spec B-3; PR #10; every job green on `main`                                            |
 | Error envelope: `{ code, error }` on every failure, a code registry, and five exception handlers        | **Complete** | US-INFRA-005; spec B-5, B-9, B-43; typed into `@repo/api-types` through `openapi.yaml` |
+| Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; spec B-6; the compose `migrate` service gates `api` and `worker`         |
 
 ## Landing
 

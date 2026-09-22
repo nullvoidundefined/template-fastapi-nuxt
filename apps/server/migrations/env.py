@@ -10,6 +10,8 @@ integration fixture and a one-off run point the same chain at another database.
 """
 
 import asyncio
+import logging
+import sys
 
 from alembic import context
 from sqlalchemy import Connection, pool
@@ -20,6 +22,21 @@ from app.db.tables import metadata
 
 config = context.config
 target_metadata = metadata
+
+MIGRATION_LOGGER_NAME = "alembic"
+
+
+def configure_migration_logging() -> None:
+    """Make sure Alembic's own INFO lines reach stdout, so a deployed migration is not silent.
+
+    `alembic.ini` deliberately carries no logging configuration and `env.py` never calls
+    `fileConfig`, so without this the only handler is Python's last resort, which prints warnings
+    and above; `Running upgrade ... ` would never appear in a deploy log. `force=False` leaves an
+    already configured root handler alone, so inside a process that ran `configure_logging` the
+    lines go through structlog's renderer and come out as JSON like every other line.
+    """
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    logging.getLogger(MIGRATION_LOGGER_NAME).setLevel(logging.INFO)
 
 
 def resolve_database_url() -> str:
@@ -62,6 +79,8 @@ async def run_migrations_online() -> None:
     finally:
         await engine.dispose()
 
+
+configure_migration_logging()
 
 if context.is_offline_mode():
     run_migrations_offline()
