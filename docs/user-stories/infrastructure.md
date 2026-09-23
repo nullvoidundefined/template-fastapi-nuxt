@@ -134,3 +134,23 @@
 
 **E2E test:** covered by integration tests in `apps/server/tests/integration/middleware/` against the real Redis, including the proxy-header and concurrency cases; no user-facing route ships in this PR, so no new e2e spec.
 **Ticket:** IAN-171
+
+## US-AUTH-001: A session store that survives a leak and a password change
+
+**As** the owner of this template
+**I want to** know that a stolen database gives up no live session, that a missing account costs an attacker the same as a wrong password, and that a password change actually revokes
+**So that** the auth endpoints in the next pull request are built on primitives that are already correct rather than ones that look correct
+
+**Acceptance criteria:**
+
+- [x] `user_sessions` stores only the SHA-256 of the token its cookie carries, so the raw token exists nowhere but the client; deleting a user cascades to their sessions; and `expires_at` is indexed for the cleanup job slice 08 adds.
+- [x] Passwords are hashed with bcrypt at cost 12, asserted by reading the cost out of the stored hash rather than from a constant, and every bcrypt call runs off the event loop.
+- [x] `verify_password` contains no conditional at all: it resolves a comparison hash, compares once, and returns, so a missing user reaches the same comparison a wrong password does (spec B-11). A structural test pins this, because a value assertion alone passes against a short-circuit that never runs bcrypt.
+- [x] `generate_session_token` returns the raw token and its SHA-256 together, and the raw token has the length and alphabet `secrets.token_urlsafe(32)` produces.
+- [x] `lock_user_for_update` serializes two concurrent transactions on one user, observed through Postgres's own lock graph rather than inferred from elapsed time. This closes a race neither B-11 nor B-13 names, where a login verifying an old password can insert a live session after a password change has revoked every other one.
+- [x] Email lookups trim and lowercase before comparing, and compare on `lower(email)` rather than with `ILIKE`, which would read an underscore in an address as a wildcard and would miss the functional unique index.
+- [x] The session dependency tells an absent cookie and an unknown token (both `AUTH_REQUIRED`) from an expired session (`AUTH_SESSION_EXPIRED`), and returns the session id beside the user so a password change can preserve the caller's own session. A second, non-raising resolver serves logout, which must answer the same way whether or not a session existed (spec B-31).
+- [x] `last_seen_at` moves at most once every five minutes, through a condition inside the UPDATE, so two simultaneous requests cannot both decide the row is stale and both write it.
+
+**E2E test:** none in this pull request; no route reaches these primitives until slice 03 PR 2. Covered by `apps/server/tests/unit/core/test_security.py` and `apps/server/tests/integration/db/test_auth_primitives.py`.
+**Ticket:** IAN-315
