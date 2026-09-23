@@ -45,3 +45,34 @@ users = sa.Table(
 # Unique on the folded address rather than on `email`, so `A@x.com` and `a@x.com` are one account.
 # Registration still stores the address as the user typed it; only the uniqueness test is folded.
 sa.Index(LOWER_EMAIL_INDEX_NAME, sa.func.lower(users.c.email), unique=True)
+
+# One row per signed-in browser. The cookie carries a random token and this table stores only its
+# SHA-256, so a database leak does not hand over live sessions. `ON DELETE CASCADE` means deleting
+# a user signs that user out everywhere without a second statement, and the index on `expires_at`
+# is what lets the hourly cleanup job in slice 08 find expired rows without scanning the table.
+user_sessions = sa.Table(
+    "user_sessions",
+    metadata,
+    sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+    sa.Column(
+        "user_id",
+        sa.Uuid(),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("token_hash", sa.Text(), nullable=False, unique=True),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column(
+        "last_seen_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Index("ix_user_sessions_expires_at", "expires_at"),
+)

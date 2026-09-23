@@ -41,12 +41,12 @@ This is the single change the pre-Gate-1 review most wanted, and it is why PR 1'
 
 ## Execution record
 
-| PR  | Concern                                                  | Ticket  | PR number | Merged | Scope change |
-| --- | -------------------------------------------------------- | ------- | --------- | ------ | ------------ |
-| 1   | `user_sessions`, the security primitives, the dependency | pending | pending   |        |              |
-| 2   | The five auth endpoints and the field-error contract     | pending | pending   |        |              |
-| 3   | The proxy, the query layer, and the auth gate            | pending | pending   |        |              |
-| 4   | The ui kit and the forms                                 | pending | pending   |        |              |
+| PR  | Concern                                                  | Ticket  | PR number | Merged | Scope change                                                                                                                                                                                                                                                                                                   |
+| --- | -------------------------------------------------------- | ------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `user_sessions`, the security primitives, the dependency | IAN-315 | #31       |        | The dummy-hash test became structural rather than value-based: Codex showed that asserting the dummy password is rejected also passes against a short-circuit that never runs bcrypt, so `resolve_comparison_hash` was extracted as a pure function and an AST test pins that the verifier has no conditional. |
+| 2   | The five auth endpoints and the field-error contract     | pending | pending   |        |                                                                                                                                                                                                                                                                                                                |
+| 3   | The proxy, the query layer, and the auth gate            | pending | pending   |        |                                                                                                                                                                                                                                                                                                                |
+| 4   | The ui kit and the forms                                 | pending | pending   |        |                                                                                                                                                                                                                                                                                                                |
 
 IAN-306 and IAN-312, the two follow-ups slice 02 left, are separate maintenance work rather than a prerequisite for any of this. They are worth doing as a `bundle` pull request before PR 1 because IAN-312 makes a stopped Docker daemon produce a green run instead of a red one, which cost time twice in slice 02, but they are approved on their own merits and not as part of this slice.
 
