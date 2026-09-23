@@ -95,3 +95,22 @@
 
 **E2E test:** `e2e/global-setup.ts` runs the migration the whole end-to-end suite then depends on; the behavior itself is covered by `apps/server/tests/integration/db/`, because no user-facing route reads the table until slice 03.
 **Ticket:** IAN-169
+
+## US-INFRA-007: Protections in place before the first public route
+
+**As** an operator exposing this API to the internet
+**I want to** know that every response is hardened, that a foreign origin cannot drive a signed-in browser, and that no request can occupy a worker indefinitely
+**So that** slice 03's public login route arrives behind these protections rather than having them retrofitted after it ships
+
+**Acceptance criteria:**
+
+- [x] Every response carries `X-Content-Type-Options: nosniff` and a `Referrer-Policy`, rejections included, and `Strict-Transport-Security` is sent only under production (spec B-35).
+- [x] A preflight from the configured `CORS_ORIGIN` is allowed with credentials, and a preflight from any other origin receives no `Access-Control-Allow-Origin` header at all (spec B-35).
+- [x] A state-changing request without `X-Requested-With: XMLHttpRequest` answers 403 `CSRF_HEADER_MISSING` in the error envelope; the same request with the header reaches the handler; a safe method is never checked (spec B-6).
+- [x] The CSRF exemptions are the two health routes and the Stripe webhook, matched by exact path, so a path merely sharing a prefix with an exempt one is still guarded (spec B-6).
+- [x] A handler running past 30 seconds is cancelled, not merely abandoned, and answers 408 `SERVER_REQUEST_TIMEOUT` (spec B-8).
+- [x] A guard's rejection still carries the request ID header, the security headers, and a log line bound to the same request ID, which is what pins the middleware order.
+- [x] Production refuses to start without `CORS_ORIGIN`, `REDIS_URL`, or `FORWARDED_ALLOW_IPS`, and the README's environment table lists all three.
+
+**E2E test:** covered by unit tests in `apps/server/tests/unit/middleware/` and `apps/server/tests/unit/test_main_middleware_order.py`; no user-facing route ships in this PR, so no new e2e spec.
+**Ticket:** IAN-170

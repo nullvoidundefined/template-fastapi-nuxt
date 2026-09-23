@@ -147,7 +147,11 @@ async def test_a_handler_that_returns_commits_its_write(
     client_context = connection_client()
     try:
         async with client_context as client:
-            response = await client.post(COMMIT_PATH, params={"email": email})
+            response = await client.post(
+                COMMIT_PATH,
+                params={"email": email},
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
 
         assert response.status_code == 200, response.text
         assert await count_users(database_engine, email) == 1
@@ -172,7 +176,11 @@ async def test_a_handler_that_raises_after_writing_leaves_no_row(
     email = build_unique_email()
 
     async with connection_client() as client:
-        response = await client.post(ROLLBACK_PATH, params={"email": email})
+        response = await client.post(
+            ROLLBACK_PATH,
+            params={"email": email},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
 
     assert response.status_code == 500, response.text
     assert response.json()["code"] == ErrorCode.SERVER_INTERNAL_ERROR
@@ -200,7 +208,11 @@ async def test_a_failed_commit_answers_an_error_rather_than_the_success_already_
 
     async with probe_table(database_engine):
         async with client_context as client:
-            response = await client.post(DEFERRED_CONFLICT_PATH, params={"value": value})
+            response = await client.post(
+                DEFERRED_CONFLICT_PATH,
+                params={"value": value},
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
 
         assert response.status_code == 500, response.text
         assert response.json()["code"] == ErrorCode.SERVER_INTERNAL_ERROR

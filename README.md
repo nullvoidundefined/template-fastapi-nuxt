@@ -61,10 +61,13 @@ For live reload, run the API and the web app on the host instead (`pnpm dev`), w
 | `PORT`                | API image         | `3001`                                                         |
 | `WORKER_PORT`         | worker            | `3002`                                                         |
 | `DATABASE_CA_CERT`    | API, worker       | unset locally; a CA bundle path when deployed                  |
+| `CORS_ORIGIN`         | API               | unset locally; the web origin when deployed                    |
 | `FORWARDED_ALLOW_IPS` | API image         | unset locally; the web service's private network when deployed |
 | `NUXT_API_BASE_URL`   | web (server side) | `http://localhost:3001`                                        |
 
 Deployed environments set these from the platform's secrets; no value is ever committed or baked into an image.
+
+Three of them are mandatory in production and the API refuses to start without all three: `CORS_ORIGIN`, `REDIS_URL`, and `FORWARDED_ALLOW_IPS`. Each protects something that degrades quietly rather than failing loudly when it is missing. Without `CORS_ORIGIN` the allowed-origin list is empty and the CSRF guard loses the preflight that gives its header meaning; without `REDIS_URL` the rate limiter counts per process, so a client can rotate across instances past the auth limit; and without `FORWARDED_ALLOW_IPS` uvicorn keys every proxied request on the proxy's own address, putting the whole site in one rate-limit bucket.
 
 ## Tests
 

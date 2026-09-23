@@ -37,6 +37,9 @@ def build_settings(environment: str, database_ca_cert: str | None = None) -> Set
         database_url=UNREACHABLE_DATABASE_URL,
         environment=environment,
         database_ca_cert=database_ca_cert,
+        cors_origin="https://client.example.test",
+        redis_url="redis://127.0.0.1:6380/0",
+        forwarded_allow_ips="127.0.0.1",
     )
 
 

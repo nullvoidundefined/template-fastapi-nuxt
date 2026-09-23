@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-23 (slice 02 PR 3: Alembic, the users table, and the connection dependency)
+Last updated: 2026-09-23 (slice 02 PR 4: security headers, CORS, the CSRF guard, and the request timeout)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -33,6 +33,7 @@ the date and what changed. Section shape:
 | Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Complete** | spec B-3; PR #10; every job green on `main`                                                                                                                     |
 | Error envelope: `{ code, error }` on every failure, a code registry, and five exception handlers        | **Complete** | US-INFRA-005; spec B-5, B-9, B-43; typed into `@repo/api-types` through `openapi.yaml`                                                                          |
 | Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; slice 02 PR 3, enabling slice 03's storage rather than an acceptance criterion of its own; the compose `migrate` service gates `api` and `worker` |
+| Request protections: security headers, CORS, the CSRF header guard, and a 30 second timeout             | **Complete** | US-INFRA-007; spec B-6, B-8, B-35; production refuses to start without CORS_ORIGIN                                                                              |
 
 ## Landing
 

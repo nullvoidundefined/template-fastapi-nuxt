@@ -115,7 +115,9 @@ async def test_streamed_body_over_100_kb_without_content_length_is_rejected_with
     mount_body_length_route(server_app)
 
     response = await api_client.post(
-        BODY_ECHO_PATH, content=stream_body_chunks(OVERSIZED_BODY_BYTES)
+        BODY_ECHO_PATH,
+        content=stream_body_chunks(OVERSIZED_BODY_BYTES),
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert "content-length" not in {name.lower() for name in response.request.headers}
@@ -129,7 +131,9 @@ async def test_streamed_body_under_100_kb_reaches_the_route_intact(
     mount_body_length_route(server_app)
 
     response = await api_client.post(
-        BODY_ECHO_PATH, content=stream_body_chunks(UNDERSIZED_BODY_BYTES)
+        BODY_ECHO_PATH,
+        content=stream_body_chunks(UNDERSIZED_BODY_BYTES),
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert response.status_code == 200
@@ -145,7 +149,7 @@ async def test_defect2_streamed_body_over_100_kb_to_a_pydantic_route_is_rejected
     response = await api_client.post(
         TYPED_BODY_PATH,
         content=stream_json_body_chunks(OVERSIZED_BODY_BYTES),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "X-Requested-With": "XMLHttpRequest"},
     )
 
     assert "content-length" not in {name.lower() for name in response.request.headers}
@@ -160,7 +164,9 @@ async def test_defect4_body_of_exactly_100_kb_reaches_the_route_intact(
     mount_body_length_route(server_app)
 
     response = await api_client.post(
-        BODY_ECHO_PATH, content=build_request_body(MAX_BODY_BYTES, is_streamed)
+        BODY_ECHO_PATH,
+        content=build_request_body(MAX_BODY_BYTES, is_streamed),
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert response.status_code == 200
@@ -175,7 +181,9 @@ async def test_defect4_body_one_byte_over_100_kb_is_rejected_with_413(
     mount_body_length_route(server_app)
 
     response = await api_client.post(
-        BODY_ECHO_PATH, content=build_request_body(MAX_BODY_BYTES + 1, is_streamed)
+        BODY_ECHO_PATH,
+        content=build_request_body(MAX_BODY_BYTES + 1, is_streamed),
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert response.status_code == 413
@@ -205,7 +213,9 @@ async def test_defect8_every_413_uses_the_input_payload_too_large_envelope(
     mount_body_length_route(server_app)
 
     response = await api_client.post(
-        BODY_ECHO_PATH, content=build_request_body(OVERSIZED_BODY_BYTES, is_streamed)
+        BODY_ECHO_PATH,
+        content=build_request_body(OVERSIZED_BODY_BYTES, is_streamed),
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert_payload_too_large_envelope(response)
