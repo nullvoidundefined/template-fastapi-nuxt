@@ -71,12 +71,16 @@ async def login(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    response: Response,
     connection: RequestConnection,
     settings: RequestSettings,
     current: OptionalCurrentUser,
 ) -> Response:
-    """End the session if there is one, and clear the cookie either way."""
+    """End the session if there is one, and clear the cookie either way.
+
+    No injected `Response` is declared. FastAPI assigns a returned `Response` instance directly
+    and never merges the injected one's headers, so anything written to it here would be dropped
+    without a test noticing, on the one route whose whole job is to get a cookie header right.
+    """
     if current is not None:
         await delete_session(connection, current.session_id)
         logger.info("user_signed_out", user_id=str(current.user.id))
@@ -100,7 +104,7 @@ async def change_my_password(
     """Replace the password after proving the current one, signing out every other session."""
     await change_password(
         connection,
-        current.user.email,
+        current.user.id,
         current.session_id,
         body.current_password,
         body.new_password,

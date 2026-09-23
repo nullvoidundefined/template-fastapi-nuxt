@@ -16,19 +16,24 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.security import hash_password, verify_password
 from app.db.tables import user_sessions, users
-from app.repositories.users import lock_user_for_update
+from app.repositories.users import lock_user_by_id
 from app.services.auth.sign_in_user import InvalidCredentialsError
 
 
 async def change_password(
     connection: AsyncConnection,
-    email: str,
+    user_id: uuid.UUID,
     session_id: uuid.UUID,
     current_password: str,
     new_password: str,
 ) -> None:
-    """Replace the password after proving the caller knows it, then revoke the other sessions."""
-    user = await lock_user_for_update(connection, email)
+    """Replace the password after proving the caller knows it, then revoke the other sessions.
+
+    The account is named by the id the session resolved to, never by the address on it. An
+    address is expected to change, and an authorization decision re-derived from a mutable
+    attribute is only accidentally correct.
+    """
+    user = await lock_user_by_id(connection, user_id)
     stored_hash = user.password_hash if user else None
     if not await verify_password(current_password, stored_hash) or user is None:
         raise InvalidCredentialsError

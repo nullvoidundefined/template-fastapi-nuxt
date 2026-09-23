@@ -15,6 +15,9 @@ from app.constants.error_codes import ErrorCode
 from app.schemas.errors import ErrorResponse, FieldError
 
 DATABASE_UNAVAILABLE_MESSAGE = "The database is unavailable"
+# The one optional field on the envelope. Naming it keeps the omission specific to a
+# failure that carries no field errors, instead of a blanket rule about nulls.
+ABSENT_FIELD_ERRORS = {"field_errors"}
 
 
 class AppError(Exception):
@@ -77,12 +80,16 @@ def build_error_response(
     """Return the `{ code, error }` envelope as a JSON response with the given status.
 
     `field_errors` is excluded when absent rather than serialized as null, so a failure that is
-    not a validation error answers the same two keys it always has.
+    not a validation error answers the same two keys it always has. The exclusion names that one
+    field rather than dropping every null, because `exclude_none` is recursive and unconditional
+    and would silently swallow the first future field whose null is meaningful.
     """
     envelope = ErrorResponse(code=code, error=message, field_errors=field_errors)
     return JSONResponse(
         status_code=status_code,
-        content=envelope.model_dump(mode="json", exclude_none=True),
+        content=envelope.model_dump(
+            mode="json", exclude=ABSENT_FIELD_ERRORS if field_errors is None else None
+        ),
         headers=headers,
     )
 
@@ -106,7 +113,7 @@ async def send_error_envelope(
     `headers` carries the few a rejection must add, such as the rate limiter's `Retry-After`.
     """
     body = json.dumps(
-        ErrorResponse(code=code, error=message).model_dump(mode="json", exclude_none=True)
+        ErrorResponse(code=code, error=message).model_dump(mode="json", exclude=ABSENT_FIELD_ERRORS)
     ).encode()
     extra_headers = [
         (name.lower().encode(), value.encode()) for name, value in (headers or {}).items()
