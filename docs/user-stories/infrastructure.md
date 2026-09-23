@@ -154,3 +154,24 @@
 
 **E2E test:** none in this pull request; no route reaches these primitives until slice 03 PR 2. Covered by `apps/server/tests/unit/core/test_security.py` and `apps/server/tests/integration/db/test_auth_primitives.py`.
 **Ticket:** IAN-315
+
+## US-AUTH-002: An account someone can actually sign in to
+
+**As** a person using an application built from this template
+**I want to** register, sign in, sign out, see who I am, and change my password
+**So that** the account lifecycle exists end to end on the server before any page calls it
+
+**Acceptance criteria:**
+
+- [x] Registration stores a bcrypt hash whose cost reads as 12 out of the hash itself, stores the address trimmed and lowercased, and answers 409 `AUTH_EMAIL_ALREADY_REGISTERED` for a duplicate that differs only in case (spec B-10).
+- [x] The session cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, carries the seven-day lifetime, and is `Secure` outside local development; each attribute is asserted separately, and the issued cookie's SHA-256 equals the stored `token_hash` (spec B-10).
+- [x] A wrong password and an unknown address answer the same code, a correct sign-in writes a session row, a sign-in removes that user's expired sessions while leaving live ones, and a mixed-case, whitespace-padded address signs in (spec B-11).
+- [x] Changing the password requires the current one, makes the old one stop working and the new one start, signs out every other session, and leaves the caller signed in (spec B-13).
+- [x] Logging out answers 204 with or without a session, deletes the row, and clears the cookie, asserted on the `Set-Cookie` expiry rather than only by a later rejection (spec B-31).
+- [x] `GET /v1/auth/me` answers the id and email, never a password hash, and 401 without a session (spec B-32).
+- [x] A sign-in and a password change on one account, genuinely overlapping, cannot leave a session built on the retired password. Both take the user row lock before verifying anything.
+- [x] A rejected body answers 400 `INPUT_VALIDATION_ERROR` carrying a structured list naming each offending field, which is what a form needs to show a message beside its input; the key is absent from every other failure.
+- [x] Each handler has a negative-input test covering an oversized body, an injection string, and malformed encoding (R-406).
+
+**E2E test:** `e2e/auth.spec.ts`, which drives the round trip against the running stack: register, identify, change the passphrase, prove the old one fails and the new one works, log out, and prove the cookie is dead. What it cannot see from outside the process, the bcrypt cost, the stored token hash, and row-level revocation, is covered by `apps/server/tests/integration/routers/auth/`.
+**Ticket:** IAN-320

@@ -10,8 +10,14 @@ password and acting on the result are two statements, and a password change can 
 them: a login that verified an old password could otherwise insert a live session after the change
 that was meant to revoke every session had already run. Taking the lock first serializes the two
 per user, and costs nothing when nobody is contending.
+
+`lock_user_by_id` holds the same lock for a caller that already knows which account it is acting
+on, which every authenticated request does. An address is a value a user is expected to change,
+so re-deriving the subject of an authorization decision from it makes that decision depend on a
+mutable attribute; the id the session resolved to is the account itself.
 """
 
+import uuid
 from typing import Any
 
 from sqlalchemy import Row, func, select
@@ -44,4 +50,14 @@ async def lock_user_for_update(connection: AsyncConnection, email: str) -> Row[A
     statement = (
         select(users).where(func.lower(users.c.email) == normalize_email(email)).with_for_update()
     )
+    return (await connection.execute(statement)).one_or_none()
+
+
+async def lock_user_by_id(connection: AsyncConnection, user_id: uuid.UUID) -> Row[Any] | None:
+    """Return the user with this id, holding its row lock until the transaction ends.
+
+    The same lock as `lock_user_for_update`, taken on the identity the caller already holds. A
+    sign-in cannot use it, because it has only the submitted address until the row is found.
+    """
+    statement = select(users).where(users.c.id == user_id).with_for_update()
     return (await connection.execute(statement)).one_or_none()

@@ -120,6 +120,10 @@ async def read_session_row(request: Request, connection: AsyncConnection) -> Row
     return (await connection.execute(statement)).one_or_none()
 
 
+CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
+OptionalCurrentUser = Annotated[AuthenticatedUser | None, Depends(resolve_current_user)]
+
+
 def build_authenticated_user(session_row: Row[Any]) -> AuthenticatedUser:
     """Bind the user id into the log context and return the resolved session."""
     structlog.contextvars.bind_contextvars(user_id=str(session_row.user_id))

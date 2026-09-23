@@ -24,8 +24,8 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
-from app.routers import health
-from app.schemas.errors import ErrorResponse
+from app.routers import auth, health
+from app.schemas.errors import ErrorResponse, FieldError
 
 REQUEST_ID_HEADER = "X-Request-Id"
 REQUEST_TIMEOUT_SECONDS = 30
@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     register_middleware(app, settings)
     register_exception_handlers(app, settings)
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app
 
 
@@ -193,7 +194,10 @@ async def handle_request_validation_error(request: Request, exc: Exception) -> J
     """Answer 400 with the field errors summarized, so the client can name the bad input."""
     validation_error = cast(RequestValidationError, exc)
     return build_error_response(
-        400, ErrorCode.INPUT_VALIDATION_ERROR, summarize_field_errors(validation_error)
+        400,
+        ErrorCode.INPUT_VALIDATION_ERROR,
+        summarize_field_errors(validation_error),
+        field_errors=collect_field_errors(validation_error),
     )
 
 
@@ -269,6 +273,14 @@ def build_unexpected_error_handler(
         return build_error_response(500, ErrorCode.SERVER_INTERNAL_ERROR, message, headers=headers)
 
     return handle_unexpected_error
+
+
+def collect_field_errors(validation_error: RequestValidationError) -> list[FieldError]:
+    """Return one entry per rejected field, so a form can show each message beside its input."""
+    return [
+        FieldError(field=format_error_location(error["loc"]), message=error["msg"])
+        for error in validation_error.errors()
+    ]
 
 
 def summarize_field_errors(validation_error: RequestValidationError) -> str:

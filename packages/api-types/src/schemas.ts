@@ -44,19 +44,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Open a session for an existing account and set the session cookie.
+         */
+        post: operations["login_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description End the session if there is one, and clear the cookie either way.
+         *
+         *     No injected `Response` is declared. FastAPI assigns a returned `Response` instance directly
+         *     and never merges the injected one's headers, so anything written to it here would be dropped
+         *     without a test noticing, on the one route whose whole job is to get a cookie header right.
+         */
+        post: operations["logout_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Me
+         * @description Answer the signed-in user's identity, and 401 without a usable session.
+         */
+        get: operations["read_me_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change My Password
+         * @description Replace the password after proving the current one, signing out every other session.
+         */
+        patch: operations["change_my_password_v1_auth_me_patch"];
+        trace?: never;
+    };
+    "/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register
+         * @description Create an account, sign it in, and set the session cookie.
+         */
+        post: operations["register_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AuthenticatedUserData
+         * @description The signed-in user, carrying only what a client may see.
+         */
+        AuthenticatedUserData: {
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid4
+             */
+            id: string;
+        };
+        /**
+         * AuthenticatedUserResponse
+         * @description The `{ data }` envelope every successful auth route answers with.
+         */
+        AuthenticatedUserResponse: {
+            data: components["schemas"]["AuthenticatedUserData"];
+        };
+        /**
+         * ChangePasswordRequest
+         * @description The body of a password change, which proves the caller knows the current password.
+         */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /**
          * ErrorCode
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
+         *
+         *     `field_errors` is populated only for `INPUT_VALIDATION_ERROR` and omitted from the body
+         *     entirely otherwise, so every other failure keeps the two-key shape clients already handle. It
+         *     exists because a form has to show a message beside the input it belongs to, and the prose
+         *     `error` string is documented as never parsed; reading the field out of it would make a
+         *     human-readable sentence into an interface.
          */
         ErrorResponse: {
             /** @description Machine-readable code from the error registry. */
@@ -66,6 +190,32 @@ export interface components {
              * @description Human-readable message; never parsed by clients.
              */
             error: string;
+            /**
+             * Field Errors
+             * @description Per-field validation failures, present only for a 400.
+             */
+            field_errors?: components["schemas"]["FieldError"][] | null;
+        };
+        /**
+         * FieldError
+         * @description One field of a request body that failed validation, and why.
+         */
+        FieldError: {
+            /**
+             * Field
+             * @description The offending field, as a dotted path without the body prefix.
+             */
+            field: string;
+            /**
+             * Message
+             * @description Why this field was rejected.
+             */
+            message: string;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
         };
         /**
          * HealthLiveness
@@ -93,6 +243,43 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "degraded";
+        };
+        /**
+         * LoginRequest
+         * @description The body of a sign-in.
+         *
+         *     The email carries no pattern. A malformed address is a failed sign-in rather than a malformed
+         *     request, and answering 400 here would tell a caller that an address is not even registrable,
+         *     which is one more bit than a sign-in should reveal.
+         */
+        LoginRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * RegisterRequest
+         * @description The body of a registration.
+         */
+        RegisterRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
         };
     };
     responses: never;
@@ -184,6 +371,233 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReadiness"];
+                };
+            };
+        };
+    };
+    login_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedUserResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_me_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedUserResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    change_my_password_v1_auth_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedUserResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    register_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedUserResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

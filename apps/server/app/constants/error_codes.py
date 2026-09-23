@@ -20,6 +20,8 @@ class ErrorCode(StrEnum):
     AUTH_REQUIRED = "AUTH_REQUIRED"
     # The session cookie names a session that has expired (slice 03).
     AUTH_SESSION_EXPIRED = "AUTH_SESSION_EXPIRED"
+    # Registration was attempted for an address an account already uses (slice 03).
+    AUTH_EMAIL_ALREADY_REGISTERED = "AUTH_EMAIL_ALREADY_REGISTERED"
     # A state-changing request arrived without X-Requested-With (slice 02, PR 4).
     CSRF_HEADER_MISSING = "CSRF_HEADER_MISSING"
     # An Idempotency-Key was reused for a different method, path, or body (slice 05).
