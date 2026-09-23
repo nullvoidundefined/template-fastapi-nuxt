@@ -1,9 +1,9 @@
 """Shared fixtures: the app under test, HTTP clients that run its lifespan, and log capture.
 
 The app is built through the public factory `app.main.create_app()` after the environment is
-set, so every test exercises the same assembly uvicorn runs. The default database URL points at a
-closed local port, so any test that does not override `database_url` proves it never needs a
-reachable Postgres.
+set, so every test exercises the same assembly uvicorn runs. The default database and Redis URLs
+both point at a closed local port, so any test that does not override them proves it never needs a
+reachable Postgres and never touches whatever Redis happens to be running on the machine.
 
 `build_server_app` is the test application factory: it builds the app through that same public
 factory under a chosen environment and then mounts a test-only router the calling test supplies,
@@ -23,7 +23,17 @@ from fastapi import APIRouter, FastAPI
 
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/none"
 TEST_BASE_URL = "http://testserver"
-LOCAL_REDIS_URL = "redis://127.0.0.1:6379/0"
+# The rate limiter counts in Redis whenever REDIS_URL is set, so this URL has to name an address
+# that nothing can ever be listening on. Pointing it at the default Redis port made every unit
+# test write real rate-limit keys into whichever Redis happened to be running on the machine,
+# keyed on the 127.0.0.1 address httpx reports, and because the suite makes far more than the
+# global limit of one hundred requests per fifteen minutes from that one address, every run
+# started inside the previous run's window already over the limit and answered 429 to tests that
+# have nothing to do with rate limiting. Port 1 is closed, so the limiter takes its in-process
+# fallback deterministically, which is the same guarantee UNREACHABLE_DATABASE_URL gives for
+# Postgres. A test that genuinely needs a reachable Redis sets its own URL from TEST_REDIS_URL,
+# as the integration fixtures under tests/integration/middleware do.
+UNREACHABLE_REDIS_URL = "redis://127.0.0.1:1/0"
 
 ServerAppFactory = Callable[..., FastAPI]
 ApiClientFactory = Callable[[FastAPI], AbstractAsyncContextManager[httpx.AsyncClient]]
@@ -81,7 +91,7 @@ def build_server_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[ServerAppFacto
     ) -> FastAPI:
         monkeypatch.setenv("DATABASE_URL", database_url)
         monkeypatch.setenv("ENVIRONMENT", environment)
-        monkeypatch.setenv("REDIS_URL", LOCAL_REDIS_URL)
+        monkeypatch.setenv("REDIS_URL", UNREACHABLE_REDIS_URL)
         monkeypatch.setenv(
             "CORS_ORIGIN", os.environ.get("CORS_ORIGIN", "https://client.example.test")
         )
