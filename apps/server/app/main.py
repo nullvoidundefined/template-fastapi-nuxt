@@ -22,7 +22,7 @@ from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_respo
 from app.middleware.csrf_guard import CSRF_HEADER_MISSING_MESSAGE, CsrfGuardMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
-from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
 from app.routers import health
 from app.schemas.errors import ErrorResponse
 
@@ -132,13 +132,20 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
         allow_methods=ALLOWED_CORS_METHODS,
         allow_headers=ALLOWED_CORS_HEADERS,
     )
-    app.add_middleware(SecurityHeadersMiddleware, environment=settings.environment)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CorrelationIdMiddleware,
         header_name=REQUEST_ID_HEADER,
         validator=is_valid_request_id,
     )
+    # Outermost of all, rather than the position 2 the plan first named. The body limit in
+    # RequestContextMiddleware answers its own 413 without calling anything below it, so a
+    # security-headers layer registered inside it never sees that response. B-35 says every
+    # response, and a rejection an attacker can provoke at will is the last one to leave
+    # undefended. The headers need nothing the layers below them set, so nothing is lost by
+    # hoisting them; the 500 that Starlette's own ServerErrorMiddleware writes sits outside every
+    # user layer and is decorated by the handler itself instead.
+    app.add_middleware(SecurityHeadersMiddleware, environment=settings.environment)
 
 
 def register_exception_handlers(app: FastAPI, settings: Settings) -> None:
@@ -244,7 +251,14 @@ def build_unexpected_error_handler(
             if settings.environment == "production"
             else f"{INTERNAL_ERROR_MESSAGE}: {exc}"
         )
-        headers = {REQUEST_ID_HEADER: request_id} if request_id else None
+        # The same reason the request ID is set by hand here applies to the security headers:
+        # this response never passes back out through the middleware that would have added them.
+        headers = {
+            name.decode(): value.decode()
+            for name, value in build_security_headers(settings.environment)
+        }
+        if request_id:
+            headers[REQUEST_ID_HEADER] = request_id
         return build_error_response(500, ErrorCode.SERVER_INTERNAL_ERROR, message, headers=headers)
 
     return handle_unexpected_error

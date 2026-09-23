@@ -7,6 +7,40 @@ from starlette.responses import Response
 from tests.conftest import ApiClientFactory, ServerAppFactory
 
 
+@pytest.mark.parametrize("environment", ["development", "test", "staging", "production"])
+async def test_downstream_managed_headers_are_replaced_and_unrelated_headers_survive(
+    environment: str,
+) -> None:
+    """Raw headers must contain only authoritative values, with HSTS only in production."""
+    from app.middleware.security_headers import SecurityHeadersMiddleware  # noqa: PLC0415
+
+    downstream_response = Response()
+    downstream_response.raw_headers.extend(
+        [
+            (b"X-Content-Type-Options", b"downstream-value"),
+            (b"Strict-Transport-Security", b"max-age=1"),
+            (b"X-Downstream-Marker", b"unchanged"),
+        ]
+    )
+    application = SecurityHeadersMiddleware(downstream_response, environment=environment)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/test-only/downstream-headers")
+
+    assert [
+        value for name, value in response.headers.raw if name.lower() == b"x-content-type-options"
+    ] == [b"nosniff"]
+    assert [
+        value
+        for name, value in response.headers.raw
+        if name.lower() == b"strict-transport-security"
+    ] == ([b"max-age=63072000; includeSubDomains"] if environment == "production" else [])
+    assert [
+        value for name, value in response.headers.raw if name.lower() == b"x-downstream-marker"
+    ] == [b"unchanged"]
+
+
 @pytest.mark.parametrize("status_code", [200, 403, 404, 500])
 @pytest.mark.parametrize("environment", ["development", "test", "staging", "production"])
 async def test_every_response_carries_security_headers_and_only_production_enables_hsts(

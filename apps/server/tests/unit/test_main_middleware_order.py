@@ -10,7 +10,52 @@ response under either order, so the header assertions alone cannot distinguish t
 from typing import Any
 
 import httpx
+import pytest
 from fastapi import FastAPI
+
+from tests.conftest import ApiClientFactory, ServerAppFactory
+
+
+async def test_body_limit_rejection_carries_security_headers(
+    build_server_app: ServerAppFactory,
+    build_api_client: ApiClientFactory,
+) -> None:
+    """The real application's body guard must decorate its own early 413 response."""
+    application = build_server_app()
+    async with build_api_client(application) as client:
+        response = await client.post("/health", content=b"x" * (100 * 1024 + 1))
+
+    assert response.status_code == 413
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+
+@pytest.mark.parametrize("environment", ["development", "production"])
+async def test_unhandled_failure_carries_security_headers(
+    build_server_app: ServerAppFactory,
+    build_api_client: ApiClientFactory,
+    environment: str,
+) -> None:
+    """The outer server-error response must retain the environment's security headers."""
+    application = build_server_app(environment=environment)
+
+    async def raise_unhandled_error() -> None:
+        """Trigger the application's unhandled-exception handler."""
+        raise RuntimeError("Test-only unhandled failure")
+
+    application.add_api_route("/test-only/unhandled", raise_unhandled_error)
+    async with build_api_client(application) as client:
+        response = await client.get("/test-only/unhandled")
+
+    assert response.status_code == 500
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    if environment == "production":
+        assert response.headers["Strict-Transport-Security"] == (
+            "max-age=63072000; includeSubDomains"
+        )
+    else:
+        assert "Strict-Transport-Security" not in response.headers
 
 
 async def test_csrf_rejections_carry_security_headers_and_log_with_the_bound_request_id(

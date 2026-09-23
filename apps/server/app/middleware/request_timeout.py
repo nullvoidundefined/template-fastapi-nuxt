@@ -48,9 +48,14 @@ class RequestTimeoutMiddleware:
             await send(message)
 
         try:
-            async with asyncio.timeout(self.seconds):
+            async with asyncio.timeout(self.seconds) as deadline:
                 await self.app(scope, receive, track_response_start)
         except TimeoutError:
+            # Only this deadline expiring is a request timeout. A handler that raises its own
+            # TimeoutError, from an upstream call or its own inner bound, is an ordinary failure
+            # and must reach the 500 handler rather than be relabelled as 408.
+            if not deadline.expired():
+                raise
             logger.warning("request_timed_out", path=scope["path"], timeout_seconds=self.seconds)
             # A handler that already began streaming has sent its status line, so the envelope
             # cannot replace it; the connection simply ends, and the log line is the record.

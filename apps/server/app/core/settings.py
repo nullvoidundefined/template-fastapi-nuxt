@@ -36,13 +36,27 @@ class Settings(BaseSettings):
         """Refuse to start in production without the values production's protections need."""
         if self.environment != PRODUCTION_ENVIRONMENT:
             return self
-        missing = [name for name in REQUIRED_PRODUCTION_FIELDS if getattr(self, name) is None]
+        missing = [name for name in REQUIRED_PRODUCTION_FIELDS if is_blank(getattr(self, name))]
         if missing:
             raise ValueError(
                 f"{REQUIRED_PRODUCTION_VARIABLES} are required in production; missing: "
                 f"{', '.join(name.upper() for name in missing)}"
             )
         return self
+
+
+def is_blank(value: SecretStr | str | None) -> bool:
+    """Return True when the value is absent, empty, or only whitespace.
+
+    An unset variable and one exported as an empty string mean the same thing to an operator, and
+    a shell exports an empty string easily (`CORS_ORIGIN=` in an env file, a substitution that
+    resolved to nothing). Checking only for None would let production start with an empty allowed
+    origin list, which is the configuration the validator exists to refuse.
+    """
+    if value is None:
+        return True
+    text = value.get_secret_value() if isinstance(value, SecretStr) else value
+    return not text.strip()
 
 
 @lru_cache

@@ -23,6 +23,17 @@ STRICT_TRANSPORT_SECURITY_HEADER = (
     b"max-age=63072000; includeSubDomains",
 )
 PRODUCTION_ENVIRONMENT = "production"
+# Every header this middleware owns, independent of the environment. Deriving the set from the
+# headers actually being sent would leave `Strict-Transport-Security` unmanaged outside production,
+# so a downstream copy of it would survive in exactly the environments that must never send it.
+MANAGED_HEADER_NAMES = frozenset(
+    name
+    for name, _value in (
+        CONTENT_TYPE_OPTIONS_HEADER,
+        REFERRER_POLICY_HEADER,
+        STRICT_TRANSPORT_SECURITY_HEADER,
+    )
+)
 
 
 class SecurityHeadersMiddleware:
@@ -41,14 +52,38 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, self._build_decorating_send(send))
 
     def _build_decorating_send(self, send: Send) -> Send:
-        """Return a send that adds the headers as the response starts."""
+        """Return a send that replaces the managed headers as the response starts."""
 
         async def send_with_security_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                message = {**message, "headers": [*message.get("headers", []), *self.headers]}
+                message = {
+                    **message,
+                    "headers": replace_managed_headers(message.get("headers", []), self.headers),
+                }
             await send(message)
 
         return send_with_security_headers
+
+
+def replace_managed_headers(
+    response_headers: list[tuple[bytes, bytes]], security_headers: list[tuple[bytes, bytes]]
+) -> list[tuple[bytes, bytes]]:
+    """Drop any downstream copy of a managed header, then append this environment's values.
+
+    Appending without dropping would send two values for the same header when a route set one of
+    them itself, and the client would pick whichever its parser prefers. It would also let a
+    downstream `Strict-Transport-Security` survive outside production, which is the one value that
+    must never be sent from a host serving plain HTTP.
+
+    Header names arrive lowercased over HTTP/2 but not necessarily over HTTP/1.1, so the
+    comparison folds case rather than trusting the wire format.
+    """
+    kept = [
+        (name, value)
+        for name, value in response_headers
+        if name.lower() not in MANAGED_HEADER_NAMES
+    ]
+    return [*kept, *security_headers]
 
 
 def build_security_headers(environment: str) -> list[tuple[bytes, bytes]]:

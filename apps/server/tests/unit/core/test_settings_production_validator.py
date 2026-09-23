@@ -19,12 +19,17 @@ def production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.usefixtures("production_environment")
 @pytest.mark.parametrize("missing_value", ["CORS_ORIGIN", "REDIS_URL", "FORWARDED_ALLOW_IPS"])
+@pytest.mark.parametrize("value", [None, "", " \t\n"], ids=["absent", "empty", "whitespace"])
 def test_production_refuses_to_construct_when_a_required_value_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     missing_value: str,
+    value: str | None,
 ) -> None:
-    """Each missing value must independently prevent production startup."""
-    monkeypatch.delenv(missing_value)
+    """Each absent, empty, or whitespace-only value must prevent production startup."""
+    if value is None:
+        monkeypatch.delenv(missing_value)
+    else:
+        monkeypatch.setenv(missing_value, value)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 
