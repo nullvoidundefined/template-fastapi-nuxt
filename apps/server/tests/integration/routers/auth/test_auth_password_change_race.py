@@ -34,6 +34,15 @@ The surviving session is then the bug, and the last assertion in this file is wh
 One Postgres detail the barrier depends on: `pg_stat_activity` is snapshotted per transaction, so
 a poll inside the control's own transaction would answer with the same frozen picture forever.
 `pg_stat_clear_snapshot()` before each read is what makes the next read current.
+
+The counts are narrowed to this test's own backends by `application_name`, and that is not
+cosmetic. `pg_stat_activity` shows every backend in the database, `migrated_database_url` is
+session-scoped and shared, and the default test run is parallel (R-509), so another worker's
+integration test waiting on a lock, or sitting idle in its transaction after a `SELECT`, would be
+counted here. The barrier would then release before this test's own two requests had actually met,
+and `observed_stalls == [1, 2]` would hold for the wrong reason or fail for no reason of this
+test's making. The application under test therefore opens every connection under a name generated
+for this run, and both counting queries match on it.
 """
 
 import asyncio
@@ -42,11 +51,15 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any, NamedTuple
 
 import bcrypt
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+from app.core.settings import Settings
 
 LOGIN_PATH = "/v1/auth/login"
 ME_PATH = "/v1/auth/me"
@@ -60,9 +73,13 @@ CLOCK_SQL = text("SELECT clock_timestamp()")
 # Without this, every later read in the control's transaction answers from the snapshot the first
 # read took, and the barrier would either release immediately or never.
 CLEAR_STATS_SNAPSHOT_SQL = text("SELECT pg_stat_clear_snapshot()")
+# `application_name` is what keeps the count to this test's own backends: every other worker's
+# integration test shares this database, and a backend of theirs blocked on a lock is
+# indistinguishable here from one of these two requests.
 COUNT_BLOCKED_SQL = text(
     "SELECT count(*) FROM pg_stat_activity "
     "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+    "AND application_name = :application_name "
     "AND wait_event_type = 'Lock'"
 )
 # A request is stalled when Postgres is making it wait for a lock, or when it is holding a
@@ -72,6 +89,7 @@ COUNT_BLOCKED_SQL = text(
 COUNT_STALLED_SQL = text(
     "SELECT count(*) FROM pg_stat_activity "
     "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+    "AND application_name = :application_name "
     "AND (wait_event_type = 'Lock' OR (state = 'idle in transaction' "
     "AND query_start > :since AND btrim(query) ILIKE 'SELECT%'))"
 )
@@ -82,18 +100,28 @@ STALL_DEADLINE_SECONDS = 3.0
 POLL_SECONDS = 0.02
 
 
-async def count_stalled_backends(connection: AsyncConnection, since: datetime | None) -> int:
-    """Return how many other backends are stalled, reading the statistics view afresh."""
+async def count_stalled_backends(
+    connection: AsyncConnection, application_name: str, since: datetime | None
+) -> int:
+    """Return how many of this run's other backends are stalled, reading the view afresh."""
     await connection.execute(CLEAR_STATS_SNAPSHOT_SQL)
     if since is None:
-        return int(await connection.scalar(COUNT_BLOCKED_SQL) or 0)
-    return int(await connection.scalar(COUNT_STALLED_SQL, {"since": since}) or 0)
+        return int(
+            await connection.scalar(COUNT_BLOCKED_SQL, {"application_name": application_name}) or 0
+        )
+    return int(
+        await connection.scalar(
+            COUNT_STALLED_SQL, {"application_name": application_name, "since": since}
+        )
+        or 0
+    )
 
 
 async def wait_for_stalled_backends(
     connection: AsyncConnection,
     expected: int,
     requests: list[asyncio.Task[object]],
+    application_name: str,
     since: datetime | None = None,
 ) -> int:
     """Poll until `expected` backends are stalled, and return the number last seen.
@@ -103,18 +131,19 @@ async def wait_for_stalled_backends(
     has finished, which is what happens while the endpoints do not exist yet.
     """
     deadline = time.monotonic() + STALL_DEADLINE_SECONDS
-    stalled = await count_stalled_backends(connection, since)
+    stalled = await count_stalled_backends(connection, application_name, since)
     while stalled < expected and time.monotonic() < deadline:
         if all(request.done() for request in requests):
             break
         await asyncio.sleep(POLL_SECONDS)
-        stalled = await count_stalled_backends(connection, since)
+        stalled = await count_stalled_backends(connection, application_name, since)
     return stalled
 
 
 async def run_overlapping_requests(
     control: AsyncConnection,
     user_id: uuid.UUID,
+    application_name: str,
     change_password: Callable[[], Awaitable[object]],
     log_in: Callable[[], Awaitable[object]],
 ) -> tuple[list[int], list[object]]:
@@ -129,16 +158,55 @@ async def run_overlapping_requests(
     async with control.begin():
         await control.execute(LOCK_USER_SQL, {"user_id": user_id})
         requests.append(asyncio.create_task(change_password()))
-        observed_stalls.append(await wait_for_stalled_backends(control, 1, requests))
+        observed_stalls.append(
+            await wait_for_stalled_backends(control, 1, requests, application_name)
+        )
         since = await control.scalar(CLOCK_SQL)
         requests.append(asyncio.create_task(log_in()))
-        observed_stalls.append(await wait_for_stalled_backends(control, 2, requests, since))
+        observed_stalls.append(
+            await wait_for_stalled_backends(control, 2, requests, application_name, since)
+        )
     return observed_stalls, list(await asyncio.gather(*requests))
+
+
+class LabelledApplication(NamedTuple):
+    """The application under test and the name every connection it opens carries."""
+
+    application: FastAPI
+    application_name: str
+
+
+@pytest.fixture
+def labelled_application(build_auth_app, monkeypatch: pytest.MonkeyPatch) -> LabelledApplication:
+    """Build the application with every connection it opens named for this test run.
+
+    The name is generated per run rather than fixed, so two parallel workers running this file do
+    not count each other's backends either. It is added to the engine's own connect arguments
+    rather than replacing them, so the connect timeout and the statement timeout the application
+    really runs with are still the ones under test; a fixture that rebuilt them would be asserting
+    against an engine no deployed process ever uses.
+    """
+    application_name = f"auth-race-{uuid.uuid4().hex}"
+    from app.db import engine as database_engine  # noqa: PLC0415
+
+    build_connect_args = database_engine.build_connect_args
+
+    def build_named_connect_args(settings: Settings) -> dict[str, Any]:
+        """Return the engine's connect arguments with this run's application name added."""
+        connect_args = build_connect_args(settings)
+        connect_args["server_settings"] = {
+            **connect_args["server_settings"],
+            "application_name": application_name,
+        }
+        return connect_args
+
+    monkeypatch.setattr(database_engine, "build_connect_args", build_named_connect_args)
+    return LabelledApplication(build_auth_app(), application_name)
 
 
 @pytest.mark.integration
 async def test_a_login_racing_a_password_change_leaves_no_session_from_the_old_password(
-    build_auth_app, open_auth_browsers, auth_emails, auth_db, cookies
+    labelled_application, open_auth_browsers, auth_emails, auth_db, cookies
 ) -> None:
     """The change wins or the login does, and either way only the caller's session survives."""
     email = auth_emails("race")
@@ -146,7 +214,7 @@ async def test_a_login_racing_a_password_change_leaves_no_session_from_the_old_p
     changer_token = uuid.uuid4().hex
     await auth_db.seed_session(user_id, changer_token)
 
-    async with open_auth_browsers(build_auth_app(), count=2) as browsers:
+    async with open_auth_browsers(labelled_application.application, count=2) as browsers:
         changing, signing_in = browsers
         first_check = await changing.get(ME_PATH, headers=cookies.header(changer_token))
         assert first_check.status_code == 200, first_check.text
@@ -156,6 +224,7 @@ async def test_a_login_racing_a_password_change_leaves_no_session_from_the_old_p
             observed_stalls, responses = await run_overlapping_requests(
                 control,
                 user_id,
+                labelled_application.application_name,
                 lambda: changing.patch(
                     ME_PATH,
                     json={"current_password": VALID_PASSWORD, "new_password": NEW_PASSWORD},

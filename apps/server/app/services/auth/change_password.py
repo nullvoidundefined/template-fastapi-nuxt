@@ -35,7 +35,10 @@ async def change_password(
     """
     user = await lock_user_by_id(connection, user_id)
     stored_hash = user.password_hash if user else None
-    if not await verify_password(current_password, stored_hash) or user is None:
+    # Bound to a name on its own line for the reason given in `sign_in_user`: the comparison runs
+    # whatever the lookup found, and no reordering of a guard can make it conditional.
+    comparison_matched = await verify_password(current_password, stored_hash)
+    if not comparison_matched or user is None:
         raise InvalidCredentialsError
     await connection.execute(
         update(users)

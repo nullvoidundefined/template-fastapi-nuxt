@@ -50,7 +50,11 @@ async def sign_in_user(connection: AsyncConnection, email: str, password: str) -
     """Open a session for the account, or refuse without saying which half was wrong."""
     user = await lock_user_for_update(connection, email)
     stored_hash = user.password_hash if user else None
-    if not await verify_password(password, stored_hash) or user is None:
+    # Bound to a name on its own line rather than written into the guard. Both forms behave
+    # identically today, but an operand inside a conditional invites the reordering that lets an
+    # unknown address skip bcrypt, which is the enumeration oracle B-11 exists to close.
+    comparison_matched = await verify_password(password, stored_hash)
+    if not comparison_matched or user is None:
         raise InvalidCredentialsError
     await delete_expired_sessions(connection, user.id)
     raw_token, token_hash = generate_session_token()
