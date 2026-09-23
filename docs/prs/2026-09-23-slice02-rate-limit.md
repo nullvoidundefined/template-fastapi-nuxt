@@ -107,3 +107,48 @@ passed. I read that as the test failing to discriminate and said so. Adding an a
 replacement actually matched showed the opposite: the test fails under a read-then-write counter,
 and under a re-armed expiry as well. A mutation check that cannot fail is worth less than no
 mutation check, because it produces a confident wrong answer.
+
+## Pre-merge review
+
+Codex was at its usage limit, so the review came from a fresh Claude agent on an equal model, the
+recorded R-517 fallback. Seven findings. The reviewer ran the code rather than reading it, which is
+how the first one was established.
+
+1. **P0, blocking. A Redis that stops answering hung every route.** The client carried no
+   timeouts, and this middleware is registered outside `RequestTimeoutMiddleware`, so the 30 second
+   deadline had not been entered when the Redis call was awaited. Both outage tests reproduced
+   failures that raise promptly, a closed port and a cut connection; the common production failure,
+   a Redis that holds the socket open and stops replying during a failover or partition, was
+   untested and blocked indefinitely. The reviewer demonstrated it against a socket that accepts
+   and never answers: no response after 45 seconds. That inverts the failure-mode contract this PR
+   is built on, where a Redis outage costs four endpoints rather than the API. Fixed with both
+   socket timeouts at 2 seconds, well inside the request timeout; redis-py's `TimeoutError`
+   subclasses `RedisError`, so it lands in the handler that was already there.
+2. **P1. Staging took the in-memory fallback.** The check was against production alone, so a
+   deployed multi-replica environment got per-replica counting, which the spec itself calls very
+   nearly no limit. Settings require `REDIS_URL` in production but not in staging, so staging could
+   also run with none at all. Fixed with a `DEPLOYED_ENVIRONMENTS` set covering both, mirroring
+   `app/db/engine.py`, and a deployed environment with no `REDIS_URL` now takes the outage path.
+3. **P2. The script armed the expiry only on a new key.** Any key that ever reached Redis without
+   a TTL was incremented forever, locking that client out permanently, while `normalize_retry_after`
+   hid the symptom. Fixed by arming whenever the TTL is negative, which keeps the window fixed.
+4. **P2. The discarded client leaked its pool**, once per failed request outside production. The
+   reset bought nothing, since redis-py reconnects on the next command. Removed.
+5. **P2. The in-memory window map was never evicted**, growing with every distinct source address.
+   Closed windows are now swept on write.
+6. **The fixture fix covered half the suite.** Pointing `build_server_app` at a closed port left
+   the `server_app` fixture, which backs about eleven modules, inheriting whatever `REDIS_URL` the
+   shell exports. The reviewer showed the accumulation is real by setting the ambient counter to 95
+   and rerunning: nine failures across three modules that have nothing to do with rate limiting.
+   Fixed the same way, and the docstring's claim is now true.
+7. **P3. `Retry-After` was not exposed to cross-origin callers.** Sent on the wire but unreadable
+   by `fetch`, which makes the limit unactionable for exactly the clients `CORS_ORIGIN` exists for.
+   Added, along with the request ID.
+
+Each fix was verified by reverting it and confirming the matching test fails. Finding 7 is the one
+change in this PR with no test: nothing asserts `Access-Control-Expose-Headers`, and it is recorded
+here rather than left implicit.
+
+The reviewer also noted that `e2e/global-setup.ts` losing its `--no-deps` flag belongs to a
+different scope than rate limiting. It is here because the pre-push hook runs the end-to-end suite
+and the flag made it depend on a stack that was already running.
