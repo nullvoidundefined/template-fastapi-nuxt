@@ -173,5 +173,5 @@
 - [x] A rejected body answers 400 `INPUT_VALIDATION_ERROR` carrying a structured list naming each offending field, which is what a form needs to show a message beside its input; the key is absent from every other failure.
 - [x] Each handler has a negative-input test covering an oversized body, an injection string, and malformed encoding (R-406).
 
-**E2E test:** none in this pull request; the pages that call these routes arrive in slice 03 PR 4. Covered by `apps/server/tests/integration/routers/auth/`.
+**E2E test:** `e2e/auth.spec.ts`, which drives the round trip against the running stack: register, identify, change the passphrase, prove the old one fails and the new one works, log out, and prove the cookie is dead. What it cannot see from outside the process, the bcrypt cost, the stored token hash, and row-level revocation, is covered by `apps/server/tests/integration/routers/auth/`.
 **Ticket:** IAN-320
