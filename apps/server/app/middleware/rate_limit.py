@@ -34,6 +34,7 @@ from app.constants.error_codes import ErrorCode
 from app.constants.exempt_paths import RATE_LIMIT_EXEMPT_PATHS
 from app.constants.rate_limits import (
     AUTH_RATE_LIMITED_PATHS,
+    AUTH_RATE_LIMITED_ROUTES,
     AUTH_REQUEST_LIMIT,
     GLOBAL_REQUEST_LIMIT,
     RATE_LIMIT_WINDOW_SECONDS,
@@ -92,7 +93,7 @@ class RateLimitMiddleware:
         if scope["type"] != "http" or scope["path"] in RATE_LIMIT_EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
-        buckets = build_buckets(scope["path"], read_client_address(scope))
+        buckets = build_buckets(scope["method"], scope["path"], read_client_address(scope))
         if self.redis_url is None and self.is_deployed:
             # Settings require REDIS_URL in production but not in staging, so this is reachable.
             # A deployed environment without Redis gets the outage behavior rather than a
@@ -197,7 +198,7 @@ class RateLimitMiddleware:
             self.log_in_memory_once()
             await self.serve_or_refuse_from_memory(scope, receive, send)
             return
-        if scope["path"] in AUTH_RATE_LIMITED_PATHS:
+        if counts_against_auth_bucket(scope["method"], scope["path"]):
             await send_error_envelope(
                 send,
                 503,
@@ -209,7 +210,7 @@ class RateLimitMiddleware:
 
     async def serve_or_refuse_from_memory(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Outside production only, keep limiting from the in-process counter."""
-        buckets = build_buckets(scope["path"], read_client_address(scope))
+        buckets = build_buckets(scope["method"], scope["path"], read_client_address(scope))
         retry_after_seconds = None
         for key, limit in buckets:
             count, ttl_seconds = self.increment_in_memory(key)
@@ -228,10 +229,15 @@ class RateLimitMiddleware:
         )
 
 
-def build_buckets(path: str, client_address: str) -> list[tuple[str, int]]:
-    """Return the key and limit of every bucket this path counts against, global first."""
+def counts_against_auth_bucket(method: str, path: str) -> bool:
+    """Return true when this request handles credentials, by its path or by its method."""
+    return path in AUTH_RATE_LIMITED_PATHS or (method, path) in AUTH_RATE_LIMITED_ROUTES
+
+
+def build_buckets(method: str, path: str, client_address: str) -> list[tuple[str, int]]:
+    """Return the key and limit of every bucket this request counts against, global first."""
     buckets = [(f"{GLOBAL_BUCKET_PREFIX}:{client_address}", GLOBAL_REQUEST_LIMIT)]
-    if path in AUTH_RATE_LIMITED_PATHS:
+    if counts_against_auth_bucket(method, path):
         buckets.append((f"{AUTH_BUCKET_PREFIX}:{client_address}", AUTH_REQUEST_LIMIT))
     return buckets
 
