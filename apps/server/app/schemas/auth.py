@@ -10,7 +10,9 @@ what B-38 needs rejected, an address with no `@` or no domain, and the authorita
 address is delivery rather than syntax anyway.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.types import UUID4
 
 # Deliberately permissive about the local part and strict about the overall shape: one `@`, a
@@ -18,9 +20,27 @@ from pydantic.types import UUID4
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$"
 MAX_EMAIL_LENGTH = 320
 MIN_PASSWORD_LENGTH = 8
-# bcrypt silently truncates beyond 72 bytes, so a longer password would make two different
-# passwords equivalent. Refusing it is the honest answer.
-MAX_PASSWORD_LENGTH = 72
+# The pinned bcrypt refuses a secret past this many bytes rather than truncating it, so one it
+# cannot take has to be refused here, as a validation error naming its field, or it reaches
+# `hashpw` and raises where nothing catches it and the client gets a 500.
+MAX_PASSWORD_BYTES = 72
+# The same ceiling in characters, which every string longer than it exceeds in bytes as well. It
+# is kept so the OpenAPI document states a bound, and it is not the check: a character encodes to
+# one to four bytes, so the byte ceiling is what decides for anything outside ASCII.
+MAX_PASSWORD_LENGTH = MAX_PASSWORD_BYTES
+BCRYPT_BYTE_LIMIT_MESSAGE = f"Password must be at most {MAX_PASSWORD_BYTES} bytes when encoded"
+
+
+def refuse_secret_bcrypt_cannot_take(candidate: str) -> str:
+    """Return the submitted secret, or refuse the ones bcrypt raises on rather than truncates."""
+    if len(candidate.encode()) > MAX_PASSWORD_BYTES:
+        raise ValueError(BCRYPT_BYTE_LIMIT_MESSAGE)
+    return candidate
+
+
+# Annotated onto every password field the application accepts, so no route reaches bcrypt with a
+# value bcrypt refuses. A field carrying this answers 400 naming itself rather than raising.
+BcryptSafeSecret = Annotated[str, AfterValidator(refuse_secret_bcrypt_cannot_take)]
 
 
 class AuthRequestModel(BaseModel):
@@ -33,7 +53,9 @@ class RegisterRequest(AuthRequestModel):
     """The body of a registration."""
 
     email: str = Field(max_length=MAX_EMAIL_LENGTH, pattern=EMAIL_PATTERN)
-    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    password: Annotated[
+        BcryptSafeSecret, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    ]
 
 
 class LoginRequest(AuthRequestModel):
@@ -45,14 +67,16 @@ class LoginRequest(AuthRequestModel):
     """
 
     email: str = Field(max_length=MAX_EMAIL_LENGTH)
-    password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+    password: Annotated[BcryptSafeSecret, Field(max_length=MAX_PASSWORD_LENGTH)]
 
 
 class ChangePasswordRequest(AuthRequestModel):
     """The body of a password change, which proves the caller knows the current password."""
 
-    current_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
-    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    current_password: Annotated[BcryptSafeSecret, Field(max_length=MAX_PASSWORD_LENGTH)]
+    new_password: Annotated[
+        BcryptSafeSecret, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    ]
 
 
 class AuthenticatedUserData(BaseModel):
