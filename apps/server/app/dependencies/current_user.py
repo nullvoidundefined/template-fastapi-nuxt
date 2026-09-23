@@ -19,17 +19,24 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import structlog
+from fastapi import Depends
 from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.requests import Request
 
 from app.constants.error_codes import ErrorCode
 from app.constants.session import SESSION_COOKIE_NAME
+from app.db.session import get_connection
 from app.db.tables import user_sessions, users
 from app.errors import AppError
+
+# Declared here rather than at each route, so a route that takes the signed-in user gets the
+# request's transaction with it. Without the Depends marker FastAPI reads the parameter as
+# request data and refuses to register the route at all.
+RequestConnection = Annotated[AsyncConnection, Depends(get_connection, scope="function")]
 
 AUTH_REQUIRED_MESSAGE = "Authentication is required"
 AUTH_SESSION_EXPIRED_MESSAGE = "That session has expired"
@@ -69,7 +76,7 @@ class SessionExpiredError(AppError):
         super().__init__(401, ErrorCode.AUTH_SESSION_EXPIRED, AUTH_SESSION_EXPIRED_MESSAGE)
 
 
-async def get_current_user(request: Request, connection: AsyncConnection) -> AuthenticatedUser:
+async def get_current_user(request: Request, connection: RequestConnection) -> AuthenticatedUser:
     """Return the signed-in user, raising when the session is absent, unknown, or expired."""
     session_row = await read_session_row(request, connection)
     if session_row is None:
@@ -81,7 +88,7 @@ async def get_current_user(request: Request, connection: AsyncConnection) -> Aut
 
 
 async def resolve_current_user(
-    request: Request, connection: AsyncConnection
+    request: Request, connection: RequestConnection
 ) -> AuthenticatedUser | None:
     """Return the signed-in user, or None for anything that does not resolve to a live session."""
     session_row = await read_session_row(request, connection)

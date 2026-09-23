@@ -19,6 +19,37 @@ def encode_hash(value: str | bytes) -> bytes:
     return value.encode() if isinstance(value, str) else value
 
 
+def parse_async_function(function: Callable[..., object]) -> ast.AsyncFunctionDef:
+    """Return the parsed definition of an async function, dedented so its source stands alone."""
+    parsed = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]
+    assert isinstance(parsed, ast.AsyncFunctionDef)
+    return parsed
+
+
+def find_single_awaited_call(function: ast.AsyncFunctionDef) -> ast.Call:
+    """Return the one call the function awaits, asserting that there is exactly one."""
+    awaited = [node for node in ast.walk(function) if isinstance(node, ast.Await)]
+    assert len(awaited) == 1
+    assert isinstance(awaited[0].value, ast.Call)
+    return awaited[0].value
+
+
+def find_comparison_hash_variable(function: ast.AsyncFunctionDef) -> str:
+    """Return the name the function binds the output of `resolve_comparison_hash` to."""
+    resolutions = [
+        node
+        for node in function.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "resolve_comparison_hash"
+    ]
+    assert len(resolutions) == 1
+    target = resolutions[0].targets[0]
+    assert isinstance(target, ast.Name)
+    return target.id
+
+
 async def test_password_hashes_are_salted_cost_twelve_and_verify() -> None:
     """The stored hash carries cost twelve and verifies only the correct password."""
     from app.core.security import hash_password, verify_password  # noqa: PLC0415
@@ -48,6 +79,7 @@ async def test_comparison_hash_resolves_none_and_preserves_a_real_hash() -> None
 def test_dummy_hash_verifies_the_known_dummy_password() -> None:
     """The dummy is a real cost-twelve bcrypt hash rather than a shaped placeholder."""
     import bcrypt  # noqa: PLC0415
+
     from app.core.security import resolve_comparison_hash  # noqa: PLC0415
 
     dummy_hash = encode_hash(resolve_comparison_hash(None))
@@ -103,6 +135,58 @@ def test_verification_has_one_unconditional_comparison_after_resolving_hash() ->
     assert resolutions[0].lineno < comparisons[0].lineno <= returns[0].lineno
 
 
+def test_verification_hands_bcrypt_checkpw_the_candidate_and_the_resolved_hash_directly() -> None:
+    """Reject a worker callable that wraps bcrypt, where a skipped comparison can still hide.
+
+    The structural test above is satisfied by this implementation, and so is every value
+    assertion in this module and the thread test below it:
+
+        matched = await asyncio.to_thread(
+            lambda h: stored_hash is not None and bcrypt.checkpw(candidate.encode(), h),
+            comparison_hash,
+        )
+
+    It has one return, one await, no conditional statement, and it names the resolved hash in the
+    arguments of the awaited call, yet it never reaches bcrypt at all for an address no user has.
+    An unknown email would then cost a thread hop instead of a quarter second of hashing, which is
+    the timing difference B-11 exists to remove and an oracle for which addresses have accounts.
+
+    What closes the hole is that the work handed to the worker thread is `bcrypt.checkpw` itself,
+    referenced as an attribute rather than wrapped in a callable that may decline to call it, with
+    the candidate and the resolved hash passed to it directly as its arguments. That is asserted
+    here on the source, not on a recorded call: a mock-call assertion would be the anti-pattern
+    R-401 bans, and is why this property is pinned structurally in the first place.
+    """
+    from app.core.security import verify_password  # noqa: PLC0415
+
+    function = parse_async_function(verify_password)
+    worker_call = find_single_awaited_call(function)
+
+    assert isinstance(worker_call.func, ast.Attribute)
+    assert isinstance(worker_call.func.value, ast.Name)
+    assert (worker_call.func.value.id, worker_call.func.attr) == ("asyncio", "to_thread")
+    assert not worker_call.keywords
+    assert worker_call.args, ast.unparse(worker_call)
+
+    worker = worker_call.args[0]
+    assert isinstance(
+        worker, ast.Attribute
+    ), f"the worker must be bcrypt.checkpw itself, not {ast.unparse(worker)}"
+    assert isinstance(worker.value, ast.Name)
+    assert (worker.value.id, worker.attr) == ("bcrypt", "checkpw")
+    assert len(worker_call.args) == 3, ast.unparse(worker_call)
+
+    encoded_candidate, comparison_argument = worker_call.args[1:]
+    candidate_parameter = function.args.args[0].arg
+    assert isinstance(encoded_candidate, ast.Call), ast.unparse(encoded_candidate)
+    assert isinstance(encoded_candidate.func, ast.Attribute)
+    assert encoded_candidate.func.attr == "encode"
+    assert isinstance(encoded_candidate.func.value, ast.Name)
+    assert encoded_candidate.func.value.id == candidate_parameter
+    assert isinstance(comparison_argument, ast.Name), ast.unparse(comparison_argument)
+    assert comparison_argument.id == find_comparison_hash_variable(function)
+
+
 @pytest.mark.parametrize("operation", ["hash", "verify", "missing"])
 async def test_bcrypt_executes_outside_the_event_loop(
     monkeypatch: pytest.MonkeyPatch, operation: str
@@ -113,6 +197,7 @@ async def test_bcrypt_executes_outside_the_event_loop(
     duration assertions; synchronous bcrypt fails at the point it blocks the loop.
     """
     import bcrypt  # noqa: PLC0415
+
     from app.core.security import hash_password, verify_password  # noqa: PLC0415
 
     stored_hash = await hash_password(CANDIDATE_PASSWORD)

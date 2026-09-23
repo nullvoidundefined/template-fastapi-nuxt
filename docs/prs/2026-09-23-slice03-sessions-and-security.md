@@ -90,3 +90,42 @@ which reads the underscore in an address as a wildcard and would not use the fun
 index the slice 02 migration created for exactly this comparison. And the dependency returned the
 joined session row straight through as `user`, so `user.id` was the session's id rather than the
 user's. Both were the kind of mistake that passes a casual read and fails a test.
+
+## Codex review
+
+Reviewed by Codex through `codex exec` against the plan's PR 1 block and this document (R-517).
+Two findings, both real, both fixed. The tests for them came from the `test-author` fallback,
+because Codex reached its usage limit immediately afterwards (R-907).
+
+1. **P1. The session resolvers could not be used as FastAPI dependencies.** Both declared
+   `connection: AsyncConnection` with no `Depends` marker, so FastAPI would read the parameter as
+   request data and refuse to register any route using `Depends(get_current_user)` with
+   `Invalid args for response field`. The integration tests called the resolvers directly, which
+   concealed it completely: a pull request whose stated purpose is to deliver a dependency shipped
+   one that could not be depended on. Fixed with a module-level
+   `RequestConnection = Annotated[AsyncConnection, Depends(get_connection, scope="function")]`.
+2. **P2. The structural test was still defeatable.** The AST assertions accepted a verifier that
+   wrapped bcrypt in a lambda carrying the condition:
+   `await asyncio.to_thread(lambda h: stored_hash is not None and bcrypt.checkpw(...), comparison_hash)`
+   satisfies one return, one await, no conditional, and an argument mentioning the resolved hash,
+   while skipping bcrypt entirely for an unknown user. That is the timing property B-11 exists to
+   require, so the test asserted the shape and missed the substance. Tightened to require that the
+   awaited call is `asyncio.to_thread`, that the callable handed to it is `bcrypt.checkpw` itself
+   as an attribute rather than a wrapper, and that the candidate and the resolved hash are its
+   direct arguments.
+
+Both were demonstrated rather than asserted. The P1 mutation was applied through a scratch pytest
+plugin that swaps the module in `sys.modules`, because the protected-path guard correctly refused
+to let the test author edit production under R-411: the mutant fails all nine new tests at route
+registration, the real implementation passes them, and the pre-existing integration tests pass
+under the mutant, which is the control proving they concealed the defect. The P2 mutation fails
+only the new test and passes every other test in the file, including the original structural test.
+
+The author also checked whether `hash_password` has the same hole and found it does not, for a
+reason worth recording: a wrapper around `hashpw` still has to produce a real salted cost-12 hash
+that verifies, so declining to do the work cannot produce a passing value. `verify_password` is
+different only because a correct-looking answer, `False`, is available without doing any work at
+all. That is the general shape of the problem: structural pinning is needed exactly where the
+right answer is cheap to fake.
+
+Copilot review was not requested (R-514), and its ruleset is disabled.
