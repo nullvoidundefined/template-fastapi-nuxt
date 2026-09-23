@@ -110,3 +110,32 @@ class under test. It would have passed, and it would have kept passing if the gu
 logging entirely, because the line it observed was the test's own. Replacing it meant deciding
 that the guard should log its own rejection, which turned a test-only construct into real
 behavior an operator benefits from.
+
+## Codex review
+
+Reviewed by Codex through `codex exec` against the plan's PR 4 block and this document (R-517).
+Four findings, all real, all fixed in `97998aa`, with 14 regression tests added.
+
+1. **Security headers were missing from the two responses that leave outside the chain.** The
+   body limit in `RequestContextMiddleware` answers its own 413 without calling anything below it,
+   and Starlette's `ServerErrorMiddleware` writes the unhandled 500 outside every user layer. The
+   original test passed because it wrapped the middleware around a bare `Response`, never around
+   the real application. Fixed by registering the headers outermost, and by having the 500 handler
+   set them itself for the same reason it already set the request ID by hand.
+2. **A blank string satisfied the production validator.** It tested only for `None`, so
+   `CORS_ORIGIN=` in an env file started production with an empty allowed-origin list. Fixed with
+   an `is_blank` check that unwraps `SecretStr`.
+3. **Managed headers were appended rather than replaced.** A route setting its own
+   `X-Content-Type-Options` produced two conflicting values. Codex found a second-order bug in the
+   first fix: the managed set was derived from the headers being sent, so outside production
+   `Strict-Transport-Security` was not in it and a downstream copy survived in exactly the
+   environments that must never send it. The managed set is now fixed rather than derived.
+4. **A handler's own `TimeoutError` was relabelled 408.** The `except` caught every `TimeoutError`
+   raised inside the block, so an upstream call timing out became a request timeout and never
+   reached the 500 handler. Fixed by checking the `asyncio.timeout` context's `expired()` state
+   and re-raising otherwise.
+
+Each fix was verified by reverting it and confirming its tests fail. A second review pass over the
+fix range found no defects and no regressions introduced by the fixes themselves.
+
+Copilot review was not requested (R-514).
