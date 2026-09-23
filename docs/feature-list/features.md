@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-23 (slice 02 PR 4: security headers, CORS, the CSRF guard, and the request timeout)
+Last updated: 2026-09-23 (slice 02 PR 5: rate limiting and the Redis settings guard, completing slice 02)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -34,6 +34,7 @@ the date and what changed. Section shape:
 | Error envelope: `{ code, error }` on every failure, a code registry, and five exception handlers        | **Complete** | US-INFRA-005; spec B-5, B-9, B-43; typed into `@repo/api-types` through `openapi.yaml`                                                                          |
 | Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; slice 02 PR 3, enabling slice 03's storage rather than an acceptance criterion of its own; the compose `migrate` service gates `api` and `worker` |
 | Request protections: security headers, CORS, the CSRF header guard, and a 30 second timeout             | **Complete** | US-INFRA-007; spec B-6, B-8, B-35; production refuses to start without CORS_ORIGIN                                                                              |
+| Rate limiting: two shared budgets counted atomically in Redis, keyed on the resolved client             | **Complete** | US-INFRA-008; spec B-7, B-46; production fails the auth paths closed when Redis is gone                                                                         |
 
 ## Landing
 
