@@ -30,12 +30,12 @@ defineOptions({ name: 'UiModal' });
 
 const props = withDefaults(
     defineProps<{
+        closeLabel?: string;
+        description?: string;
         id: string;
         title: string;
-        description?: string;
-        closeLabel?: string;
     }>(),
-    { description: undefined, closeLabel: 'Close' },
+    { closeLabel: 'Close', description: undefined },
 );
 
 const { closeModal, isModalDismissable, isModalOpen } = useModal();

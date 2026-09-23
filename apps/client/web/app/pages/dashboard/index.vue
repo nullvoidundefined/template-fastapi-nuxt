@@ -14,8 +14,8 @@ defineOptions({ name: 'DashboardPage' });
 definePageMeta({ layout: 'protected', middleware: 'require-session' });
 
 useSeoMeta({
-    title: 'Dashboard',
     description: 'Your account.',
+    title: 'Dashboard',
 });
 
 const { data: signedInUser } = useSessionQuery();

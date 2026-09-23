@@ -25,7 +25,7 @@ export function useSignOutMutation(): ReturnType<typeof useMutation<undefined, E
             return undefined;
         },
         onSuccess: () => {
-            queryClient.removeQueries({ queryKey: sessionQueryKey, exact: true });
+            queryClient.removeQueries({ exact: true, queryKey: sessionQueryKey });
         },
     });
 }

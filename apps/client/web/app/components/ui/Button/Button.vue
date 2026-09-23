@@ -17,11 +17,11 @@ defineOptions({ name: 'UiButton' });
 
 withDefaults(
     defineProps<{
-        type?: 'button' | 'submit';
         disabled?: boolean;
+        type?: 'button' | 'submit';
         variant?: 'primary' | 'secondary';
     }>(),
-    { type: 'button', disabled: false, variant: 'primary' },
+    { disabled: false, type: 'button', variant: 'primary' },
 );
 </script>
 

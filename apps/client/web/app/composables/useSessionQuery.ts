@@ -23,9 +23,9 @@ export function useSessionQuery(): ReturnType<
 > {
     const apiClient = useApiClient();
     return useQuery({
-        queryKey: sessionQueryKey,
         queryFn: () => fetchCurrentUser(apiClient),
-        staleTime: 0,
+        queryKey: sessionQueryKey,
         refetchOnMount: 'always',
+        staleTime: 0,
     });
 }

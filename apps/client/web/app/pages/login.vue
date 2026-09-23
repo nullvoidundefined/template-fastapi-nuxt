@@ -13,8 +13,8 @@ defineOptions({ name: 'LoginPage' });
 definePageMeta({ layout: 'auth', middleware: 'redirect-if-session' });
 
 useSeoMeta({
-    title: 'Log in',
     description: 'Sign in to your account.',
+    title: 'Log in',
 });
 </script>
 

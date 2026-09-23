@@ -11,8 +11,8 @@ import '../app/assets/css/main.scss';
 
 const preview: Preview = {
     parameters: {
-        controls: { matchers: { color: /(background|color)$/i, date: /Date$/i } },
         a11y: { test: 'error' },
+        controls: { matchers: { color: /(background|color)$/i, date: /Date$/i } },
     },
 };
 

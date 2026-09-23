@@ -11,9 +11,9 @@ import { useModal } from '../../../composables/useModal';
 import Modal from './Modal.vue';
 
 const meta = {
-    title: 'ui/Modal',
-    component: Modal,
     args: { id: 'story-modal', title: 'Edit your profile' },
+    component: Modal,
+    title: 'ui/Modal',
 } satisfies Meta<typeof Modal>;
 
 export default meta;

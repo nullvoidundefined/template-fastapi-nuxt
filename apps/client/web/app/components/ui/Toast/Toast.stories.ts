@@ -9,9 +9,9 @@ import type { Meta, StoryObj } from '@storybook/vue3-vite';
 import Toast from './Toast.vue';
 
 const meta = {
-    title: 'ui/Toast',
-    component: Toast,
     args: { message: 'Your profile has been saved.' },
+    component: Toast,
+    title: 'ui/Toast',
 } satisfies Meta<typeof Toast>;
 
 export default meta;

@@ -27,7 +27,8 @@ export default defineNuxtRouteMiddleware(async () => {
     if (outcome.state === 'signedOut') {
         return navigateTo(LOGIN_PATH);
     }
+    const { status } = outcome;
     return abortNavigation(
-        createError({ statusCode: outcome.status, statusMessage: SESSION_UNAVAILABLE_MESSAGE }),
+        createError({ statusCode: status, statusMessage: SESSION_UNAVAILABLE_MESSAGE }),
     );
 });

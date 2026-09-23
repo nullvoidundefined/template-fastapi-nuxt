@@ -14,17 +14,13 @@
 import type { QueryClient } from '@tanstack/vue-query';
 
 import type { ApiClient } from '~/api/apiClient';
-import { type CurrentUser, fetchCurrentUser } from '~/api/fetchCurrentUser';
+import { fetchCurrentUser } from '~/api/fetchCurrentUser';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 import { ApiRequestError } from '~/services/apiClient/apiRequestError';
+import type { SessionOutcome } from '~/types/sessionOutcome';
 
 const FIRST_SERVER_ERROR_STATUS = 500;
 const SESSION_UNAVAILABLE_STATUS = 503;
-
-export type SessionOutcome =
-    | { state: 'signedIn'; user: CurrentUser }
-    | { state: 'signedOut' }
-    | { state: 'unavailable'; status: number };
 
 /** Return who is signed in, that nobody is, or that the backend could not say. */
 export async function readSessionOutcome(
@@ -33,8 +29,8 @@ export async function readSessionOutcome(
 ): Promise<SessionOutcome> {
     try {
         const user = await queryClient.fetchQuery({
-            queryKey: sessionQueryKey,
             queryFn: () => fetchCurrentUser(apiClient),
+            queryKey: sessionQueryKey,
         });
         return { state: 'signedIn', user };
     } catch (err) {

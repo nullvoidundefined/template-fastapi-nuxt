@@ -19,8 +19,9 @@ type ApiResult<TData> = {
 
 /** Return the response's data, or throw the failure the status and body describe. */
 export function unwrapApiResponse<TData>({ data, error, response }: ApiResult<TData>): TData {
-    if (!response.ok) {
-        throw new ApiRequestError(response.status, error);
+    const { ok, status } = response;
+    if (!ok) {
+        throw new ApiRequestError(status, error);
     }
     // openapi-fetch types `data` as optional because one shape carries both branches. Past the
     // check above the route's declared body is what came back, and a 204 declares none.

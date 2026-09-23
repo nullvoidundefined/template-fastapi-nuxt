@@ -36,5 +36,5 @@ export function useToast(): ToastQueue {
         toasts.value = toasts.value.filter((entry) => entry.id !== id);
     }
 
-    return { toasts, showToast, dismissToast };
+    return { dismissToast, showToast, toasts };
 }

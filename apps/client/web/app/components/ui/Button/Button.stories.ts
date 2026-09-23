@@ -10,9 +10,9 @@ import type { Meta, StoryObj } from '@storybook/vue3-vite';
 import Button from './Button.vue';
 
 const meta = {
-    title: 'ui/Button',
-    component: Button,
     args: { default: 'Save profile' },
+    component: Button,
+    title: 'ui/Button',
 } satisfies Meta<typeof Button>;
 
 export default meta;

@@ -57,5 +57,5 @@ export function useModal(): ModalStack {
         return entry !== undefined && !entry.preventClose;
     }
 
-    return { openModals, openModal, closeModal, closeAllModals, isModalOpen, isModalDismissable };
+    return { closeAllModals, closeModal, isModalDismissable, isModalOpen, openModal, openModals };
 }

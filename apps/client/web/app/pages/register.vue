@@ -13,8 +13,8 @@ defineOptions({ name: 'RegisterPage' });
 definePageMeta({ layout: 'auth', middleware: 'redirect-if-session' });
 
 useSeoMeta({
-    title: 'Register',
     description: 'Create an account.',
+    title: 'Register',
 });
 </script>
 

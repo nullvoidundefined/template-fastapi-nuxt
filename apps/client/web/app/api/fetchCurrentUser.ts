@@ -7,11 +7,7 @@
  */
 import type { ApiClient } from '~/api/apiClient';
 import { unwrapApiResponse } from '~/services/apiClient/unwrapApiResponse';
-
-export type CurrentUser = {
-    id: string;
-    email: string;
-};
+import type { CurrentUser } from '~/types/currentUser';
 
 /** Return the signed-in user, or throw an `ApiRequestError` carrying the status and code. */
 export async function fetchCurrentUser(apiClient: ApiClient): Promise<CurrentUser> {

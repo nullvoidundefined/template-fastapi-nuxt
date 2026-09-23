@@ -18,6 +18,8 @@
 import { SESSION_COOKIE_NAME } from '#shared/constants/session';
 
 const LOGIN_PATH = '/login';
+// A found redirect: the visitor may come back to this page once they have signed in.
+const FOUND_REDIRECT_STATUS = 302;
 // The pages a signed-out visitor is meant to reach. `/login` is here for a reason of its own: a
 // gate that redirected it would redirect it to itself, forever.
 const PUBLIC_PAGE_PATHS = new Set(['/', LOGIN_PATH, '/register']);
@@ -33,7 +35,7 @@ export default defineEventHandler((event) => {
     if (getCookie(event, SESSION_COOKIE_NAME)) {
         return undefined;
     }
-    return sendRedirect(event, LOGIN_PATH, 302);
+    return sendRedirect(event, LOGIN_PATH, FOUND_REDIRECT_STATUS);
 });
 
 /** Return true for a path served without a session: the API, the bundle, and the well-known files. */

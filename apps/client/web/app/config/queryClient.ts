@@ -21,8 +21,8 @@ const FIRST_SERVER_ERROR_STATUS = 500;
 export function buildQueryClientOptions(): QueryClientConfig {
     return {
         defaultOptions: {
-            queries: { retry: shouldRetryFailedQuery },
             mutations: { retry: false },
+            queries: { retry: shouldRetryFailedQuery },
         },
     };
 }
