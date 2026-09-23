@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-23 (slice 03 PR 1: sessions, the security primitives, and the session dependency)
+Last updated: 2026-09-23 (slice 03 PR 2: the five auth endpoints and the field-error contract)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -35,7 +35,9 @@ the date and what changed. Section shape:
 | Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; slice 02 PR 3, enabling slice 03's storage rather than an acceptance criterion of its own; the compose `migrate` service gates `api` and `worker` |
 | Request protections: security headers, CORS, the CSRF header guard, and a 30 second timeout             | **Complete** | US-INFRA-007; spec B-6, B-8, B-35; production refuses to start without CORS_ORIGIN                                                                              |
 | Rate limiting: two shared budgets counted atomically in Redis, keyed on the resolved client             | **Complete** | US-INFRA-008; spec B-7, B-46; production fails the auth paths closed when Redis is gone                                                                         |
-| Session store and password primitives: `user_sessions`, bcrypt at cost 12, the cookie resolver          | **Partial**  | US-AUTH-001; the endpoints that use them arrive in slice 03 PR 2                                                                                                |
+| Session store and password primitives: `user_sessions`, bcrypt at cost 12, the cookie resolver          | **Complete** | US-AUTH-001; consumed by the endpoints in slice 03 PR 2                                                                                                         |
+| Auth endpoints: register, log in, log out, read and change the signed-in user                           | **Complete** | US-AUTH-002; spec B-10, B-11, B-13, B-31, B-32; the pages that call them arrive in slice 03 PR 4                                                                |
+| Field-level validation errors on the error envelope                                                     | **Complete** | US-AUTH-002; what B-38 needs in slice 03 PR 4; the key is absent from every other failure                                                                       |
 
 ## Landing
 
