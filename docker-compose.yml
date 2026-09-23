@@ -69,9 +69,12 @@ services:
     environment:
       <<: *server-environment
       PORT: '3001'
-      # Trusts X-Forwarded-For from any container on Docker's private range, which includes the
-      # host gateway; acceptable for local use, and revisited when the rate limiter lands.
-      FORWARDED_ALLOW_IPS: 172.16.0.0/12
+      # Uvicorn honors X-Forwarded-For only from this address, so the rate limiter keys a
+      # proxied request on the client the web service resolved rather than on a header the
+      # client controls. It names the one static address below, not Docker's private range:
+      # trusting the whole range would trust every container on it, and uvicorn's allowlist
+      # takes addresses and CIDRs, never a service name, which is why the network is fixed.
+      FORWARDED_ALLOW_IPS: 172.28.0.10
     ports:
       - '3001:3001'
     depends_on:
@@ -127,6 +130,19 @@ services:
       NUXT_API_BASE_URL: http://api:3001
     ports:
       - '3000:3000'
+    # Fixed, because FORWARDED_ALLOW_IPS on the API must name it. Compose allocates container
+    # addresses dynamically on the default network, so without this the only options are an
+    # address guessed in advance, which silently breaks client-IP resolution when it changes,
+    # and trusting the whole private range, which is what this replaces.
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     depends_on:
       api:
         condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

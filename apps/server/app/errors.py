@@ -80,7 +80,13 @@ def build_error_response(
     )
 
 
-async def send_error_envelope(send: Send, status_code: int, code: ErrorCode, message: str) -> None:
+async def send_error_envelope(
+    send: Send,
+    status_code: int,
+    code: ErrorCode,
+    message: str,
+    headers: Mapping[str, str] | None = None,
+) -> None:
     """Send the `{ code, error }` envelope as raw ASGI messages, for middleware that cannot raise.
 
     Pure ASGI middleware sits outside Starlette's `ExceptionMiddleware`, so an `AppError` raised
@@ -89,8 +95,13 @@ async def send_error_envelope(send: Send, status_code: int, code: ErrorCode, mes
 
     Sending the messages directly, rather than through a Starlette response, also never reads from
     the request's receive channel, which a streamed body may already have consumed.
+
+    `headers` carries the few a rejection must add, such as the rate limiter's `Retry-After`.
     """
     body = json.dumps(ErrorResponse(code=code, error=message).model_dump(mode="json")).encode()
+    extra_headers = [
+        (name.lower().encode(), value.encode()) for name, value in (headers or {}).items()
+    ]
     await send(
         {
             "type": "http.response.start",
@@ -98,6 +109,7 @@ async def send_error_envelope(send: Send, status_code: int, code: ErrorCode, mes
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode()),
+                *extra_headers,
             ],
         }
     )
