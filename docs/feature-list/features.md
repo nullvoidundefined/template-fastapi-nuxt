@@ -23,16 +23,16 @@ the date and what changed. Section shape:
 
 ## Infrastructure
 
-| Feature                                                                                                 | Status       | Notes                                                                                  |
-| ------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------- |
-| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`)                                   | **Complete** | US-INFRA-001; spec B-1; PR #6, with `e2e/health.spec.ts` in CI since PR #10            |
-| Request IDs on every response and log line                                                              | **Complete** | US-INFRA-002; spec B-2; PR #6, with `e2e/health.spec.ts` in CI since PR #10            |
-| Web server health check (`GET /api/health` on the Nuxt server)                                          | **Complete** | US-INFRA-003; PR #7, with `e2e/landing.spec.ts` in CI since PR #10                     |
-| API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check               | **Complete** | spec B-4; PR #9, and CI's `openapi-drift` job since PR #10                             |
-| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test        |
-| Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Complete** | spec B-3; PR #10; every job green on `main`                                            |
-| Error envelope: `{ code, error }` on every failure, a code registry, and five exception handlers        | **Complete** | US-INFRA-005; spec B-5, B-9, B-43; typed into `@repo/api-types` through `openapi.yaml` |
-| Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; spec B-6; the compose `migrate` service gates `api` and `worker`         |
+| Feature                                                                                                 | Status       | Notes                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Liveness and readiness endpoints (`GET /health`, `GET /health/ready`)                                   | **Complete** | US-INFRA-001; spec B-1; PR #6, with `e2e/health.spec.ts` in CI since PR #10                                                                                     |
+| Request IDs on every response and log line                                                              | **Complete** | US-INFRA-002; spec B-2; PR #6, with `e2e/health.spec.ts` in CI since PR #10                                                                                     |
+| Web server health check (`GET /api/health` on the Nuxt server)                                          | **Complete** | US-INFRA-003; PR #7, with `e2e/landing.spec.ts` in CI since PR #10                                                                                              |
+| API type contract: OpenAPI export, generated `@repo/api-types`, typed client, drift check               | **Complete** | spec B-4; PR #9, and CI's `openapi-drift` job since PR #10                                                                                                      |
+| Worker health probes (`GET /health`, `GET /health/ready` on `WORKER_PORT`) and a five-minute heartbeat  | **Complete** | US-INFRA-004; spec B-3 and R-345; unit tests plus a real-Redis integration test                                                                                 |
+| Containers and CI: three images, compose with Postgres 17 and Redis 7, the seven-job CI graph, lefthook | **Complete** | spec B-3; PR #10; every job green on `main`                                                                                                                     |
+| Error envelope: `{ code, error }` on every failure, a code registry, and five exception handlers        | **Complete** | US-INFRA-005; spec B-5, B-9, B-43; typed into `@repo/api-types` through `openapi.yaml`                                                                          |
+| Schema and migrations: Alembic, the `users` table, and one transaction per request                      | **Complete** | US-INFRA-006; slice 02 PR 3, enabling slice 03's storage rather than an acceptance criterion of its own; the compose `migrate` service gates `api` and `worker` |
 
 ## Landing
 

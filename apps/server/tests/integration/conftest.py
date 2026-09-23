@@ -36,8 +36,9 @@ def alembic_config_factory() -> AlembicConfigFactory:
     def build_alembic_config(database_url: str) -> Config:
         """Point Alembic at the server tree and the integration database."""
         config = Config(str(ALEMBIC_CONFIG_PATH))
-        config.set_main_option("script_location", str(MIGRATIONS_PATH))
-        config.set_main_option("sqlalchemy.url", database_url)
+        # Escape percent signs so ConfigParser interpolation preserves the original values.
+        config.set_main_option("script_location", str(MIGRATIONS_PATH).replace("%", "%%"))
+        config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
         return config
 
     return build_alembic_config
