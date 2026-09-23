@@ -53,19 +53,21 @@ Postgres and Redis publish on 5433 and 6380 so that a locally installed Postgres
 
 For live reload, run the API and the web app on the host instead (`pnpm dev`), with the compose Postgres and Redis (`docker compose up --detach --wait postgres redis`) and these variables exported in your shell:
 
-| Variable              | Read by           | Value for local development                                    |
-| --------------------- | ----------------- | -------------------------------------------------------------- |
-| `DATABASE_URL`        | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                  |
-| `REDIS_URL`           | worker            | `redis://localhost:6380/0`                                     |
-| `ENVIRONMENT`         | API, worker       | `development`                                                  |
-| `PORT`                | API image         | `3001`                                                         |
-| `WORKER_PORT`         | worker            | `3002`                                                         |
-| `DATABASE_CA_CERT`    | API, worker       | unset locally; a CA bundle path when deployed                  |
-| `CORS_ORIGIN`         | API               | unset locally; the web origin when deployed                    |
-| `FORWARDED_ALLOW_IPS` | API image         | unset locally; the web service's private network when deployed |
-| `NUXT_API_BASE_URL`   | web (server side) | `http://localhost:3001`                                        |
+| Variable              | Read by           | Value for local development                                     |
+| --------------------- | ----------------- | --------------------------------------------------------------- |
+| `DATABASE_URL`        | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                   |
+| `REDIS_URL`           | API, worker       | `redis://localhost:6380/0`                                      |
+| `ENVIRONMENT`         | API, worker       | `development`                                                   |
+| `PORT`                | API image         | `3001`                                                          |
+| `WORKER_PORT`         | worker            | `3002`                                                          |
+| `DATABASE_CA_CERT`    | API, worker       | unset locally; a CA bundle path when deployed                   |
+| `CORS_ORIGIN`         | API               | unset locally; the web origin when deployed                     |
+| `FORWARDED_ALLOW_IPS` | API image         | `172.28.0.10` under compose; the web service's address deployed |
+| `NUXT_API_BASE_URL`   | web (server side) | `http://localhost:3001`                                         |
 
 Deployed environments set these from the platform's secrets; no value is ever committed or baked into an image.
+
+The API reads `REDIS_URL` from slice 02 PR 5 onward, not the worker alone: the rate limiter counts there so that every replica shares one budget. `FORWARDED_ALLOW_IPS` names the single address uvicorn will honor `X-Forwarded-For` from, which under compose is the static address the `web` service holds on the project network. It is one address rather than Docker's private range because trusting the range trusts every container on it, and the rate limiter's key is only as trustworthy as that list.
 
 Three of them are mandatory in production and the API refuses to start without all three: `CORS_ORIGIN`, `REDIS_URL`, and `FORWARDED_ALLOW_IPS`. Each protects something that degrades quietly rather than failing loudly when it is missing. Without `CORS_ORIGIN` the allowed-origin list is empty and the CSRF guard loses the preflight that gives its header meaning; without `REDIS_URL` the rate limiter counts per process, so a client can rotate across instances past the auth limit; and without `FORWARDED_ALLOW_IPS` uvicorn keys every proxied request on the proxy's own address, putting the whole site in one rate-limit bucket.
 

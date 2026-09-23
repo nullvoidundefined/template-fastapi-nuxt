@@ -20,6 +20,7 @@ from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
 from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_response
 from app.middleware.csrf_guard import CSRF_HEADER_MISSING_MESSAGE, CsrfGuardMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
@@ -32,6 +33,10 @@ ALLOWED_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 # `X-Requested-With` is listed because the CSRF guard requires it: a browser may only send it
 # cross-origin once the preflight allows it, which is what ties the two protections together.
 ALLOWED_CORS_HEADERS = ["Content-Type", "X-Requested-With", "Idempotency-Key", "X-Request-Id"]
+# A browser can read only the headers a response exposes. Sending `Retry-After` on a 429 that the
+# cross-origin caller cannot read makes the limit unactionable for exactly the clients the
+# `CORS_ORIGIN` path exists for, and the request ID is what a user reports a failure by.
+EXPOSED_CORS_HEADERS = ["Retry-After", "X-Request-Id"]
 
 logger = structlog.get_logger(__name__)
 
@@ -109,7 +114,7 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
     Starlette wraps middleware outside in, so the layer added last runs first. These calls are
     therefore written in reverse of the runtime order, which reads outermost inward as: the
     correlation ID (1a), the request context (1b), the security headers (2), CORS (3), the rate
-    limiter that slice 02 PR 5 adds (4), the timeout (5), and the CSRF guard (6), with slice 05's
+    limiter (4), the timeout (5), and the CSRF guard (6), with slice 05's
     idempotency middleware innermost (7). Writing the calls in runtime order would invert the
     chain and put the request-ID binding inside the guards, so a rejection would log without it.
 
@@ -122,6 +127,7 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
     """
     app.add_middleware(CsrfGuardMiddleware)
     app.add_middleware(RequestTimeoutMiddleware, seconds=REQUEST_TIMEOUT_SECONDS)
+    app.add_middleware(RateLimitMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         # An empty list, not a wildcard, when no origin is configured: outside production the
@@ -131,6 +137,7 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
         allow_credentials=True,
         allow_methods=ALLOWED_CORS_METHODS,
         allow_headers=ALLOWED_CORS_HEADERS,
+        expose_headers=EXPOSED_CORS_HEADERS,
     )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(

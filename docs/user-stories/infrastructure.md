@@ -114,3 +114,23 @@
 
 **E2E test:** covered by unit tests in `apps/server/tests/unit/middleware/` and `apps/server/tests/unit/test_main_middleware_order.py`; no user-facing route ships in this PR, so no new e2e spec.
 **Ticket:** IAN-170
+
+## US-INFRA-008: A request budget a client cannot forge its way around
+
+**As** an operator running a public API with a login route
+**I want to** bound what any one client can spend, with a far tighter bound on the credential paths
+**So that** credential guessing and simple abuse are limited before slice 03 exposes a login route, and no client can escape its budget by rewriting a header
+
+**Acceptance criteria:**
+
+- [x] The eleventh request inside the window to each of `/v1/auth/login`, `/v1/auth/register`, `/v1/auth/forgot-password` and `/v1/auth/reset-password` answers 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and the tenth does not (spec B-7).
+- [x] The one hundred and first request of any kind answers 429, and `GET /v1/auth/me` counts against that bucket but never against the auth one (spec B-7).
+- [x] Two distinct client addresses arriving through the proxy count in two buckets, a client prepending forged `X-Forwarded-For` entries is counted in its own bucket, and a request arriving directly is keyed on its peer address (spec B-7).
+- [x] The health routes and the Stripe webhook are never rate limited, including after the global bucket is spent (spec B-7).
+- [x] Counting is one atomic operation, so concurrent requests cannot all be admitted and no key is left without an expiry; the window is fixed rather than re-armed by each request.
+- [x] Without Redis outside production the limiter counts in process and logs `rate_limiter_in_memory` exactly once; production never counts in process (spec B-46).
+- [x] In production a Redis outage, whether the connection drops after a successful start or the first connection never succeeds, answers 503 `SERVER_RATE_LIMIT_UNAVAILABLE` on the four auth paths, serves every other route, and logs `rate_limiter_unavailable`.
+- [x] Compose fixes the web service's address so `FORWARDED_ALLOW_IPS` names one proxy rather than Docker's whole private range, and the README records it.
+
+**E2E test:** covered by integration tests in `apps/server/tests/integration/middleware/` against the real Redis, including the proxy-header and concurrency cases; no user-facing route ships in this PR, so no new e2e spec.
+**Ticket:** IAN-171

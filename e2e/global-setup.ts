@@ -18,7 +18,10 @@ export default function migrateBeforeEndToEndSuite(): void {
     if (process.env.E2E_SKIP_MIGRATE) {
         return;
     }
-    execFileSync('docker', ['compose', 'run', '--rm', '--no-deps', MIGRATE_SERVICE_NAME], {
+    // No --no-deps: the service declares `postgres` as a healthy dependency, so compose starts
+    // and waits for it. Skipping dependencies only works when the stack is already up, which is
+    // true in CI and not true for someone running the suite on its own.
+    execFileSync('docker', ['compose', 'run', '--rm', MIGRATE_SERVICE_NAME], {
         stdio: 'inherit',
         timeout: MIGRATE_TIMEOUT_MS,
     });

@@ -14,3 +14,7 @@ HEALTH_PATHS = frozenset({"/health", "/health/ready"})
 STRIPE_WEBHOOK_PATH = "/v1/billing/webhook"
 
 CSRF_EXEMPT_PATHS = frozenset(HEALTH_PATHS | {STRIPE_WEBHOOK_PATH})
+
+# The rate limiter exempts the same paths, for the same reasons: an orchestrator's probe must never
+# be throttled, and Stripe's delivery is authenticated by signature and retried on a 429 anyway.
+RATE_LIMIT_EXEMPT_PATHS = frozenset(HEALTH_PATHS | {STRIPE_WEBHOOK_PATH})
