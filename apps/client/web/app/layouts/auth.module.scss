@@ -1,0 +1,24 @@
+.shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background: var(--background);
+    color: var(--foreground);
+}
+
+.header {
+    padding: var(--spacing-4) var(--spacing-6);
+}
+
+.brand {
+    font-size: var(--font-size-nav-logo);
+    font-weight: var(--font-weight-bold);
+    color: var(--foreground);
+    text-decoration: none;
+}
+
+.main {
+    width: min(100%, 24rem);
+    margin: 0 auto;
+    padding: var(--spacing-10) var(--spacing-6);
+}

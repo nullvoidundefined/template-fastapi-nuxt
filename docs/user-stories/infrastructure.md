@@ -175,3 +175,26 @@
 
 **E2E test:** `e2e/auth.spec.ts`, which drives the round trip against the running stack: register, identify, change the passphrase, prove the old one fails and the new one works, log out, and prove the cookie is dead. What it cannot see from outside the process, the bcrypt cost, the stored token hash, and row-level revocation, is covered by `apps/server/tests/integration/routers/auth/`.
 **Ticket:** IAN-320
+
+---
+
+## US-AUTH-003: A signed-out visitor cannot reach a signed-in page
+
+**As** a person using an application built from this template
+**I want to** be sent to the sign-in page whenever I am not signed in, and kept out of the sign-in page when I am
+**So that** the account the server already enforces is enforced by the pages as well, on a first load and on every navigation after it
+
+**Acceptance criteria:**
+
+- [ ] A signed-out browser asking for `/dashboard` lands on `/login`, whether it arrives by a full page load or by a client-side navigation (spec B-12).
+- [ ] A session that expired while a tab sat open redirects on the next navigation rather than after the cache goes stale: the session query revalidates on every mount instead of trusting a cached success. The test populates the cache with a valid session first, so it exercises revalidation rather than an empty cache.
+- [ ] A backend outage is not treated as a sign-out. Only the status the backend actually answers with for an absent or expired session sends anyone to `/login`.
+- [ ] A signed-in browser asking for `/login` or for `/register` is sent to `/dashboard`, both pages asserted, since a redirect applied to one and not the other is the likely mistake (spec B-45).
+- [ ] The protected layout renders nothing until the session resolves, so a protected page never paints content for a visitor who turns out to be signed out.
+- [ ] The Nitro gate is a presence check only: it never calls the backend, never parses the cookie, skips `/api/**` so a proxied call gets the backend's own 401 rather than a 302 to an HTML page, and never gates `/login` itself.
+- [ ] Signing out removes the session from the query cache rather than invalidating it, so nothing refetches `GET /v1/auth/me` with a cookie that has just been cleared.
+- [ ] Two concurrent server-side renders for two signed-in people each reach FastAPI with only their own cookie and their own address, neither is counted in the rate-limit bucket of the Nuxt server's own address, and each rendered page shows its own user (spec B-52).
+- [ ] The browser's call reaches the backend with its query string intact, the `Set-Cookie` a sign-in answers with reaches the browser, and one request ID is shared by the page response and the backend call, for a missing and for an invalid inbound value (R-341).
+
+**E2E test:** `e2e/authGate.spec.ts`
+**Ticket:** IAN-328
