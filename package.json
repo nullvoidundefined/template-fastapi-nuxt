@@ -19,7 +19,9 @@
         "format:check": "prettier --check .",
         "check:contract": "scripts/check-contract-drift.sh",
         "prepare": "if git rev-parse --git-dir >/dev/null 2>&1; then lefthook install; fi",
-        "test:e2e": "playwright test"
+        "test:e2e": "playwright test",
+        "test:visual": "playwright test --config playwright.visual.config.ts",
+        "test:visual:update": "docker run --rm -v \"$PWD\":/work -w /work mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots'"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

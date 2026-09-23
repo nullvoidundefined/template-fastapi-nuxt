@@ -14,18 +14,39 @@ const UNKNOWN_FAILURE_MESSAGE = 'The request failed';
 type ErrorEnvelope = {
     code?: unknown;
     error?: unknown;
+    field_errors?: unknown;
+};
+
+/** One rejected field, as `INPUT_VALIDATION_ERROR` names it (spec: B-38). */
+export type FieldError = {
+    field: string;
+    message: string;
 };
 
 export class ApiRequestError extends Error {
     readonly status: number;
     readonly code: string | undefined;
+    readonly fieldErrors: FieldError[];
 
     constructor(status: number, body: unknown) {
         super(readEnvelopeMessage(status, body));
         this.name = 'ApiRequestError';
         this.status = status;
         this.code = readEnvelopeCode(body);
+        this.fieldErrors = readEnvelopeFieldErrors(body);
     }
+}
+
+/** Return the envelope's field errors, dropping any entry that is not `{ field, message }`. */
+function readEnvelopeFieldErrors(body: unknown): FieldError[] {
+    const declared = readEnvelope(body)?.field_errors;
+    if (!Array.isArray(declared)) {
+        return [];
+    }
+    return declared.filter(
+        (entry): entry is FieldError =>
+            typeof entry?.field === 'string' && typeof entry?.message === 'string',
+    );
 }
 
 /** Return the envelope's prose when the body is one, else a message naming the status. */

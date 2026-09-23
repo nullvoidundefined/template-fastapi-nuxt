@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-23 (slice 03 PR 3: the Nitro proxy, the query layer, and the auth gate)
+Last updated: 2026-09-24 (slice 03: the gate, the ui kit and the auth forms)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -36,14 +36,18 @@ the date and what changed. Section shape:
 | Request protections: security headers, CORS, the CSRF header guard, and a 30 second timeout             | **Complete** | US-INFRA-007; spec B-6, B-8, B-35; production refuses to start without CORS_ORIGIN                                                                              |
 | Rate limiting: two shared budgets counted atomically in Redis, keyed on the resolved client             | **Complete** | US-INFRA-008; spec B-7, B-46; production fails the auth paths closed when Redis is gone                                                                         |
 | Session store and password primitives: `user_sessions`, bcrypt at cost 12, the cookie resolver          | **Complete** | US-AUTH-001; consumed by the endpoints in slice 03 PR 2                                                                                                         |
-| Auth endpoints: register, log in, log out, read and change the signed-in user                           | **Complete** | US-AUTH-002; spec B-10, B-11, B-13, B-31, B-32; the pages that call them arrive in slice 03 PR 4                                                                |
+| Auth endpoints: register, log in, log out, read and change the signed-in user                           | **Complete** | US-AUTH-002; spec B-10, B-11, B-13, B-31, B-32; the pages that call them shipped                                                                                |
 | Field-level validation errors on the error envelope                                                     | **Complete** | US-AUTH-002; what B-38 needs in slice 03 PR 4; the key is absent from every other failure                                                                       |
 | Session query layer: one query client per request, SSR hydration, and typed route wrappers              | **Complete** | US-AUTH-003; a failed request becomes a failed query rather than a resolved one holding an error                                                                |
 | Nitro API proxy and per-request IDs on page requests                                                    | **Complete** | US-AUTH-003; the query string survives, `Set-Cookie` propagates, and the forwarded chain is replaced by the edge-appended address                               |
 | Auth gate: the Nitro presence check, the route middleware, and the protected layout                     | **Complete** | US-AUTH-003; spec B-12, B-45; the gate revalidates on every navigation and treats an outage as an error rather than a sign-out                                  |
+| Nitro proxy, per-request query client, and request ID shared by page and API                            | **Complete** | US-AUTH-003; spec B-52                                                                                                                                          |
+| Auth gate: server cookie gate, client revalidating middleware, protected and auth layouts               | **Complete** | US-AUTH-003; spec B-12, B-45                                                                                                                                    |
+| UI kit: Button, Modal, Toast, TextField with Storybook stories and a visual-regression CI job           | **Complete** | US-AUTH-004; spec B-39, B-48                                                                                                                                    |
+| Register, log-in and dashboard password-change forms with field-level errors                            | **Complete** | US-AUTH-004; spec B-38, B-50                                                                                                                                    |
 
 ## Landing
 
-| Feature                                        | Status       | Notes                                                                                         |
-| ---------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------- |
-| Landing page with links to log in and register | **Complete** | US-LANDING-001; spec B-49; PR #7; the log-in and register pages themselves arrive in slice 03 |
+| Feature                                        | Status       | Notes                                                                               |
+| ---------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| Landing page with links to log in and register | **Complete** | US-LANDING-001; spec B-49; PR #7; the log-in and register pages shipped in slice 03 |
