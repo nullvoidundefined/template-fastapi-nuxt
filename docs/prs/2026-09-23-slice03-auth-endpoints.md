@@ -101,6 +101,52 @@ envelope `code` against both refusal codes, `SERVER_RATE_LIMIT_UNAVAILABLE` and
 owner decides a dispute; the owner's standing instruction this session was to keep going, so it
 was applied and is recorded here rather than silently.
 
+## The pre-merge review, and what it changed
+
+Codex was at its usage limit, so R-517's stated fallback ran: a separate Claude agent on an equal
+model, given the diff, the plan, the Python track and what PR 1 had landed. It returned two P1
+findings and seven P2. Both of the plan's named review foci came back clean, with the evidence
+quoted rather than asserted: the duplicate `try` wraps only the insert, so a unique violation on
+`user_sessions.token_hash` cannot be reported as a duplicate address, and the password change
+deletes `user_id = ... AND id != session_id` with a test asserting both directions.
+
+**The first P1 was a real defect this author had reasoned about and got backwards.** The password
+ceiling was `Field(max_length=72)`, which Pydantic counts in characters, while the pinned bcrypt
+refuses anything past 72 **bytes** and raises rather than truncating. A password of thirty-seven
+accented characters therefore passed validation, reached `hashpw`, and answered 500 on register,
+login and the password change alike. The comment beside the constant asserted the opposite, that
+bcrypt "silently truncates", which was true of older bcrypt and is the reason the wrong unit
+looked right. Every password field now carries a validator on the encoded length, so the refusal
+is a 400 naming its own field, and the boundary is tested from both sides: seventy-two bytes of
+multi-byte text still registers, so the fix cannot degenerate into rejecting non-ASCII.
+
+**The second P1 was procedural.** The `Access-Control-Expose-Headers` test the plan's Contents
+block requires had been written but never committed, so CI never ran it and the constant it exists
+to observe stayed unobserved. It is committed.
+
+Four findings were fixed with their tests. The password change is now keyed on the id the session
+resolved to rather than the address it carries, because an address is a value users are expected
+to change and an authorization subject re-derived from one is only accidentally correct.
+`PATCH /v1/auth/me` joins the auth rate-limit bucket: the bucket matched on path alone, and the
+path had to stay out of it for the `GET` a signed-in page makes on every navigation, so a
+password-verifying route sat on the global limit of one hundred. The limiter now matches the
+method as well, with the `GET` asserted to stay out, since that is the direction a naive fix
+breaks. And the password comparison in both services is bound to a name on its own line rather
+than written into the guard: `if not await verify_password(...) or user is None` is correct only
+because Python evaluates the left operand first, the reordering a reviewer would naturally reach
+for restores exactly the enumeration oracle B-11 forbids, and every test in the suite stayed green
+through that edit. An AST test now pins the shape in both callers, which is the same lesson this
+slice has now learned five times: pin the structure wherever a correct-looking answer is cheap.
+
+Two findings were answered rather than changed. The race test counted every backend in the
+database, so a sharded run would have seen another worker's blocked transaction; it now counts
+only its own, through a per-run `application_name`, with the barrier and the `clock_timestamp()`
+bound untouched because the review confirmed both correct. And the cost of the row lock is now
+recorded rather than implied: bcrypt runs inside the request transaction, and in login and the
+password change inside the row lock, so about 250 ms of a pooled connection is held per auth
+request and sign-ins for one account serialize. That is the consequence of the lock Gate 1 chose,
+bounded by the auth bucket, and measuring it before changing it is IAN-330.
+
 ## Reflection
 
 What is clearer now: a test that uses a status code as a proxy for something else is a dated
