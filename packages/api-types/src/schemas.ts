@@ -76,6 +76,10 @@ export interface paths {
         /**
          * Logout
          * @description End the session if there is one, and clear the cookie either way.
+         *
+         *     No injected `Response` is declared. FastAPI assigns a returned `Response` instance directly
+         *     and never merges the injected one's headers, so anything written to it here would be dropped
+         *     without a test noticing, on the one route whose whole job is to get a cookie header right.
          */
         post: operations["logout_v1_auth_logout_post"];
         delete?: never;
