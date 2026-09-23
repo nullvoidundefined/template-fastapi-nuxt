@@ -33,6 +33,10 @@ ALLOWED_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 # `X-Requested-With` is listed because the CSRF guard requires it: a browser may only send it
 # cross-origin once the preflight allows it, which is what ties the two protections together.
 ALLOWED_CORS_HEADERS = ["Content-Type", "X-Requested-With", "Idempotency-Key", "X-Request-Id"]
+# A browser can read only the headers a response exposes. Sending `Retry-After` on a 429 that the
+# cross-origin caller cannot read makes the limit unactionable for exactly the clients the
+# `CORS_ORIGIN` path exists for, and the request ID is what a user reports a failure by.
+EXPOSED_CORS_HEADERS = ["Retry-After", "X-Request-Id"]
 
 logger = structlog.get_logger(__name__)
 
@@ -133,6 +137,7 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
         allow_credentials=True,
         allow_methods=ALLOWED_CORS_METHODS,
         allow_headers=ALLOWED_CORS_HEADERS,
+        expose_headers=EXPOSED_CORS_HEADERS,
     )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(

@@ -43,7 +43,13 @@ from app.errors import send_error_envelope
 
 RATE_LIMIT_EXCEEDED_MESSAGE = "Too many requests"
 RATE_LIMIT_UNAVAILABLE_MESSAGE = "Rate limiting is unavailable"
-PRODUCTION_ENVIRONMENT = "production"
+# Both are deployed and multi-replica, so neither may ever count in process: a per-replica
+# count multiplies the effective limit by the replica count and a client resets it by
+# reconnecting. `app/db/engine.py` draws the same line for TLS.
+DEPLOYED_ENVIRONMENTS = frozenset({"staging", "production"})
+# Well under the 30 second request timeout, which sits inside this middleware and so cannot
+# bound this call.
+REDIS_TIMEOUT_SECONDS = 2
 UNKNOWN_CLIENT_ADDRESS = "unknown"
 GLOBAL_BUCKET_PREFIX = "ratelimit:global"
 AUTH_BUCKET_PREFIX = "ratelimit:auth"
@@ -52,13 +58,19 @@ AUTH_BUCKET_PREFIX = "ratelimit:auth"
 # every later one, which would lock out a steady client permanently.
 INCREMENT_WITHIN_WINDOW = """
 local current = redis.call('INCR', KEYS[1])
-if current == 1 then
+local ttl = redis.call('TTL', KEYS[1])
+if ttl < 0 then
     redis.call('EXPIRE', KEYS[1], ARGV[1])
+    ttl = tonumber(ARGV[1])
 end
-return {current, redis.call('TTL', KEYS[1])}
+return {current, ttl}
 """
 
 logger = structlog.get_logger(__name__)
+
+
+class MissingRedisUrlError(RedisError):
+    """A deployed environment reached the limiter with no REDIS_URL configured."""
 
 
 class RateLimitMiddleware:
@@ -67,7 +79,7 @@ class RateLimitMiddleware:
     def __init__(self, app: ASGIApp, settings: Settings) -> None:
         """Wrap the app and record how this environment counts and what it does without Redis."""
         self.app = app
-        self.is_production = settings.environment == PRODUCTION_ENVIRONMENT
+        self.is_deployed = settings.environment in DEPLOYED_ENVIRONMENTS
         self.redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
         self.redis_client: redis_asyncio.Redis | None = None
         # Per instance, never module level: the suite builds an application per test and makes far
@@ -81,6 +93,12 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         buckets = build_buckets(scope["path"], read_client_address(scope))
+        if self.redis_url is None and self.is_deployed:
+            # Settings require REDIS_URL in production but not in staging, so this is reachable.
+            # A deployed environment without Redis gets the outage behavior rather than a
+            # per-replica count, which is very nearly no limit at all.
+            await self.handle_unavailable(scope, receive, send, MissingRedisUrlError())
+            return
         try:
             retry_after_seconds = await self.find_exceeded_bucket(buckets)
         except (RedisError, OSError) as err:
@@ -113,7 +131,17 @@ class RateLimitMiddleware:
         if self.redis_client is None:
             # `from_url` carries no annotations in redis-py, so the constructor is used
             # instead and the URL is parsed by the same helper the library uses itself.
-            self.redis_client = redis_asyncio.Redis.from_url(self.redis_url)
+            # Both timeouts are mandatory (R-346). redis-py defaults them to None, and this
+            # middleware is registered outside RequestTimeoutMiddleware, so nothing else bounds
+            # the call: a Redis that holds the connection open and stops answering, which is what
+            # a failover or a partition without a reset looks like, would hang every non-exempt
+            # route forever rather than costing the four auth paths. `TimeoutError` from redis-py
+            # subclasses `RedisError`, so it lands in the same handler as any other failure.
+            self.redis_client = redis_asyncio.Redis.from_url(
+                self.redis_url,
+                socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+                socket_timeout=REDIS_TIMEOUT_SECONDS,
+            )
         # redis-py types `eval` as possibly synchronous because the sync and async clients share
         # the command mixin; the async client always returns an awaitable here.
         result = cast(
@@ -126,6 +154,7 @@ class RateLimitMiddleware:
     def increment_in_memory(self, key: str) -> tuple[int, int]:
         """Count one request in this process, starting a new window when the last one expired."""
         now = time.monotonic()
+        self.forget_expired_windows(now)
         count, window_started_at = self.in_memory_windows.get(key, (0, now))
         if now - window_started_at >= RATE_LIMIT_WINDOW_SECONDS:
             count, window_started_at = 0, now
@@ -133,6 +162,21 @@ class RateLimitMiddleware:
         self.in_memory_windows[key] = (count, window_started_at)
         elapsed = int(now - window_started_at)
         return count, normalize_retry_after(RATE_LIMIT_WINDOW_SECONDS - elapsed)
+
+    def forget_expired_windows(self, now: float) -> None:
+        """Drop windows that have already closed, so the map cannot grow without bound.
+
+        One entry exists per client address per bucket, and the address comes from the network, so
+        a process that never evicted would grow with every distinct source it ever saw. An entry
+        is only useful until its window closes.
+        """
+        expired = [
+            key
+            for key, (_count, started_at) in self.in_memory_windows.items()
+            if now - started_at >= RATE_LIMIT_WINDOW_SECONDS
+        ]
+        for key in expired:
+            del self.in_memory_windows[key]
 
     def log_in_memory_once(self) -> None:
         """Say once per process that this instance is counting locally rather than in Redis."""
@@ -146,8 +190,10 @@ class RateLimitMiddleware:
     ) -> None:
         """Fail the auth paths closed in production, and count locally everywhere else."""
         logger.error("rate_limiter_unavailable", error_type=type(err).__name__, path=scope["path"])
-        if not self.is_production:
-            self.redis_client = None
+        if not self.is_deployed:
+            # The client is kept rather than discarded: redis-py's pool reconnects by itself on
+            # the next command, and dropping the object leaked its open sockets once per failed
+            # request for as long as the outage lasted.
             self.log_in_memory_once()
             await self.serve_or_refuse_from_memory(scope, receive, send)
             return

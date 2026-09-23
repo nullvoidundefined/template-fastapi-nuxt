@@ -1,10 +1,15 @@
-"""B-7 failure mode: in production a Redis outage costs four endpoints rather than the API.
+"""B-7 failure mode: in a deployed environment a Redis outage costs four endpoints, not the API.
 
-Production never counts in process, because a per-replica count multiplies the effective limit by
-the replica count and a client resets it by reconnecting. So when Redis does not answer, the four
-auth paths fail closed with 503 `SERVER_RATE_LIMIT_UNAVAILABLE` and every other route is served
-normally, with one error log carrying `rate_limiter_unavailable` as the whole operator signal;
-Sentry arrives in slice 07 under B-30.
+A deployed environment never counts in process, because a per-replica count multiplies the
+effective limit by the replica count and a client resets it by reconnecting. So when Redis does
+not answer, the four auth paths fail closed with 503 `SERVER_RATE_LIMIT_UNAVAILABLE` and every
+other route is served normally, with one error log carrying `rate_limiter_unavailable` as the
+whole operator signal; Sentry arrives in slice 07 under B-30.
+
+Every test here runs under staging as well as production, because staging is deployed and
+multi-replica on exactly the same terms: a limiter that drew the line at production alone left
+staging counting per replica, which is very nearly no limit at all, and left the environment
+where an outage is rehearsed behaving unlike the one where it happens.
 
 The outage has two forms and each gets its own test, because one test would leave the other path
 to inspection. A connection that drops after a successful start is the form settings validation
@@ -14,10 +19,10 @@ mid-run, so the client really does connect, really does serve a request, and rea
 connection. A first connection that never succeeds is reproduced by pointing `REDIS_URL` at a
 closed port, and needs no relay.
 
-That production takes no in-memory path is asserted rather than inspected: after the outage the
-tests send more than the global limit of requests to a normal route and require every one of them
-to be served. A limiter that quietly fell back to counting in process would reject the hundred and
-first, so the run of successes is what rules the fallback out.
+That a deployed environment takes no in-memory path is asserted rather than inspected: after the
+outage the tests send more than the global limit of requests to a normal route and require every
+one of them to be served. A limiter that quietly fell back to counting in process would reject
+the hundred and first, so the run of successes is what rules the fallback out.
 """
 
 import asyncio
@@ -34,6 +39,9 @@ import structlog
 RateLimitAppFactory = Callable[..., Any]
 RateLimitClientFactory = Callable[..., Any]
 
+# Both are deployed and multi-replica, so both owe the same outage behavior. Naming them in one
+# list keeps a later environment from being added to the application without being asserted here.
+DEPLOYED_ENVIRONMENTS = ["production", "staging"]
 AUTH_PATHS = [
     "/v1/auth/login",
     "/v1/auth/register",
@@ -122,13 +130,15 @@ async def redis_interrupter(rate_limit_redis_url: str) -> AsyncIterator[RedisInt
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("environment", DEPLOYED_ENVIRONMENTS)
 async def test_b7_a_redis_outage_after_a_successful_start_fails_only_the_auth_paths_closed(
+    environment: str,
     redis_interrupter: RedisInterrupter,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:
     """A connection lost after the first served request is the form settings cannot catch."""
-    application = build_rate_limit_app(redis_interrupter.url)
+    application = build_rate_limit_app(redis_interrupter.url, environment=environment)
 
     async with open_rate_limited_client(application, CLIENT_ADDRESS) as client:
         before_outage = await client.post(AUTH_PATHS[0], headers=CSRF_HEADERS)
@@ -152,12 +162,14 @@ async def test_b7_a_redis_outage_after_a_successful_start_fails_only_the_auth_pa
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("environment", DEPLOYED_ENVIRONMENTS)
 async def test_b7_a_redis_that_never_connects_fails_only_the_auth_paths_closed(
+    environment: str,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:
     """`REDIS_URL` is set and nothing answers at it, which settings validation cannot see."""
-    application = build_rate_limit_app(UNREACHABLE_REDIS_URL)
+    application = build_rate_limit_app(UNREACHABLE_REDIS_URL, environment=environment)
 
     async with open_rate_limited_client(application, CLIENT_ADDRESS) as client:
         with structlog.testing.capture_logs() as captured_events:

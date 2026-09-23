@@ -47,6 +47,12 @@ RATE_LIMIT_EXCEEDED_ENVELOPE = {
 }
 CSRF_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
 CLIENT_ADDRESS = "203.0.113.10"
+# The key one client's global bucket lives under, spelled out rather than imported, because it is
+# the name the limiter writes into Redis and a test that derived it could not catch it changing.
+GLOBAL_BUCKET_KEY_PREFIX = "ratelimit:global"
+COUNT_BELOW_THE_GLOBAL_LIMIT = 5
+# What Redis reports for a key that exists with no expiry set.
+NO_EXPIRY_TTL = -1
 # Long enough that a TTL read a second time has visibly fallen, which is how a window that slides
 # on every request is told apart from the fixed one the spec fixes.
 TTL_OBSERVATION_DELAY_SECONDS = 1.2
@@ -199,3 +205,34 @@ async def test_b7_every_bucket_key_expires_and_its_window_does_not_slide(
     assert bucket_keys, "the first request must write its bucket keys to Redis"
     assert all(0 < ttl <= RATE_LIMIT_WINDOW_SECONDS for ttl in first_ttls.values()), first_ttls
     assert all(later_ttls[key] < first_ttls[key] for key in bucket_keys), (first_ttls, later_ttls)
+
+
+@pytest.mark.integration
+async def test_b7_a_bucket_key_that_carries_no_expiry_is_armed_by_the_next_request(
+    rate_limit_redis_url: str,
+    rate_limit_redis_client: Any,
+    build_rate_limit_app: RateLimitAppFactory,
+    open_rate_limited_client: RateLimitClientFactory,
+) -> None:
+    """A key found without a TTL must get one, or its client is locked out for good.
+
+    A bucket key can exist without an expiry however carefully the increment is written: a restore
+    from a dump, a key set by hand during an incident, or a Redis that lost the expiry while
+    keeping the value. A script that armed the window only when the counter was new left such a
+    key counting forever, so the client behind it reached the limit once and was refused from then
+    on, with nothing to reset it but a manual delete. Arming whenever the TTL is negative is what
+    makes the window self-healing, and the key here starts at a count below the limit so the
+    request is served and the TTL is the only thing under test.
+    """
+    application = build_rate_limit_app(rate_limit_redis_url)
+    bucket_key = f"{GLOBAL_BUCKET_KEY_PREFIX}:{CLIENT_ADDRESS}"
+    await rate_limit_redis_client.set(bucket_key, COUNT_BELOW_THE_GLOBAL_LIMIT)
+    ttl_before_request = await rate_limit_redis_client.ttl(bucket_key)
+
+    async with open_rate_limited_client(application, CLIENT_ADDRESS) as client:
+        served = await client.get(UNROUTED_PATH)
+
+    ttl_after_request = await rate_limit_redis_client.ttl(bucket_key)
+    assert ttl_before_request == NO_EXPIRY_TTL, "the key must start without an expiry"
+    assert served.status_code == 404, "a count below the limit is still served"
+    assert 0 < ttl_after_request <= RATE_LIMIT_WINDOW_SECONDS, ttl_after_request

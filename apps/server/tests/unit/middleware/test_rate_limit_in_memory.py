@@ -15,7 +15,12 @@ real handlers on them and the assertion here is about the limiter, not about rou
 The in-memory counter belongs to the application instance that owns it. The suite builds an
 application per test and makes far more than one hundred requests from the same client address in
 one process, so a counter shared across instances would start rejecting unrelated tests partway
-through a run; the last test below pins that.
+through a run; the third test below pins that.
+
+The last test is the one exception to this file's black-box rule, and it reaches into the limiter
+instance on the built application, because eviction of a closed window leaves no trace in any
+response, log line, or stored row: a map that grows forever answers exactly as a map that is
+pruned, until the process runs out of memory. Its own docstring says so again at the point of use.
 """
 
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -26,6 +31,8 @@ import pytest
 import structlog
 from fastapi import FastAPI
 
+from app.middleware.rate_limit import RateLimitMiddleware
+
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/none"
 TEST_BASE_URL = "http://testserver"
 AUTH_PATH = "/v1/auth/login"
@@ -35,6 +42,10 @@ RATE_LIMIT_EXCEEDED_MESSAGE = "Too many requests"
 IN_MEMORY_LOG_EVENT = "rate_limiter_in_memory"
 CLIENT_ADDRESS = "203.0.113.30"
 CLIENT_PORT = 54321
+# A second address, standing for the client whose window has since closed: one entry per address
+# per bucket is what makes an unevicted map grow with every source the process ever saw.
+DEPARTED_CLIENT_ADDRESS = "203.0.113.31"
+GLOBAL_BUCKET_KEY_PREFIX = "ratelimit:global"
 
 ApplicationFactory = Callable[[], FastAPI]
 
@@ -130,3 +141,55 @@ async def test_b46_each_application_starts_with_an_empty_in_memory_count(
         served = await client.get(AUTH_PATH)
 
     assert served.status_code != 429
+
+
+def find_rate_limit_middleware(application: FastAPI) -> RateLimitMiddleware:
+    """Return the limiter instance inside the built application's middleware stack.
+
+    Starlette builds that stack on the first request and each layer holds the next as `app`, so
+    walking the chain finds the object the requests actually went through, rather than a second
+    instance a test constructed for itself, which would prove nothing about the running one.
+    """
+    layer: object | None = application.middleware_stack
+    while layer is not None:
+        if isinstance(layer, RateLimitMiddleware):
+            return layer
+        layer = getattr(layer, "app", None)
+    raise AssertionError("the application must hold a RateLimitMiddleware in its middleware stack")
+
+
+async def test_b46_a_window_that_has_closed_is_dropped_from_the_in_memory_map(
+    build_app_without_redis: ApplicationFactory,
+) -> None:
+    """The map must shed closed windows, and this is the only honest way to see that.
+
+    Eviction changes no response, no log line, and nothing stored outside the process: a map that
+    keeps every address it ever saw answers exactly like one that prunes, until the process runs
+    out of memory, which is not a thing a test can wait for. So this test reads the limiter's own
+    `in_memory_windows` on the application under test, which is reaching inside the unit rather
+    than observing it from outside, and is deliberate.
+
+    The closed window is staged rather than waited for, because the real window is fifteen minutes
+    long: the entry for a client that has gone away is written with a start time older than the
+    window, and one further request from the live client is what should sweep it. The live
+    client's own entry must survive that sweep, because an eviction that dropped open windows too
+    would reset every client's count on every request and switch the limit off.
+    """
+    application = build_app_without_redis()
+    live_key = f"{GLOBAL_BUCKET_KEY_PREFIX}:{CLIENT_ADDRESS}"
+    departed_key = f"{GLOBAL_BUCKET_KEY_PREFIX}:{DEPARTED_CLIENT_ADDRESS}"
+
+    async with open_client(application, CLIENT_ADDRESS) as client:
+        await client.get(AUTH_PATH)
+        limiter = find_rate_limit_middleware(application)
+        assert live_key in limiter.in_memory_windows, sorted(limiter.in_memory_windows)
+        _count, live_window_started_at = limiter.in_memory_windows[live_key]
+        limiter.in_memory_windows[departed_key] = (
+            1,
+            live_window_started_at - RATE_LIMIT_WINDOW_SECONDS - 1,
+        )
+        served = await client.get(AUTH_PATH)
+
+    assert served.status_code != 429
+    assert departed_key not in limiter.in_memory_windows, sorted(limiter.in_memory_windows)
+    assert live_key in limiter.in_memory_windows, sorted(limiter.in_memory_windows)

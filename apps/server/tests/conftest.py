@@ -1,9 +1,12 @@
 """Shared fixtures: the app under test, HTTP clients that run its lifespan, and log capture.
 
 The app is built through the public factory `app.main.create_app()` after the environment is
-set, so every test exercises the same assembly uvicorn runs. The default database and Redis URLs
-both point at a closed local port, so any test that does not override them proves it never needs a
-reachable Postgres and never touches whatever Redis happens to be running on the machine.
+set, so every test exercises the same assembly uvicorn runs. Both application factories here,
+`server_app` and `build_server_app`, set the database and Redis URLs to a closed local port, so
+any test that does not override them proves it never needs a reachable Postgres and never touches
+whatever Redis happens to be running on the machine. Both have to set them: an unset variable is
+read from the surrounding shell, so a fixture that left `REDIS_URL` alone would count its
+requests into a real Redis on any developer machine or CI runner that exports one.
 
 `build_server_app` is the test application factory: it builds the app through that same public
 factory under a chosen environment and then mounts a test-only router the calling test supplies,
@@ -54,9 +57,17 @@ def clear_settings_cache() -> None:
 
 @pytest.fixture
 def server_app(database_url: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
-    """Build the app through create_app() with DATABASE_URL and ENVIRONMENT patched."""
+    """Build the app through create_app() with DATABASE_URL, ENVIRONMENT, and REDIS_URL patched.
+
+    REDIS_URL is set here for the same reason `build_server_app` sets it: left alone, the app
+    under test reads whatever the surrounding shell exports, and the rate limiter then counts
+    every request of this suite into a real Redis someone else is using. This fixture backs
+    `api_client` and `captured_log_events`, which about eleven test modules depend on, so the
+    variable has to be pinned here rather than only in the other factory.
+    """
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("REDIS_URL", UNREACHABLE_REDIS_URL)
     from app.main import create_app  # noqa: PLC0415 (missing until implemented)
 
     clear_settings_cache()
