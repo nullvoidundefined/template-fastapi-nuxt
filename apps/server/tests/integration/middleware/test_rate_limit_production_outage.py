@@ -56,6 +56,9 @@ RATE_LIMIT_UNAVAILABLE_ENVELOPE = {
     "code": "SERVER_RATE_LIMIT_UNAVAILABLE",
     "error": RATE_LIMIT_UNAVAILABLE_MESSAGE,
 }
+# The two ways the limiter refuses a request: failing closed when Redis does not answer, and
+# rejecting over the limit. Either one before the outage means the relay did not carry it.
+RATE_LIMIT_REFUSAL_CODES = {"SERVER_RATE_LIMIT_UNAVAILABLE", "RATE_LIMIT_EXCEEDED"}
 UNAVAILABLE_LOG_EVENT = "rate_limiter_unavailable"
 IN_MEMORY_LOG_EVENT = "rate_limiter_in_memory"
 UNREACHABLE_REDIS_URL = "redis://127.0.0.1:1/15"
@@ -151,7 +154,17 @@ async def test_b7_a_redis_outage_after_a_successful_start_fails_only_the_auth_pa
                 await client.get(UNROUTED_PATH) for _ in range(REQUESTS_PAST_THE_GLOBAL_LIMIT)
             ]
 
-    assert before_outage.status_code == 404, "the relay must have carried the first request"
+    # The status is no longer the signal. `/v1/auth/login` had no handler when slice 02 wrote
+    # this, so a request the limiter allowed through fell to the router and answered 404, and the
+    # 404 stood in for "the limiter did not refuse this". Slice 03 gave login a handler, and this
+    # application points DATABASE_URL at a closed port by design, so a served request now answers
+    # 503 SERVER_DATABASE_UNAVAILABLE, which no status check can tell apart from the limiter
+    # failing closed. The limiter's own refusal envelope is what this line rules out; do not
+    # restore the status assertion.
+    assert before_outage.json().get("code") not in RATE_LIMIT_REFUSAL_CODES, (
+        "the relay must have carried the first request, so the limiter served it rather than "
+        f"refusing it: {before_outage.status_code} {before_outage.text}"
+    )
     for auth_response in auth_responses:
         assert auth_response.status_code == 503
         assert auth_response.json() == RATE_LIMIT_UNAVAILABLE_ENVELOPE

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.types import Send
 
 from app.constants.error_codes import ErrorCode
-from app.schemas.errors import ErrorResponse
+from app.schemas.errors import ErrorResponse, FieldError
 
 DATABASE_UNAVAILABLE_MESSAGE = "The database is unavailable"
 
@@ -72,11 +72,18 @@ def build_error_response(
     code: ErrorCode,
     message: str,
     headers: Mapping[str, str] | None = None,
+    field_errors: list[FieldError] | None = None,
 ) -> JSONResponse:
-    """Return the `{ code, error }` envelope as a JSON response with the given status."""
-    envelope = ErrorResponse(code=code, error=message)
+    """Return the `{ code, error }` envelope as a JSON response with the given status.
+
+    `field_errors` is excluded when absent rather than serialized as null, so a failure that is
+    not a validation error answers the same two keys it always has.
+    """
+    envelope = ErrorResponse(code=code, error=message, field_errors=field_errors)
     return JSONResponse(
-        status_code=status_code, content=envelope.model_dump(mode="json"), headers=headers
+        status_code=status_code,
+        content=envelope.model_dump(mode="json", exclude_none=True),
+        headers=headers,
     )
 
 
@@ -98,7 +105,9 @@ async def send_error_envelope(
 
     `headers` carries the few a rejection must add, such as the rate limiter's `Retry-After`.
     """
-    body = json.dumps(ErrorResponse(code=code, error=message).model_dump(mode="json")).encode()
+    body = json.dumps(
+        ErrorResponse(code=code, error=message).model_dump(mode="json", exclude_none=True)
+    ).encode()
     extra_headers = [
         (name.lower().encode(), value.encode()) for name, value in (headers or {}).items()
     ]

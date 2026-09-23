@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import func, text
 
@@ -60,3 +60,8 @@ async def touch_session(connection: AsyncConnection, session_id: uuid.UUID) -> N
         .values(last_seen_at=func.now())
     )
     await connection.execute(statement)
+
+
+async def delete_session(connection: AsyncConnection, session_id: uuid.UUID) -> None:
+    """Remove one session, which is what signing out of this browser means."""
+    await connection.execute(delete(user_sessions).where(user_sessions.c.id == session_id))
