@@ -32,7 +32,6 @@ UNKNOWN_PATH_MARKER = "zzmarkerpathzz"
 UNKNOWN_PATH = f"/test-only/{UNKNOWN_PATH_MARKER}"
 
 OPERATIONAL_ERROR_PATH = "/test-only/raise-operational-error"
-OS_ERROR_PATH = "/test-only/raise-os-error"
 UNEXPECTED_ERROR_PATH = "/test-only/raise-unexpected-error"
 VALIDATED_BODY_PATH = "/test-only/validated-body"
 APP_ERROR_PATH = "/test-only/raise-app-error"
@@ -66,10 +65,6 @@ def build_test_only_router() -> APIRouter:
     @router.get(OPERATIONAL_ERROR_PATH)
     async def raise_operational_error() -> dict[str, str]:
         raise OperationalError(FAILED_STATEMENT, None, OSError(DATABASE_FAILURE_MESSAGE))
-
-    @router.get(OS_ERROR_PATH)
-    async def raise_os_error() -> dict[str, str]:
-        raise ConnectionRefusedError(DATABASE_FAILURE_MESSAGE)
 
     @router.get(UNEXPECTED_ERROR_PATH)
     async def raise_unexpected_error() -> dict[str, str]:
@@ -142,25 +137,6 @@ async def test_b9_operational_error_answers_503_server_database_unavailable(
 
     async with build_api_client(application) as client:
         response = await client.get(OPERATIONAL_ERROR_PATH)
-
-    assert_error_envelope(response, 503, ErrorCode.SERVER_DATABASE_UNAVAILABLE)
-
-
-async def test_b9_refused_connect_answers_503_server_database_unavailable(
-    build_server_app: ServerAppFactory, build_api_client: ApiClientFactory
-) -> None:
-    """B-9: a refused connect answers 503 and not 500, although SQLAlchemy never wraps it.
-
-    Narrowed from a bare `OSError` after the pre-merge review: connecting the engine to a closed
-    port raises `ConnectionRefusedError`, which is the shape a real failed connect takes, while
-    `OSError` itself also covers `TimeoutError` and `FileNotFoundError`. Asserting the base class
-    would have required the handler to call any of those a database outage, which the companion
-    test `test_review5_a_non_database_os_error_answers_500_not_a_database_outage` now forbids.
-    """
-    application = build_server_app(test_only_router=build_test_only_router())
-
-    async with build_api_client(application) as client:
-        response = await client.get(OS_ERROR_PATH)
 
     assert_error_envelope(response, 503, ErrorCode.SERVER_DATABASE_UNAVAILABLE)
 

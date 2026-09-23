@@ -9,6 +9,11 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY app/ app/
+# The migration chain ships in the image because the image is what runs it: the compose `migrate`
+# service, and Railway's preDeployCommand from slice 08, both invoke `alembic upgrade head` on
+# this image rather than on a checkout.
+COPY alembic.ini ./
+COPY migrations/ migrations/
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim

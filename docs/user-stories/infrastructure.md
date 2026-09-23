@@ -68,7 +68,7 @@
 
 - [x] An unknown path answers 404 `ROUTING_NOT_FOUND` and the body never repeats the requested path (spec B-5).
 - [x] A wrong method answers 405 `ROUTING_METHOD_NOT_ALLOWED`, and no error response carries FastAPI's default `detail` body (spec B-5).
-- [x] A database failure during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, whether it arrives as SQLAlchemy's `OperationalError`, as the `DBAPIError` a connection lost mid-request is wrapped in, or as the `ConnectionRefusedError` a refused connect raises before SQLAlchemy sees it (spec B-9).
+- [x] A database failure during a request answers 503 `SERVER_DATABASE_UNAVAILABLE`, whether it arrives as SQLAlchemy's `OperationalError` or as the `DBAPIError` a connection lost mid-request is wrapped in (spec B-9). A refused connect is classified by `get_connection` from slice 02 PR 3 onward, rather than by a global handler on `builtins.ConnectionError`, so only a route that really opened a connection can report a database outage (IAN-169).
 - [x] An unexpected error answers 500 with no traceback, and the exception's own message only outside production (spec B-9).
 - [x] An invalid body answers 400 `INPUT_VALIDATION_ERROR` naming the offending field (R-406).
 - [x] The 413 for an oversized body carries the same registry code rather than a local literal (spec B-43).
@@ -76,3 +76,22 @@
 
 **E2E test:** covered by unit tests in `apps/server/tests/unit/test_main_exception_handlers.py`; no new route ships in this PR, so no new e2e spec.
 **Ticket:** IAN-168
+
+## US-INFRA-006: A migrated schema and one transaction per request
+
+**As** a developer building the first endpoints that store data
+**I want to** deploy a schema through a reversible migration chain and write through one transaction per request
+**So that** no process ever serves traffic against an unmigrated database, and a handler that fails partway leaves nothing behind
+
+**Acceptance criteria:**
+
+- [x] `alembic upgrade head` creates the shared `set_updated_at` trigger function, the `users` table, and the unique index on `lower(email)`; `alembic downgrade base` removes all three, so the first revision is reversible.
+- [x] Updating a `users` row moves `updated_at` and leaves `created_at` unchanged, because the trigger fires on every update.
+- [x] Two addresses differing only in case cannot both be stored, so a mixed-case duplicate is a duplicate at registration in slice 03.
+- [x] A route declaring `Depends(get_connection, scope="function")` commits when it returns and rolls back when it raises, and a commit that itself fails changes the response rather than following a success the client already holds.
+- [x] A route taking that dependency while Postgres is unreachable answers 503 `SERVER_DATABASE_UNAVAILABLE`, and a route raising an unrelated socket error answers 500 (IAN-169).
+- [x] The API image carries `alembic.ini` and `migrations/`, and the compose `migrate` service runs `alembic upgrade head` on that image before `api` and `worker` start, through `condition: service_completed_successfully`.
+- [x] The integration suite and the end-to-end suite both reach head through that same one-shot service or the same Alembic chain, so no suite invents a schema of its own.
+
+**E2E test:** `e2e/global-setup.ts` runs the migration the whole end-to-end suite then depends on; the behavior itself is covered by `apps/server/tests/integration/db/`, because no user-facing route reads the table until slice 03.
+**Ticket:** IAN-169

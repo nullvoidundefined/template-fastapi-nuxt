@@ -1,6 +1,5 @@
 """Builds the FastAPI application; uvicorn runs `app.main:create_app` as a factory."""
 
-import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import cast
@@ -18,7 +17,7 @@ from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
-from app.errors import AppError, build_error_response
+from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_response
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.routers import health
 from app.schemas.errors import ErrorResponse
@@ -44,17 +43,17 @@ HTTP_EXCEPTION_MESSAGES = {
     ErrorCode.SERVER_INTERNAL_ERROR: "The request could not be completed",
 }
 # A lost connection reaches the handler as one of these. `OperationalError` is what the track
-# names, but the asyncpg dialect wraps a mid-request disconnect as a plain `DBAPIError`, and a
-# refused connect arrives as a bare `ConnectionRefusedError`, so all three shapes are registered.
-# `OSError` itself is deliberately not: `TimeoutError` and `FileNotFoundError` are subclasses, and
-# labelling a provider's timeout a database outage would answer the wrong code and log it as a
-# warning rather than an error.
-CONNECTION_ERROR_TYPES = (OperationalError, ConnectionError, socket.gaierror)
+# names, and the asyncpg dialect wraps a mid-request disconnect as a plain `DBAPIError`, so both
+# shapes are registered. The builtin socket errors are deliberately not: `ConnectionError` and
+# `socket.gaierror` cover every peer failure a route can raise, database or not, and while they
+# were registered here a failing outbound HTTP or Redis call answered `SERVER_DATABASE_UNAVAILABLE`
+# and pointed the operator at the wrong dependency (IAN-169). A refused connect is now classified
+# by `app.db.session.get_connection`, the one place a request opens a connection at all.
+CONNECTION_ERROR_TYPES = (OperationalError,)
 ASYNCPG_CONNECTION_ERRORS = (
     asyncpg.exceptions.PostgresConnectionError,
     asyncpg.exceptions.InterfaceError,
 )
-DATABASE_UNAVAILABLE_MESSAGE = "The database is unavailable"
 INTERNAL_ERROR_MESSAGE = "Internal server error"
 VALIDATION_ERROR_MESSAGE = "The request body failed validation"
 

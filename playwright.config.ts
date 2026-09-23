@@ -9,6 +9,9 @@ process.env.WEB_BASE_URL ??= 'http://localhost:3000';
 process.env.API_BASE_URL ??= 'http://localhost:3001';
 
 export default defineConfig({
+    // Runs the compose `migrate` service once before the suite, so a spec never reads a schema
+    // that no migration produced. See e2e/global-setup.ts for the E2E_SKIP_MIGRATE escape.
+    globalSetup: './e2e/global-setup.ts',
     testDir: 'e2e',
     forbidOnly: Boolean(process.env.CI),
     retries: process.env.CI ? 1 : 0,
