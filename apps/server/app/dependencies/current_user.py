@@ -1,0 +1,122 @@
+"""Turns a session cookie into the signed-in user, or says precisely why it cannot.
+
+Two resolvers, because two callers need different things from the same lookup.
+
+`get_current_user` is what a protected route declares. It raises, and it distinguishes a request
+that carried no usable session from one whose session has expired: a client that knows the
+difference can retry a sign-in rather than treating both as the same failure. A query filtered on
+the expiry alone cannot tell them apart, since an expired row and an unknown token both return
+nothing, so the row is fetched first and its expiry judged afterwards.
+
+`resolve_current_user` is what logout declares. It never raises and returns None for anything it
+cannot resolve, because logging out must answer the same way whether or not a session existed.
+
+Both return the session id alongside the user. A password change signs out every session except
+the one making the request, and it cannot identify that one from the user alone.
+"""
+
+import hashlib
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+import structlog
+from sqlalchemy import Row, select
+from sqlalchemy.ext.asyncio import AsyncConnection
+from starlette.requests import Request
+
+from app.constants.error_codes import ErrorCode
+from app.constants.session import SESSION_COOKIE_NAME
+from app.db.tables import user_sessions, users
+from app.errors import AppError
+
+AUTH_REQUIRED_MESSAGE = "Authentication is required"
+AUTH_SESSION_EXPIRED_MESSAGE = "That session has expired"
+
+logger = structlog.get_logger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class SessionUser:
+    """The signed-in user, carrying only what a caller of this dependency may see."""
+
+    id: uuid.UUID
+    email: str
+
+
+@dataclass(slots=True, frozen=True)
+class AuthenticatedUser:
+    """One resolved session: the user it belongs to and the id of the session itself."""
+
+    user: SessionUser
+    session_id: uuid.UUID
+
+
+class AuthRequiredError(AppError):
+    """The request carried no session, or one no session row matches."""
+
+    def __init__(self) -> None:
+        """Answer 401 with the code a client treats as "sign in"."""
+        super().__init__(401, ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+
+
+class SessionExpiredError(AppError):
+    """The request named a real session whose lifetime has passed."""
+
+    def __init__(self) -> None:
+        """Answer 401 with the code a client treats as "sign in again"."""
+        super().__init__(401, ErrorCode.AUTH_SESSION_EXPIRED, AUTH_SESSION_EXPIRED_MESSAGE)
+
+
+async def get_current_user(request: Request, connection: AsyncConnection) -> AuthenticatedUser:
+    """Return the signed-in user, raising when the session is absent, unknown, or expired."""
+    session_row = await read_session_row(request, connection)
+    if session_row is None:
+        raise AuthRequiredError
+    if session_row.expires_at <= datetime.now(UTC):
+        logger.info("session_expired", session_id=str(session_row.session_id))
+        raise SessionExpiredError
+    return build_authenticated_user(session_row)
+
+
+async def resolve_current_user(
+    request: Request, connection: AsyncConnection
+) -> AuthenticatedUser | None:
+    """Return the signed-in user, or None for anything that does not resolve to a live session."""
+    session_row = await read_session_row(request, connection)
+    if session_row is None or session_row.expires_at <= datetime.now(UTC):
+        return None
+    return build_authenticated_user(session_row)
+
+
+async def read_session_row(request: Request, connection: AsyncConnection) -> Row[Any] | None:
+    """Return the session joined to its user for the request's cookie, expiry not yet judged.
+
+    The expiry is deliberately not in the WHERE clause. Filtering on it here would make an expired
+    session indistinguishable from a token that never existed, and the two are different answers.
+    """
+    raw_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not raw_token:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    statement = (
+        select(
+            user_sessions.c.id.label("session_id"),
+            user_sessions.c.expires_at,
+            users.c.id.label("user_id"),
+            users.c.email,
+        )
+        .join_from(user_sessions, users, user_sessions.c.user_id == users.c.id)
+        .where(user_sessions.c.token_hash == token_hash)
+    )
+    return (await connection.execute(statement)).one_or_none()
+
+
+def build_authenticated_user(session_row: Row[Any]) -> AuthenticatedUser:
+    """Bind the user id into the log context and return the resolved session."""
+    structlog.contextvars.bind_contextvars(user_id=str(session_row.user_id))
+    return AuthenticatedUser(
+        user=SessionUser(id=session_row.user_id, email=session_row.email),
+        session_id=session_row.session_id,
+    )

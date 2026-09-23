@@ -1,0 +1,47 @@
+"""Data access for the users table.
+
+Every lookup normalizes the address the same way, and that is the point of routing them through
+one module. The unique index is on `lower(email)`, so an account created as `A@x.com` is found
+by `a@x.com`; a lookup that passed the submitted case straight through would fail to find an
+account that exists, and would then register a duplicate the index refuses.
+
+`lock_user_for_update` is the same lookup holding a row lock. It exists because verifying a
+password and acting on the result are two statements, and a password change can commit between
+them: a login that verified an old password could otherwise insert a live session after the change
+that was meant to revoke every session had already run. Taking the lock first serializes the two
+per user, and costs nothing when nobody is contending.
+"""
+
+from typing import Any
+
+from sqlalchemy import Row, func, select
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from app.db.tables import users
+
+
+def normalize_email(email: str) -> str:
+    """Return the address as it is compared: trimmed of surrounding space and lowercased."""
+    return email.strip().lower()
+
+
+async def get_user_by_email(connection: AsyncConnection, email: str) -> Row[Any] | None:
+    """Return the user whose folded address matches, or None when there is no such account.
+
+    Compared as `lower(email) = :email` rather than with `ILIKE`, which would read the underscore
+    and percent in an address as wildcards and would not use the functional unique index.
+    """
+    statement = select(users).where(func.lower(users.c.email) == normalize_email(email))
+    return (await connection.execute(statement)).one_or_none()
+
+
+async def lock_user_for_update(connection: AsyncConnection, email: str) -> Row[Any] | None:
+    """Return the same user as `get_user_by_email`, holding its row lock until this commits.
+
+    The caller must already be inside a transaction, which `get_connection` guarantees for a
+    request. The lock is released by that transaction's commit or rollback, never by this function.
+    """
+    statement = (
+        select(users).where(func.lower(users.c.email) == normalize_email(email)).with_for_update()
+    )
+    return (await connection.execute(statement)).one_or_none()
