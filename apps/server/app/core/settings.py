@@ -1,10 +1,20 @@
 """Typed settings read from the environment once per process and validated at startup."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PRODUCTION_ENVIRONMENT = "production"
+# Every one of these is a protection that silently degrades rather than failing loudly when it is
+# absent, which is why production refuses to start without them instead of warning. Without
+# CORS_ORIGIN the allowed-origin list is empty and the CSRF guard loses the preflight that makes
+# its header meaningful; without REDIS_URL the rate limiter counts per process, so an attacker
+# rotates across instances past the auth limit; without FORWARDED_ALLOW_IPS uvicorn keys every
+# proxied request on the proxy's own address and the whole site shares one rate-limit bucket.
+REQUIRED_PRODUCTION_FIELDS = ("cors_origin", "redis_url", "forwarded_allow_ips")
+REQUIRED_PRODUCTION_VARIABLES = "CORS_ORIGIN, REDIS_URL, and FORWARDED_ALLOW_IPS"
 
 
 class Settings(BaseSettings):
@@ -17,7 +27,22 @@ class Settings(BaseSettings):
     database_url: SecretStr
     database_ca_cert: str | None = None
     redis_url: SecretStr | None = None
+    cors_origin: str | None = None
+    forwarded_allow_ips: str | None = None
     worker_port: int = 3002
+
+    @model_validator(mode="after")
+    def require_production_values(self) -> Self:
+        """Refuse to start in production without the values production's protections need."""
+        if self.environment != PRODUCTION_ENVIRONMENT:
+            return self
+        missing = [name for name in REQUIRED_PRODUCTION_FIELDS if getattr(self, name) is None]
+        if missing:
+            raise ValueError(
+                f"{REQUIRED_PRODUCTION_VARIABLES} are required in production; missing: "
+                f"{', '.join(name.upper() for name in missing)}"
+            )
+        return self
 
 
 @lru_cache

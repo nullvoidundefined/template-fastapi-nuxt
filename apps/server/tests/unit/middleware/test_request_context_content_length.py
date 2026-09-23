@@ -33,6 +33,7 @@ async def test_copilot_4052759306_zero_padded_content_length_within_limit_reache
     padded_content_length = f"{LEADING_ZERO_PADDING}{len(SMALL_BODY)}"
     request = api_client.build_request("POST", BODY_ECHO_PATH, content=SMALL_BODY)
     request.headers["Content-Length"] = padded_content_length
+    request.headers["X-Requested-With"] = "XMLHttpRequest"
 
     response = await api_client.send(request)
 

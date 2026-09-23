@@ -113,6 +113,9 @@ def test_defect5_b2_stdlib_log_record_is_rendered_as_one_json_line_in_production
     """Defect 5, B-2: a uvicorn stdlib record reaches stdout as one JSON line with level, time."""
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("CORS_ORIGIN", "https://client.example.test")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6380/0")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "127.0.0.1")
     from app.core.settings import get_settings  # noqa: PLC0415 (read after the env is patched)
     from app.main import create_app  # noqa: PLC0415 (read after the env is patched)
 
@@ -157,6 +160,9 @@ def test_review1_arq_log_record_is_rendered_once_as_json_after_arq_installs_its_
     """
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("CORS_ORIGIN", "https://client.example.test")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6380/0")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "127.0.0.1")
     from app.core.logging import configure_logging  # noqa: PLC0415 (read after the env is patched)
     from app.core.settings import get_settings  # noqa: PLC0415 (read after the env is patched)
 

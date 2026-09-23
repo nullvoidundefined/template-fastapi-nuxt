@@ -188,7 +188,11 @@ async def test_r406_invalid_body_answers_400_input_validation_error_with_the_fie
     application = build_server_app(test_only_router=build_test_only_router())
 
     async with build_api_client(application) as client:
-        response = await client.post(VALIDATED_BODY_PATH, json=invalid_payload)
+        response = await client.post(
+            VALIDATED_BODY_PATH,
+            json=invalid_payload,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
 
     assert_error_envelope(response, 400, ErrorCode.INPUT_VALIDATION_ERROR)
     assert REQUIRED_FIELD_NAME in response.text, response.text
@@ -204,7 +208,7 @@ async def test_r406_malformed_json_body_answers_400_input_validation_error(
         response = await client.post(
             VALIDATED_BODY_PATH,
             content=b"{not json at all",
-            headers={"content-type": "application/json"},
+            headers={"content-type": "application/json", "X-Requested-With": "XMLHttpRequest"},
         )
 
     assert_error_envelope(response, 400, ErrorCode.INPUT_VALIDATION_ERROR)

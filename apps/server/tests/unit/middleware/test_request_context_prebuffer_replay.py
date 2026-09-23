@@ -46,7 +46,11 @@ async def test_copilot_4052684572_b43_pre_read_body_of_exactly_100_kb_is_replaye
     mount_body_digest_route(server_app)
     request_body = build_varied_body(MAX_BODY_BYTES)
 
-    response = await api_client.post(BODY_DIGEST_PATH, content=stream_fixed_chunks(request_body))
+    response = await api_client.post(
+        BODY_DIGEST_PATH,
+        content=stream_fixed_chunks(request_body),
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
 
     assert "content-length" not in {name.lower() for name in response.request.headers}
     assert response.status_code == 200

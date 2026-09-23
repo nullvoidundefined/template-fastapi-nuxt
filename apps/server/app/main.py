@@ -12,17 +12,26 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.cors import CORSMiddleware
 
 from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
 from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_response
+from app.middleware.csrf_guard import CSRF_HEADER_MISSING_MESSAGE, CsrfGuardMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
+from app.middleware.request_timeout import RequestTimeoutMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import health
 from app.schemas.errors import ErrorResponse
 
 REQUEST_ID_HEADER = "X-Request-Id"
+REQUEST_TIMEOUT_SECONDS = 30
+ALLOWED_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+# `X-Requested-With` is listed because the CSRF guard requires it: a browser may only send it
+# cross-origin once the preflight allows it, which is what ties the two protections together.
+ALLOWED_CORS_HEADERS = ["Content-Type", "X-Requested-With", "Idempotency-Key", "X-Request-Id"]
 
 logger = structlog.get_logger(__name__)
 
@@ -37,7 +46,7 @@ HTTP_EXCEPTION_CODES = {
 HTTP_EXCEPTION_MESSAGES = {
     ErrorCode.INPUT_VALIDATION_ERROR: "The request could not be read",
     ErrorCode.AUTH_REQUIRED: "Authentication is required",
-    ErrorCode.CSRF_HEADER_MISSING: "That request is not allowed",
+    ErrorCode.CSRF_HEADER_MISSING: CSRF_HEADER_MISSING_MESSAGE,
     ErrorCode.ROUTING_NOT_FOUND: "The requested resource was not found",
     ErrorCode.ROUTING_METHOD_NOT_ALLOWED: "That method is not allowed on this resource",
     ErrorCode.SERVER_INTERNAL_ERROR: "The request could not be completed",
@@ -74,7 +83,7 @@ def create_app() -> FastAPI:
             500: {"model": ErrorResponse, "description": "An unexpected error occurred"},
         },
     )
-    register_middleware(app)
+    register_middleware(app, settings)
     register_exception_handlers(app, settings)
     app.include_router(health.router)
     return app
@@ -94,8 +103,36 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
     return lifespan
 
 
-def register_middleware(app: FastAPI) -> None:
-    """Add middleware innermost first, so asgi-correlation-id wraps everything, 413s included."""
+def register_middleware(app: FastAPI, settings: Settings) -> None:
+    """Add middleware innermost first, so the request passes the chain in the documented order.
+
+    Starlette wraps middleware outside in, so the layer added last runs first. These calls are
+    therefore written in reverse of the runtime order, which reads outermost inward as: the
+    correlation ID (1a), the request context (1b), the security headers (2), CORS (3), the rate
+    limiter that slice 02 PR 5 adds (4), the timeout (5), and the CSRF guard (6), with slice 05's
+    idempotency middleware innermost (7). Writing the calls in runtime order would invert the
+    chain and put the request-ID binding inside the guards, so a rejection would log without it.
+
+    The correlation ID is outermost so every response carries a request ID, a guard's rejection
+    included. The request context stays immediately inside it because that is where the structlog
+    binding happens and where the body limit runs, both of which must precede the guards. The
+    security headers sit above CORS so they decorate rejections as well as successes, and CORS
+    precedes the guards so a preflight is answered rather than refused by a guard it cannot
+    satisfy. `tests/unit/test_main_middleware_order.py` is what holds this order in place.
+    """
+    app.add_middleware(CsrfGuardMiddleware)
+    app.add_middleware(RequestTimeoutMiddleware, seconds=REQUEST_TIMEOUT_SECONDS)
+    app.add_middleware(
+        CORSMiddleware,
+        # An empty list, not a wildcard, when no origin is configured: outside production the
+        # frontend is same-origin through the Nitro proxy, so nothing needs CORS at all, and a
+        # wildcard default would be the one that survived into a deployment by accident.
+        allow_origins=[settings.cors_origin] if settings.cors_origin else [],
+        allow_credentials=True,
+        allow_methods=ALLOWED_CORS_METHODS,
+        allow_headers=ALLOWED_CORS_HEADERS,
+    )
+    app.add_middleware(SecurityHeadersMiddleware, environment=settings.environment)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CorrelationIdMiddleware,

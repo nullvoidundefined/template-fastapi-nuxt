@@ -5,9 +5,11 @@ handler in `main.py` turns it into the envelope without a mapping table in betwe
 that is not an `AppError` is unexpected by definition and reaches the 500 handler.
 """
 
+import json
 from collections.abc import Mapping
 
 from fastapi.responses import JSONResponse
+from starlette.types import Send
 
 from app.constants.error_codes import ErrorCode
 from app.schemas.errors import ErrorResponse
@@ -76,3 +78,27 @@ def build_error_response(
     return JSONResponse(
         status_code=status_code, content=envelope.model_dump(mode="json"), headers=headers
     )
+
+
+async def send_error_envelope(send: Send, status_code: int, code: ErrorCode, message: str) -> None:
+    """Send the `{ code, error }` envelope as raw ASGI messages, for middleware that cannot raise.
+
+    Pure ASGI middleware sits outside Starlette's `ExceptionMiddleware`, so an `AppError` raised
+    there never reaches `register_exception_handlers` and would reach the client as a bare 500.
+    Writing the response here keeps the envelope identical to the one the handlers produce.
+
+    Sending the messages directly, rather than through a Starlette response, also never reads from
+    the request's receive channel, which a streamed body may already have consumed.
+    """
+    body = json.dumps(ErrorResponse(code=code, error=message).model_dump(mode="json")).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})

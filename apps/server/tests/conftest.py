@@ -11,6 +11,7 @@ so a test can reach a route that raises the exception it wants to observe. `crea
 never mounts that router, and `tests/unit/test_main_exception_handlers.py` asserts that it does not.
 """
 
+import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -67,8 +68,9 @@ async def api_client(server_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 def build_server_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[ServerAppFactory]:
     """Return a factory that builds the app under a chosen environment and mounts a test router.
 
-    The factory patches DATABASE_URL, ENVIRONMENT, and REDIS_URL, clears the settings cache, calls
-    the public `create_app()`, and only then includes the test-only router the caller passed, so
+    The factory patches database, environment, and Redis settings and supplies defaults for
+    CORS and trusted proxies without overriding a test's explicit configuration. It clears the
+    settings cache, calls the public `create_app()`, and includes the caller's test-only router, so
     the assembly under test is the one uvicorn runs and the test-only routes are never part of it.
     """
 
@@ -80,6 +82,12 @@ def build_server_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[ServerAppFacto
         monkeypatch.setenv("DATABASE_URL", database_url)
         monkeypatch.setenv("ENVIRONMENT", environment)
         monkeypatch.setenv("REDIS_URL", LOCAL_REDIS_URL)
+        monkeypatch.setenv(
+            "CORS_ORIGIN", os.environ.get("CORS_ORIGIN", "https://client.example.test")
+        )
+        monkeypatch.setenv(
+            "FORWARDED_ALLOW_IPS", os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1")
+        )
         from app.main import create_app  # noqa: PLC0415 (missing until implemented)
 
         clear_settings_cache()
