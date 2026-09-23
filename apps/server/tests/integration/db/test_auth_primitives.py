@@ -339,7 +339,6 @@ async def test_current_user_distinguishes_session_states(
     """Resolve a live session with its identity and preserve distinct authentication errors."""
     from app.constants.session import SESSION_COOKIE_NAME  # noqa: PLC0415
     from app.dependencies.current_user import get_current_user  # noqa: PLC0415
-
     from app.errors import AppError  # noqa: PLC0415
 
     async with open_database(alembic_config_factory) as engine, seeded_user(engine) as user:
