@@ -21,11 +21,12 @@ from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
 from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_response
 from app.middleware.csrf_guard import CSRF_HEADER_MISSING_MESSAGE, CsrfGuardMiddleware
+from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
-from app.routers import auth, health
+from app.routers import admin, auth, health
 from app.schemas.errors import ErrorResponse, FieldError
 
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app, settings)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(admin.router)
     return app
 
 
@@ -121,9 +123,10 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
     Starlette wraps middleware outside in, so the layer added last runs first. These calls are
     therefore written in reverse of the runtime order, which reads outermost inward as: the
     correlation ID (1a), the request context (1b), the security headers (2), CORS (3), the rate
-    limiter (4), the timeout (5), and the CSRF guard (6), with slice 05's
-    idempotency middleware innermost (7). Writing the calls in runtime order would invert the
-    chain and put the request-ID binding inside the guards, so a rejection would log without it.
+    limiter (4), the timeout (5), the CSRF guard (6), and the idempotency middleware innermost
+    (7), so a guard's refusal never claims a key and the stored response is the route's own.
+    Writing the calls in runtime order would invert the chain and put the request-ID binding
+    inside the guards, so a rejection would log without it.
 
     The correlation ID is outermost so every response carries a request ID, a guard's rejection
     included. The request context stays immediately inside it because that is where the structlog
@@ -132,6 +135,7 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
     precedes the guards so a preflight is answered rather than refused by a guard it cannot
     satisfy. `tests/unit/test_main_middleware_order.py` is what holds this order in place.
     """
+    app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(CsrfGuardMiddleware)
     app.add_middleware(RequestTimeoutMiddleware, seconds=REQUEST_TIMEOUT_SECONDS)
     app.add_middleware(RateLimitMiddleware, settings=settings)

@@ -15,7 +15,6 @@ Both return the session id alongside the user. A password change signs out every
 the one making the request, and it cannot identify that one from the user alone.
 """
 
-import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,15 +22,17 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import Depends
-from sqlalchemy import Row, select
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.requests import Request
 
 from app.constants.error_codes import ErrorCode
 from app.constants.session import SESSION_COOKIE_NAME
+from app.constants.user_roles import UserRole
+from app.core.security import hash_token
 from app.db.session import get_connection
-from app.db.tables import user_sessions, users
 from app.errors import AppError
+from app.repositories.user_sessions import find_session_with_user
 
 # Declared here rather than at each route, so a route that takes the signed-in user gets the
 # request's transaction with it. Without the Depends marker FastAPI reads the parameter as
@@ -50,6 +51,7 @@ class SessionUser:
 
     id: uuid.UUID
     email: str
+    role: UserRole
 
 
 @dataclass(slots=True, frozen=True)
@@ -98,26 +100,11 @@ async def resolve_current_user(
 
 
 async def read_session_row(request: Request, connection: AsyncConnection) -> Row[Any] | None:
-    """Return the session joined to its user for the request's cookie, expiry not yet judged.
-
-    The expiry is deliberately not in the WHERE clause. Filtering on it here would make an expired
-    session indistinguishable from a token that never existed, and the two are different answers.
-    """
+    """Return the session joined to its user for the request's cookie, expiry not yet judged."""
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         return None
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    statement = (
-        select(
-            user_sessions.c.id.label("session_id"),
-            user_sessions.c.expires_at,
-            users.c.id.label("user_id"),
-            users.c.email,
-        )
-        .join_from(user_sessions, users, user_sessions.c.user_id == users.c.id)
-        .where(user_sessions.c.token_hash == token_hash)
-    )
-    return (await connection.execute(statement)).one_or_none()
+    return await find_session_with_user(connection, hash_token(raw_token))
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
@@ -128,6 +115,8 @@ def build_authenticated_user(session_row: Row[Any]) -> AuthenticatedUser:
     """Bind the user id into the log context and return the resolved session."""
     structlog.contextvars.bind_contextvars(user_id=str(session_row.user_id))
     return AuthenticatedUser(
-        user=SessionUser(id=session_row.user_id, email=session_row.email),
+        user=SessionUser(
+            id=session_row.user_id, email=session_row.email, role=UserRole(session_row.role)
+        ),
         session_id=session_row.session_id,
     )

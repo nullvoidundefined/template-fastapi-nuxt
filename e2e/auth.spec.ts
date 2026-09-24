@@ -109,9 +109,10 @@ test.describe('auth account lifecycle', () => {
         const body = await response.json();
         expect(body.data.email).toBe(emailAddress);
         expect(body.data.id).toMatch(UUID_PATTERN);
-        // The response carries the id and the email and nothing else, so no column added to the
-        // users table later reaches a client by accident, the stored hash least of all.
-        expect(Object.keys(body.data).sort()).toEqual(['email', 'id']);
+        // The response carries the id, the email and the role (B-19) and nothing else, so no
+        // column added to the users table later reaches a client by accident, the hash least of all.
+        expect(Object.keys(body.data).sort()).toEqual(['email', 'id', 'role']);
+        expect(body.data.role).toBe('member');
         registeredUserId = body.data.id;
 
         const sessionCookie = await readStoredSessionCookie(sessionContext);
@@ -132,7 +133,7 @@ test.describe('auth account lifecycle', () => {
 
         expect(response.status()).toBe(200);
         expect(await response.json()).toEqual({
-            data: { id: registeredUserId, email: emailAddress },
+            data: { id: registeredUserId, email: emailAddress, role: 'member' },
         });
     });
 
@@ -143,7 +144,7 @@ test.describe('auth account lifecycle', () => {
 
         expect(response.status()).toBe(200);
         expect(await response.json()).toEqual({
-            data: { id: registeredUserId, email: emailAddress },
+            data: { id: registeredUserId, email: emailAddress, role: 'member' },
         });
 
         // The change signs out every other session of this user and keeps this one, so the very
@@ -151,7 +152,7 @@ test.describe('auth account lifecycle', () => {
         const afterChange = await sessionContext.get('/v1/auth/me');
         expect(afterChange.status()).toBe(200);
         expect(await afterChange.json()).toEqual({
-            data: { id: registeredUserId, email: emailAddress },
+            data: { id: registeredUserId, email: emailAddress, role: 'member' },
         });
     });
 
@@ -180,7 +181,7 @@ test.describe('auth account lifecycle', () => {
 
         expect(response.status()).toBe(200);
         expect(await response.json()).toEqual({
-            data: { id: registeredUserId, email: emailAddress },
+            data: { id: registeredUserId, email: emailAddress, role: 'member' },
         });
 
         const cookieAfterLogin = await readStoredSessionCookie(sessionContext);

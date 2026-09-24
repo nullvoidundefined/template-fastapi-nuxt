@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.constants.error_codes import ErrorCode
 from app.constants.session import SESSION_TTL
+from app.constants.user_roles import UserRole
 from app.core.security import generate_session_token, hash_password
 from app.db.tables import users
 from app.errors import ConflictError
@@ -33,6 +34,7 @@ class RegisteredUser:
 
     id: uuid.UUID
     email: str
+    role: UserRole
     raw_token: str
 
 
@@ -40,17 +42,27 @@ async def register_user(connection: AsyncConnection, email: str, password: str) 
     """Create the account and its first session, or refuse a duplicate address."""
     normalized_email = normalize_email(email)
     password_hash = await hash_password(password)
-    user_id = await insert_user(connection, normalized_email, password_hash)
+    user_id, role = await insert_user(connection, normalized_email, password_hash)
     raw_token, token_hash = generate_session_token()
     await create_session(connection, user_id, token_hash, datetime.now(UTC) + SESSION_TTL)
-    return RegisteredUser(id=user_id, email=normalized_email, raw_token=raw_token)
+    return RegisteredUser(id=user_id, email=normalized_email, role=role, raw_token=raw_token)
 
 
-async def insert_user(connection: AsyncConnection, email: str, password_hash: str) -> uuid.UUID:
-    """Insert the account, translating the index's refusal into the registry's code."""
-    statement = insert(users).values(email=email, password_hash=password_hash).returning(users.c.id)
+async def insert_user(
+    connection: AsyncConnection, email: str, password_hash: str
+) -> tuple[uuid.UUID, UserRole]:
+    """Insert the account and return its id and the role the column defaulted it to.
+
+    The role is read back rather than assumed, so the response states what the row holds. The
+    index's refusal of a duplicate address is translated into the registry's code.
+    """
+    statement = (
+        insert(users)
+        .values(email=email, password_hash=password_hash)
+        .returning(users.c.id, users.c.role)
+    )
     try:
-        user_id = await connection.scalar(statement)
+        inserted = (await connection.execute(statement)).one()
     except IntegrityError as err:
         if getattr(err.orig, "sqlstate", None) != UNIQUE_VIOLATION_SQLSTATE:
             raise
@@ -58,4 +70,4 @@ async def insert_user(connection: AsyncConnection, email: str, password_hash: st
             code=ErrorCode.AUTH_EMAIL_ALREADY_REGISTERED,
             message=EMAIL_ALREADY_REGISTERED_MESSAGE,
         ) from err
-    return uuid.UUID(str(user_id))
+    return uuid.UUID(str(inserted.id)), UserRole(inserted.role)

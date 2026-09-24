@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Users
+         * @description Answer one page of users, oldest first, with the total and the bounds applied.
+         */
+        get: operations["read_users_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/forgot-password": {
         parameters: {
             query?: never;
@@ -120,7 +140,7 @@ export interface paths {
         };
         /**
          * Read Me
-         * @description Answer the signed-in user's identity, and 401 without a usable session.
+         * @description Answer the signed-in user's identity and role, and 401 without a usable session.
          */
         get: operations["read_me_v1_auth_me_get"];
         put?: never;
@@ -180,8 +200,36 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AdminUserData
+         * @description One user as an administrator sees it: never the password hash.
+         */
+        AdminUserData: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid4
+             */
+            id: string;
+            role: components["schemas"]["UserRole"];
+        };
+        /**
+         * AdminUserListResponse
+         * @description The `{ data, meta }` envelope around one page of users.
+         */
+        AdminUserListResponse: {
+            /** Data */
+            data: components["schemas"]["AdminUserData"][];
+            meta: components["schemas"]["PageMeta"];
+        };
+        /**
          * AuthenticatedUserData
-         * @description The signed-in user, carrying only what a client may see.
+         * @description The signed-in user, carrying only what a client may see: the id, address, and role.
          */
         AuthenticatedUserData: {
             /** Email */
@@ -191,6 +239,7 @@ export interface components {
              * Format: uuid4
              */
             id: string;
+            role: components["schemas"]["UserRole"];
         };
         /**
          * AuthenticatedUserResponse
@@ -214,7 +263,7 @@ export interface components {
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -329,6 +378,18 @@ export interface components {
             password: string;
         };
         /**
+         * PageMeta
+         * @description Where a page sits in the whole list: the total, and the bounds that produced this page.
+         */
+        PageMeta: {
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
          * RegisterRequest
          * @description The body of a registration.
          */
@@ -352,6 +413,12 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * UserRole
+         * @description Every role the `user_role` enum holds, in its declared order.
+         * @enum {string}
+         */
+        UserRole: "member" | "admin";
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -455,6 +522,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReadiness"];
+                };
+            };
+        };
+    };
+    read_users_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

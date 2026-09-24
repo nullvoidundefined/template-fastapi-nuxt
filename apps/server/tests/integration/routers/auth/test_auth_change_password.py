@@ -65,7 +65,9 @@ async def test_b13_the_old_password_stops_working_and_the_new_one_works(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"data": {"id": before.json()["data"]["id"], "email": email}}
+    assert response.json() == {
+        "data": {"id": before.json()["data"]["id"], "email": email, "role": "member"}
+    }
     with_old = await auth_client.post(LOGIN_PATH, json={"email": email, "password": VALID_PASSWORD})
     assert with_old.status_code == 401, with_old.text
     assert with_old.json()["code"] == "AUTH_INVALID_CREDENTIALS"

@@ -1,4 +1,4 @@
-"""Fixtures for the auth endpoints: a reachable Postgres, HTTPS browsers, and seeded rows.
+"""Fixtures for the auth and admin endpoints: a reachable Postgres, HTTPS browsers, seeded rows.
 
 These tests deliberately do not use the shared `api_client` and `build_server_app` fixtures, and
 the reason matters more than it sounds. Both point `DATABASE_URL` and `REDIS_URL` at a closed
@@ -67,6 +67,11 @@ INSERT_SESSION_SQL = text(
 SELECT_USERS_SQL = text(
     "SELECT id, email, password_hash, created_at FROM users WHERE lower(email) = :email"
 )
+ROLE_COLUMN_EXISTS_SQL = text(
+    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+    "WHERE table_name = 'users' AND column_name = 'role')"
+)
+PROMOTE_TO_ADMIN_SQL = text("UPDATE users SET role = 'admin' WHERE id = :user_id")
 SELECT_SESSIONS_SQL = text(
     "SELECT id, user_id, token_hash, expires_at, created_at FROM user_sessions "
     "WHERE user_id = :user_id ORDER BY created_at"
@@ -127,6 +132,16 @@ class AuthDatabase:
                 },
             )
         return uuid.UUID(str(session_id))
+
+    async def promote_to_admin(self, user_id: uuid.UUID) -> None:
+        """Commit the admin role onto an existing user, which only an operator can do.
+
+        The column is checked first, so a schema without roles fails as an assertion naming the
+        missing column rather than as a driver error from inside a fixture helper.
+        """
+        async with self.engine.begin() as connection:
+            assert await connection.scalar(ROLE_COLUMN_EXISTS_SQL), "users has no role column"
+            await connection.execute(PROMOTE_TO_ADMIN_SQL, {"user_id": user_id})
 
     async def read_users(self, email: str) -> list[Row[Any]]:
         """Return every user row whose folded address matches, oldest first.
