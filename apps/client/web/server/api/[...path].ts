@@ -8,10 +8,13 @@
  *
  * Two details are load-bearing. The target carries the query string, because the catch-all's path
  * parameter excludes it and `proxyRequest` uses the target verbatim, so building the target from
- * the parameter alone silently drops `?page=2`. And `X-Forwarded-For` is replaced rather than
- * forwarded: h3 passes the header through untouched, every entry but the last is client-supplied,
- * and the backend's rate limiter keys on what arrives, so forwarding the chain would let one
- * client rotate buckets at will.
+ * the parameter alone silently drops `?page=2`. And the client's forwarding headers are never
+ * forwarded as sent: h3 passes every inbound header through untouched, while uvicorn trusts
+ * `X-Forwarded-For`, `X-Forwarded-Proto`, and their kin from Nitro's address. `X-Forwarded-For` is
+ * replaced with the one trustworthy entry, or dropped when none resolves, because every entry but
+ * the last is client-supplied and the backend's rate limiter keys on what arrives, so forwarding
+ * the chain would let one client rotate buckets at will. `X-Forwarded-Proto`, `X-Forwarded-Host`,
+ * and `Forwarded` are dropped, so a client cannot claim a scheme or host it did not use.
  */
 import { resolveClientAddress } from '#shared/services/resolveClientAddress';
 
@@ -20,7 +23,12 @@ import { isForwardableBackendPath } from '../services/isForwardableBackendPath';
 const NOT_FOUND_STATUS = 404;
 // Headers a client can set to lie about where a request came from; the backend trusts them from
 // Nitro, so none of them is forwarded as the client sent it.
-const CLIENT_FORWARDING_HEADER_NAMES = new Set(['x-forwarded-for']);
+const CLIENT_FORWARDING_HEADER_NAMES = new Set([
+    'forwarded',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+]);
 
 export default defineEventHandler(async (event) => {
     const { apiBaseUrl } = useRuntimeConfig(event);

@@ -280,6 +280,28 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         expect(backendRequests[0]!.headers.get('x-forwarded-for')).toBeNull();
     });
 
+    it('US-AUTH-003: strips client-sent X-Forwarded-Proto, X-Forwarded-Host, and Forwarded, which uvicorn trusts from Nitro, while other headers still pass', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/me', {
+                headers: {
+                    'X-Forwarded-Proto': 'https',
+                    'X-Forwarded-Host': 'forged.example.test',
+                    Forwarded: `for=${forgedForwardedForEntry};proto=https;host=forged.example.test`,
+                    'X-Requested-With': csrfHeaderValue,
+                },
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        const { headers: backendHeaders } = backendRequests[0]!;
+        expect(backendHeaders.get('x-forwarded-proto')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-host')).toBeNull();
+        expect(backendHeaders.get('forwarded')).toBeNull();
+        expect(backendHeaders.get('x-requested-with')).toBe(csrfHeaderValue);
+    });
+
     it('US-AUTH-003: answers /api/health from the Nuxt server itself, never through the proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 

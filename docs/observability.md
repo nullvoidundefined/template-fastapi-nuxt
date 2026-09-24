@@ -21,7 +21,8 @@ outbound call for that request (R-341).
 - **The `/api/[...path]` proxy.** `apps/client/web/server/api/[...path].ts` forwards whatever
   request-ID header is present on the proxied call (it does not strip or replace it, unlike
   `X-Forwarded-For`, which it replaces with the resolved client address or strips when no
-  trustworthy address resolves).
+  trustworthy address resolves). It also strips client-sent `X-Forwarded-Proto`,
+  `X-Forwarded-Host`, and `Forwarded`, since uvicorn trusts forwarding headers from Nitro.
 - **FastAPI.** `asgi-correlation-id`'s `CorrelationIdMiddleware`, registered outermost in
   `apps/server/app/main.py`, validates an inbound `X-Request-Id` with
   `is_valid_request_id` (the same character-and-length rule as the Nitro middleware), mints one
