@@ -111,6 +111,10 @@ services:
     environment:
       <<: *server-environment
       WORKER_PORT: '3002'
+    # Published on loopback only, so the smoke suite (`pnpm smoke`) can reach the worker's
+    # readiness probe from the host; nothing else outside the compose network needs the worker.
+    ports:
+      - '127.0.0.1:${WORKER_HOST_PORT:-3002}:3002'
     # The image's HEALTHCHECK is liveness (/health), so a dependency outage never restarts a
     # working process; compose waits on readiness instead, so `up --wait` proves Postgres and Redis.
     healthcheck:

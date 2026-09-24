@@ -29,6 +29,7 @@ Settled with the owner, one question at a time, on 2026-09-19:
 | Circuit breaker       | Dropped                                                                           | The Express breaker is never called, so parity is nominal; no provider needs one yet (R-309). This departs from the Python track, which lists one, and the track is amended in the next agent-governance change (stack audit, owner choice) |
 | Scheduled cleanup     | arq cron job only, no pg_cron                                                     | One code path for one job; the worker exists anyway (stack audit, owner choice)                                                                                                                                                             |
 | Client app state      | Nuxt `useState` composables, no Pinia                                             | Only the theme and the modal stack are app state, which `useState` holds with no dependency. This departs from the Vue track, which names Pinia, and the track is amended in the next agent-governance change (stack audit, owner choice)   |
+| No live deploy        | The template is not deployed; slice 08 ships `railway.toml` configuration only    | Owner decision on 2026-09-24: B-28 is amended so the smoke suite runs in CI against the compose stack built from the production images, and the first real deploy happens in the first fork                                                 |
 
 ## Architecture
 
@@ -172,7 +173,7 @@ Slice 08, cleanup and closing:
 
 - B-26: The hourly `delete_expired_rows` job deletes expired sessions, idempotency keys older than 24 hours, and webhook ledger rows older than 30 days in batches of 1000, and leaves every unexpired row in place.
 - B-27: Lighthouse accessibility scores 100 on all seven pages.
-- B-28: The smoke suite passes against the deployed Railway URLs.
+- B-28: The smoke suite passes in CI against the compose stack built from the production images.
 
 Criteria added after review keep the earlier numbers stable, so they are listed here with the slice each belongs to:
 
@@ -253,7 +254,7 @@ Cookie sessions with hashed tokens; CSRF by required header; CORS restricted to 
 
 ## Deployment
 
-Three Railway services built from their Dockerfiles. The API service's `preDeployCommand` in `railway.toml` runs `alembic upgrade head` once per deploy, before any replica takes traffic, so replicas never race to migrate. The deploy step updates the Stripe dashboard's webhook endpoint to `/v1/billing/webhook`. Settings gain `client_url`, the web origin from which the reset-email link and the Stripe redirect URLs are built. After a deploy, the smoke suite runs against the live URLs, and the health endpoints are polled until green, as the workspace deploy-monitoring rule requires.
+Three Railway services built from their Dockerfiles. The API service's `preDeployCommand` in `railway.toml` runs `alembic upgrade head` once per deploy, before any replica takes traffic, so replicas never race to migrate. The deploy step updates the Stripe dashboard's webhook endpoint to `/v1/billing/webhook`. Settings gain `client_url`, the web origin from which the reset-email link and the Stripe redirect URLs are built. The template itself is never deployed: CI runs the smoke suite against the compose stack built from the same production images, and the first real deploy happens in the first fork, where the smoke suite then runs against the live URLs (`SMOKE_WEB_URL`, `SMOKE_API_URL`) and the health endpoints are polled until green, as the workspace deploy-monitoring rule requires.
 
 ## Slice plan
 
@@ -266,7 +267,7 @@ Three Railway services built from their Dockerfiles. The API service's `preDeplo
 | 05    | Idempotency and admin: `request_idempotency_keys` and its middleware, `users.role`, `require_admin`, `GET /admin/users`, and the admin page                                                                                                                                                                                                                                                                          | 3 h      |
 | 06    | Billing: `user_subscriptions`, `billing_webhook_events`, checkout, portal, and webhook, the dashboard's billing buttons, and stripe-mock as an `e2e` compose profile                                                                                                                                                                                                                                                 | 4.5 h    |
 | 07    | Observability and integrations: PostHog on both sides, Sentry on both sides, R2, and the theme composable                                                                                                                                                                                                                                                                                                            | 3 h      |
-| 08    | Cleanup and closing: the hourly cleanup job, the smoke suite, the Lighthouse assertion, a README and features-list parity audit against `template-express-next`, and the first Railway deploy                                                                                                                                                                                                                        | 3 h      |
+| 08    | Cleanup and closing: the hourly cleanup job (its own pull request after slice 06, because it prunes billing's webhook ledger), the smoke suite, the Lighthouse assertion, a README and features-list parity audit against `template-express-next`, and the Railway deploy configuration only (no live deploy)                                                                                                        | 3 h      |
 
 Middleware criteria in slices 02 and 05 (B-7's auth bucket, B-17, B-18, B-40, B-44) are exercised through a test-only router mounted by the test app factory, because the auth routes arrive in slice 03 and the first replayable authenticated `POST` arrives in slice 06; the real routes then carry the same behavior in their own slices' end-to-end tests.
 

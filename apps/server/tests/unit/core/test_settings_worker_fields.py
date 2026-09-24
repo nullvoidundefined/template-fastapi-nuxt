@@ -23,6 +23,7 @@ def settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("DATABASE_URL", UNREACHABLE_DATABASE_URL)
     monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("WORKER_PORT", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
     clear_settings_cache()
     yield
     clear_settings_cache()
@@ -60,3 +61,29 @@ def test_b3_settings_read_redis_url_as_a_secret_and_worker_port_from_the_environ
     assert redis_url.get_secret_value() == WORKER_REDIS_URL
     assert WORKER_REDIS_URL not in repr(settings)
     assert worker_port == CONFIGURED_WORKER_PORT
+
+
+RAILWAY_INJECTED_PORT = 7311
+
+
+@pytest.mark.usefixtures("settings_environment")
+def test_b3_the_worker_listens_on_the_platform_port_when_worker_port_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Railway injects PORT and health-checks it, so the probes must answer there by default."""
+    monkeypatch.setenv("PORT", str(RAILWAY_INJECTED_PORT))
+    from app.core.settings import get_settings  # noqa: PLC0415
+
+    assert get_settings().worker_port == RAILWAY_INJECTED_PORT
+
+
+@pytest.mark.usefixtures("settings_environment")
+def test_b3_an_explicit_worker_port_wins_over_the_platform_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WORKER_PORT still decides when it is set, as it is under compose."""
+    monkeypatch.setenv("PORT", str(RAILWAY_INJECTED_PORT))
+    monkeypatch.setenv("WORKER_PORT", str(CONFIGURED_WORKER_PORT))
+    from app.core.settings import get_settings  # noqa: PLC0415
+
+    assert get_settings().worker_port == CONFIGURED_WORKER_PORT

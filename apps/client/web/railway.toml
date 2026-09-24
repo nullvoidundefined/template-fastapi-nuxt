@@ -1,0 +1,16 @@
+# Railway configuration for the web service (spec: Deployment). Leave the service's Root
+# Directory at the repository root, because the image builds the workspace packages the app
+# depends on, and set its Config File to `/apps/client/web/railway.toml`.
+# No variable or secret belongs here; the README's deploy section lists what to set per service.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/client/web/Dockerfile"
+watchPatterns = ["/apps/client/web/**", "/packages/**", "/pnpm-lock.yaml", "/package.json", "/pnpm-workspace.yaml"]
+
+[deploy]
+# The Nitro route answers without calling the API, so an API outage never fails a web deploy.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

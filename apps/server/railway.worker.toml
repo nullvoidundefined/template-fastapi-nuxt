@@ -1,0 +1,17 @@
+# Railway configuration for the arq worker service (spec: Deployment). Set the service's Root
+# Directory to `apps/server` and its Config File to `/apps/server/railway.worker.toml`. Railway
+# probes the healthcheck on the PORT it injects, and the worker serves its probes there whenever
+# WORKER_PORT is unset, so leave WORKER_PORT unset on Railway (the README lists every variable).
+# The worker never migrates: the API's pre-deploy command owns the schema.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.worker"
+# Watch paths are matched from the repository root, not from the root directory.
+watchPatterns = ["/apps/server/**"]
+
+[deploy]
+healthcheckPath = "/health/ready"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
