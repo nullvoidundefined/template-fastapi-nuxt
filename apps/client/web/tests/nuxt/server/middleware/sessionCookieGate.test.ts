@@ -250,6 +250,25 @@ describe('the Nitro session-cookie gate', () => {
         await expect(loginResponse.text()).resolves.toBe('login page');
     });
 
+    it.each([protectedPagePath, landingPath, loginPath])(
+        'IAN-335: marks the page response for %s no-store, so Back cannot replay a render that carries a revoked session',
+        async (pagePath) => {
+            const pageResponse = await sendRequest(pagePath, {
+                ...pageRequestHeaders,
+                cookie: junkSessionCookie,
+            });
+
+            expect(pageResponse.status).toBe(200);
+            expect(pageResponse.headers.get('cache-control')).toBe('no-store');
+        },
+    );
+
+    it('IAN-335: leaves the caching of built assets alone, since they carry no session', async () => {
+        const assetResponse = await sendRequest(nuxtAssetPath);
+
+        expect(assetResponse.headers.get('cache-control')).toBeNull();
+    });
+
     it.each(['/forgot-password', '/reset-password'])(
         'B-36: does not gate %s, which a signed-out visitor must reach to recover the account',
         async (recoveryPath) => {
