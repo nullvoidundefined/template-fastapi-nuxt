@@ -12,6 +12,12 @@ revision that introduces it rather than by whatever happens to reference it firs
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.constants.billing import (
+    BILLING_WEBHOOK_EVENT_STATUS_ENUM_NAME,
+    USER_SUBSCRIPTION_STATUS_ENUM_NAME,
+    BillingWebhookEventStatus,
+    UserSubscriptionStatus,
+)
 from app.constants.idempotency import IDEMPOTENCY_KEY_STATE_ENUM_NAME, IdempotencyKeyState
 from app.constants.user_roles import USER_ROLE_ENUM_NAME, UserRole
 
@@ -148,4 +154,77 @@ request_idempotency_keys = sa.Table(
         server_default=sa.text("now()"),
     ),
     sa.Index("ix_request_idempotency_keys_created_at", "created_at"),
+)
+
+user_subscription_status = postgresql.ENUM(
+    *(status.value for status in UserSubscriptionStatus),
+    name=USER_SUBSCRIPTION_STATUS_ENUM_NAME,
+    create_type=False,
+)
+
+# One row per user holding the Stripe billing state the webhook last wrote. The customer and
+# subscription ids are unique because the webhook finds a row by either, and nullable because a
+# row can exist before Stripe has named both. Only the webhook writes this table.
+user_subscriptions = sa.Table(
+    "user_subscriptions",
+    metadata,
+    sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+    sa.Column(
+        "user_id",
+        sa.Uuid(),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    sa.Column("stripe_customer_id", sa.Text(), nullable=True, unique=True),
+    sa.Column("stripe_subscription_id", sa.Text(), nullable=True, unique=True),
+    sa.Column("plan_id", sa.Text(), nullable=True),
+    sa.Column(
+        "status",
+        user_subscription_status,
+        nullable=False,
+        server_default=UserSubscriptionStatus.INCOMPLETE.value,
+    ),
+    sa.Column("current_period_start", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("current_period_end", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "is_canceling_at_period_end", sa.Boolean(), nullable=False, server_default=sa.text("false")
+    ),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column(
+        "updated_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+)
+
+billing_webhook_event_status = postgresql.ENUM(
+    *(status.value for status in BillingWebhookEventStatus),
+    name=BILLING_WEBHOOK_EVENT_STATUS_ENUM_NAME,
+    create_type=False,
+)
+
+# One row per Stripe event delivered to the webhook: the idempotent ledger the claim upsert writes.
+# The index on `attempted_at` serves the slice 08 cleanup of rows older than thirty days.
+billing_webhook_events = sa.Table(
+    "billing_webhook_events",
+    metadata,
+    sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+    sa.Column("stripe_event_id", sa.Text(), nullable=False, unique=True),
+    sa.Column("event_type", sa.Text(), nullable=False),
+    sa.Column("status", billing_webhook_event_status, nullable=False),
+    sa.Column(
+        "attempted_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Index("ix_billing_webhook_events_attempted_at", "attempted_at"),
 )
