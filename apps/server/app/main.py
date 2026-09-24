@@ -14,8 +14,8 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
-from app.clients.job_queue import create_job_queue
 from app.clients.analytics import create_analytics_client
+from app.clients.job_queue import create_job_queue
 from app.clients.r2 import create_r2_client
 from app.clients.sentry import initialize_sentry
 from app.constants.error_codes import ErrorCode

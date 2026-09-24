@@ -22,8 +22,8 @@ from app.constants.job_names import RESET_EMAIL_JOB_NAME
 from app.constants.user_roles import UserRole
 from app.core.session_cookie import clear_session_cookie, set_session_cookie
 from app.dependencies.current_user import CurrentUser, OptionalCurrentUser, RequestConnection
-from app.dependencies.job_queue import RequestJobQueue
 from app.dependencies.integrations import RequestAnalytics
+from app.dependencies.job_queue import RequestJobQueue
 from app.dependencies.settings import RequestSettings
 from app.repositories.user_sessions import delete_session
 from app.schemas.auth import (
