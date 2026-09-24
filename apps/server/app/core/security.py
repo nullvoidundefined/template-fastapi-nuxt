@@ -1,4 +1,4 @@
-"""Password hashing, password verification, and session token generation.
+"""Password hashing, password verification, and session and password-reset token generation.
 
 Three properties matter more than the code, and each is pinned by a test.
 
@@ -15,7 +15,8 @@ short-circuit creeps back in, and a pure function is something a test can assert
 
 The session token exists in raw form only in the cookie. `generate_session_token` returns the raw
 token and its SHA-256 together so a caller cannot store the wrong one by accident, and the
-repository takes the hash.
+repository takes the hash. A password-reset token is made the same way and exists in raw form
+only in the email's link.
 """
 
 import asyncio
@@ -26,6 +27,7 @@ import bcrypt
 
 BCRYPT_ROUNDS = 12
 SESSION_TOKEN_BYTES = 32
+PASSWORD_RESET_TOKEN_BYTES = 32
 # Built from parts rather than written as a literal, so no credential-shaped string appears in the
 # source for a secret scanner to flag (R-108). It is a dummy by construction: the password it
 # hashes is in this file, so it authenticates nobody.
@@ -68,3 +70,14 @@ def generate_session_token() -> tuple[str, str]:
     """Return the raw token for the cookie and the SHA-256 hash for the database, together."""
     raw_token = secrets.token_urlsafe(SESSION_TOKEN_BYTES)
     return raw_token, hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def generate_password_reset_token() -> tuple[str, str]:
+    """Return the raw token for the reset email and the SHA-256 hash for the database, together."""
+    raw_token = secrets.token_urlsafe(PASSWORD_RESET_TOKEN_BYTES)
+    return raw_token, hash_token(raw_token)
+
+
+def hash_token(raw_token: str) -> str:
+    """Return the SHA-256 hex digest a table stores in place of the raw token."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()

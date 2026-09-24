@@ -76,3 +76,30 @@ user_sessions = sa.Table(
     ),
     sa.Index("ix_user_sessions_expires_at", "expires_at"),
 )
+
+# One row per reset email. Like a session it stores only the SHA-256 of the token the email
+# carries. `used_at` is set by the single statement that consumes it, the index on `user_id` serves
+# the delete that retires a user's earlier unused resets, and the one on `expires_at` serves the
+# cleanup job in slice 08.
+user_password_resets = sa.Table(
+    "user_password_resets",
+    metadata,
+    sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+    sa.Column(
+        "user_id",
+        sa.Uuid(),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("token_hash", sa.Text(), nullable=False, unique=True),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Index("ix_user_password_resets_user_id", "user_id"),
+    sa.Index("ix_user_password_resets_expires_at", "expires_at"),
+)

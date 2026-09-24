@@ -22,7 +22,14 @@ const LOGIN_PATH = '/login';
 const FOUND_REDIRECT_STATUS = 302;
 // The pages a signed-out visitor is meant to reach. `/login` is here for a reason of its own: a
 // gate that redirected it would redirect it to itself, forever.
-const PUBLIC_PAGE_PATHS = new Set(['/', LOGIN_PATH, '/register']);
+// The two recovery pages are reached from an email by someone who by definition cannot sign in.
+const PUBLIC_PAGE_PATHS = new Set([
+    '/',
+    LOGIN_PATH,
+    '/register',
+    '/forgot-password',
+    '/reset-password',
+]);
 // Prefixes served to anyone: the built bundle, and the files a browser asks for by convention.
 const UNGATED_PATH_PREFIXES = ['/api/', '/_nuxt/', '/__nuxt', '/_ipx/'];
 const UNGATED_EXACT_PATHS = new Set(['/favicon.ico', '/robots.txt', '/sitemap.xml']);

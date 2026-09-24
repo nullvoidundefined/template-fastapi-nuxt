@@ -1,1 +1,1 @@
-"""The account lifecycle: registration, sign-in, and changing a password."""
+"""The account lifecycle: registration, sign-in, changing a password, and resetting one."""

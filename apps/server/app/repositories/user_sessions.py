@@ -65,3 +65,8 @@ async def touch_session(connection: AsyncConnection, session_id: uuid.UUID) -> N
 async def delete_session(connection: AsyncConnection, session_id: uuid.UUID) -> None:
     """Remove one session, which is what signing out of this browser means."""
     await connection.execute(delete(user_sessions).where(user_sessions.c.id == session_id))
+
+
+async def delete_user_sessions(connection: AsyncConnection, user_id: uuid.UUID) -> None:
+    """Remove every session this user holds, which signs the account out of every browser."""
+    await connection.execute(delete(user_sessions).where(user_sessions.c.user_id == user_id))

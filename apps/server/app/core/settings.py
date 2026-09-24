@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     cors_origin: str | None = None
     forwarded_allow_ips: str | None = None
     worker_port: int = 3002
+    # The web origin the reset-email link is built from, and later the Stripe redirect URLs.
+    client_url: str = "http://localhost:3000"
+    # Without a key the worker logs each email instead of sending it, so development and tests
+    # run without the provider.
+    resend_api_key: SecretStr | None = None
+    email_from: str = "Template <noreply@example.test>"
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:

@@ -14,6 +14,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
+from app.clients.job_queue import create_job_queue
 from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
@@ -96,15 +97,20 @@ def create_app() -> FastAPI:
 
 
 def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
-    """Return a lifespan that opens the engine on startup and disposes it on shutdown."""
+    """Return a lifespan that opens the engine and the job queue, and closes both on shutdown."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = create_database_engine(settings)
+        app.state.job_queue = create_job_queue(settings)
         try:
             yield
         finally:
-            await app.state.engine.dispose()
+            # Nested, so a Redis error while closing the queue cannot skip the engine's disposal.
+            try:
+                await app.state.job_queue.aclose()
+            finally:
+                await app.state.engine.dispose()
 
     return lifespan
 

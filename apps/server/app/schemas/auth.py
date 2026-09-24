@@ -28,6 +28,7 @@ MAX_PASSWORD_BYTES = 72
 # is kept so the OpenAPI document states a bound, and it is not the check: a character encodes to
 # one to four bytes, so the byte ceiling is what decides for anything outside ASCII.
 MAX_PASSWORD_LENGTH = MAX_PASSWORD_BYTES
+MAX_RESET_TOKEN_LENGTH = 256
 BCRYPT_BYTE_LIMIT_MESSAGE = f"Password must be at most {MAX_PASSWORD_BYTES} bytes when encoded"
 
 
@@ -77,6 +78,43 @@ class ChangePasswordRequest(AuthRequestModel):
     new_password: Annotated[
         BcryptSafeSecret, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
     ]
+
+
+class ForgotPasswordRequest(AuthRequestModel):
+    """The body of a reset request.
+
+    The email carries no pattern, for the reason `LoginRequest` gives: the answer is the same 200
+    for every address, and a 400 for one that is not even registrable would be the one response
+    that differed.
+    """
+
+    email: str = Field(min_length=1, max_length=MAX_EMAIL_LENGTH)
+
+
+class ResetPasswordRequest(AuthRequestModel):
+    """The body of a reset: the token from the email's link and the new password.
+
+    The password takes registration's constraints, since it becomes the account's password on
+    exactly the same terms. The token's ceiling is generous against the 43 characters a real one
+    has, and exists so an oversized value is refused before it is hashed.
+    """
+
+    token: str = Field(min_length=1, max_length=MAX_RESET_TOKEN_LENGTH)
+    password: Annotated[
+        BcryptSafeSecret, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    ]
+
+
+class ForgotPasswordData(BaseModel):
+    """The confirmation a reset request answers with, identical for every address."""
+
+    message: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    """The `{ data }` envelope of a reset request."""
+
+    data: ForgotPasswordData
 
 
 class AuthenticatedUserData(BaseModel):

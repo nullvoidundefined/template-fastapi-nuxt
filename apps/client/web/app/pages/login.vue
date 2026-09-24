@@ -6,7 +6,8 @@
  * makes it a signed-out page rather than a page with the account controls in the header.
  */
 import { NuxtLink } from '#components';
-import { definePageMeta, navigateTo, useSeoMeta } from '#imports';
+import { definePageMeta, navigateTo, useRoute, useSeoMeta } from '#imports';
+import { computed } from 'vue';
 
 import CredentialsForm from '~/components/CredentialsForm/CredentialsForm.vue';
 import { useSignInMutation } from '~/composables/useSignInMutation';
@@ -22,6 +23,9 @@ useSeoMeta({
 });
 
 const signInMutation = useSignInMutation();
+const route = useRoute();
+// Set by the reset page on success (B-36), so the visitor knows the new password is in effect.
+const hasJustReset = computed(() => route.query.reset === 'true');
 
 /** Sign in, then go to the dashboard. */
 async function signInAndContinue(credentials: CredentialsInput): Promise<void> {
@@ -33,11 +37,15 @@ async function signInAndContinue(credentials: CredentialsInput): Promise<void> {
 <template>
     <section data-test-id="login-page">
         <h1>Log in</h1>
+        <p v-if="hasJustReset" role="status">
+            Your password has been reset. Log in with the new one.
+        </p>
         <CredentialsForm
             submit-label="Log in"
             password-autocomplete="current-password"
             :submit-credentials="signInAndContinue"
         />
+        <p><NuxtLink to="/forgot-password">Forgot your password?</NuxtLink></p>
         <p>
             No account yet?
             <NuxtLink to="/register">Register</NuxtLink>

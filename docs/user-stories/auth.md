@@ -39,3 +39,20 @@
 
 **E2E test:** `e2e/authPages.spec.ts`
 **Ticket:** IAN-328
+
+## US-AUTH-005: Recover an account with a password-reset email
+
+**As** a person who has forgotten their password
+**I want to** request a reset link by email, choose a new password from it, and then sign in
+**So that** I can get back into my account without anyone else's help, and anyone holding an old session is signed out
+
+**Acceptance criteria:**
+
+- [x] `POST /v1/auth/forgot-password` answers 200 and enqueues exactly one `send_password_reset_email` job for a known and an unknown address alike, and only the known address's job sends a message (spec B-14).
+- [x] The job emails a link whose token's SHA-256 is the stored `token_hash`, and a provider error raises so arq retries it, up to three tries (spec B-47).
+- [x] A reset token works once, fails after one hour, fails once a newer reset has been issued, and a successful reset signs out every session of the user; two concurrent submissions of one token produce exactly one success (spec B-15).
+- [x] `/forgot-password` shows its submitted state after a request, `/reset-password` refuses to submit when the two passwords differ, and `/login?reset=true` shows the reset-success banner (spec B-36).
+- [x] Both recovery pages are reachable while signed out; the Nitro session-cookie gate lets them through.
+
+**E2E test:** `e2e/passwordReset.spec.ts`
+**Ticket:** IAN-334

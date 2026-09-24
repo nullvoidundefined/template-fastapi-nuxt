@@ -22,6 +22,8 @@ class ErrorCode(StrEnum):
     AUTH_SESSION_EXPIRED = "AUTH_SESSION_EXPIRED"
     # Registration was attempted for an address an account already uses (slice 03).
     AUTH_EMAIL_ALREADY_REGISTERED = "AUTH_EMAIL_ALREADY_REGISTERED"
+    # A password-reset token is unknown, already used, expired, or superseded (slice 04).
+    AUTH_RESET_TOKEN_INVALID = "AUTH_RESET_TOKEN_INVALID"  # noqa: S105 (a code, not a secret)
     # A state-changing request arrived without X-Requested-With (slice 02, PR 4).
     CSRF_HEADER_MISSING = "CSRF_HEADER_MISSING"
     # An Idempotency-Key was reused for a different method, path, or body (slice 05).

@@ -122,6 +122,8 @@ async function createNitroRequestPipeline(): Promise<(request: Request) => Promi
     const router = createRouter();
     router.get(landingPath, createBodyHandler('landing page'));
     router.get(loginPath, createBodyHandler('login page'));
+    router.get('/forgot-password', createBodyHandler('forgot page'));
+    router.get('/reset-password', createBodyHandler('reset page'));
     router.get(protectedPagePath, createBodyHandler('dashboard page'));
     router.get('/_nuxt/**:assetPath', createBodyHandler('built asset'));
     router.get(faviconPath, createBodyHandler('favicon'));
@@ -247,4 +249,16 @@ describe('the Nitro session-cookie gate', () => {
         expect(loginResponse.status).toBe(200);
         await expect(loginResponse.text()).resolves.toBe('login page');
     });
+
+    it.each(['/forgot-password', '/reset-password'])(
+        'B-36: does not gate %s, which a signed-out visitor must reach to recover the account',
+        async (recoveryPath) => {
+            const recoveryResponse = await sendRequest(
+                `${recoveryPath}?token=abc`,
+                pageRequestHeaders,
+            );
+
+            expect(recoveryResponse.status).toBe(200);
+        },
+    );
 });

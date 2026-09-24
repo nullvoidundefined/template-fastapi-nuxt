@@ -63,6 +63,9 @@ For live reload, run the API and the web app on the host instead (`pnpm dev`), w
 | `DATABASE_CA_CERT`    | API, worker       | unset locally; a CA bundle path when deployed                   |
 | `CORS_ORIGIN`         | API               | unset locally; the web origin when deployed                     |
 | `FORWARDED_ALLOW_IPS` | API image         | `172.28.0.10` under compose; the web service's address deployed |
+| `CLIENT_URL`          | worker            | `http://localhost:3000`, the origin reset-email links open      |
+| `RESEND_API_KEY`      | worker            | unset locally, so reset emails are logged instead of sent       |
+| `EMAIL_FROM`          | worker            | `Template <noreply@example.test>`; a verified sender deployed   |
 | `NUXT_API_BASE_URL`   | web (server side) | `http://localhost:3001`                                         |
 
 Deployed environments set these from the platform's secrets; no value is ever committed or baked into an image.

@@ -1,4 +1,4 @@
-"""The five routes that create, read and end a session.
+"""The routes that create, read and end a session, and the two that reset a password.
 
 Each one validates its body, calls a single service, and shapes a response. The orchestration
 lives in `app/services/auth/` because registering, signing in and changing a password are each
@@ -8,28 +8,41 @@ the first time anything else needed one.
 `logout` takes the non-raising resolver rather than the strict dependency, because B-31 requires
 204 whether or not a session existed. A route that raised for an absent cookie would make logging
 out fail for exactly the person who most wants it to succeed.
+
+`forgot-password` is the one route that calls no service. It enqueues the email job and answers,
+because the lookup that would tell a known address from an unknown one belongs in the worker,
+where no response or timing can reveal it.
 """
 
 import structlog
 from fastapi import APIRouter, Response, status
 
+from app.constants.job_names import RESET_EMAIL_JOB_NAME
 from app.core.session_cookie import clear_session_cookie, set_session_cookie
 from app.dependencies.current_user import CurrentUser, OptionalCurrentUser, RequestConnection
+from app.dependencies.job_queue import RequestJobQueue
 from app.dependencies.settings import RequestSettings
 from app.repositories.user_sessions import delete_session
 from app.schemas.auth import (
     AuthenticatedUserData,
     AuthenticatedUserResponse,
     ChangePasswordRequest,
+    ForgotPasswordData,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RegisterRequest,
+    ResetPasswordRequest,
 )
 from app.services.auth.change_password import change_password
 from app.services.auth.register_user import register_user
+from app.services.auth.reset_password import reset_password
 from app.services.auth.sign_in_user import sign_in_user
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 logger = structlog.get_logger(__name__)
+
+RESET_REQUESTED_MESSAGE = "If an account uses that address, a reset link is on its way"
 
 
 def build_user_response(user_id: object, email: str) -> AuthenticatedUserResponse:
@@ -111,3 +124,29 @@ async def change_my_password(
     )
     logger.info("user_password_changed", user_id=str(current.user.id))
     return build_user_response(current.user.id, current.user.email)
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def request_password_reset(
+    body: ForgotPasswordRequest, job_queue: RequestJobQueue
+) -> ForgotPasswordResponse:
+    """Enqueue the reset email and answer 200, whether or not an account uses the address.
+
+    The route never looks the address up. The job does, in the worker, so the response and the
+    work this request causes are identical for a known and an unknown address (B-14).
+    """
+    # The request's ID travels with the job, so the worker's work for this request is correlated
+    # with it (R-341).
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
+    await job_queue.enqueue_job(RESET_EMAIL_JOB_NAME, body.email, request_id)
+    return ForgotPasswordResponse(data=ForgotPasswordData(message=RESET_REQUESTED_MESSAGE))
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password_with_token(
+    body: ResetPasswordRequest, connection: RequestConnection
+) -> Response:
+    """Set a new password from an emailed token and sign the account out everywhere."""
+    user_id = await reset_password(connection, body.token, body.password)
+    logger.info("user_password_reset", user_id=str(user_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

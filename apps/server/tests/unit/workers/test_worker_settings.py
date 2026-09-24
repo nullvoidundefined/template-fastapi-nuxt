@@ -211,4 +211,54 @@ def test_b3_worker_settings_schedule_the_heartbeat_every_five_minutes() -> None:
     assert heartbeat_cron_job.coroutine is heartbeat_module.log_worker_heartbeat
     assert set(heartbeat_cron_job.minute) == HEARTBEAT_MINUTES
     assert heartbeat_cron_job.run_at_startup is False
-    assert worker_settings.functions == []
+
+
+RESET_EMAIL_JOB_NAME = "send_password_reset_email"
+RESET_EMAIL_JOB_MODULE = "app.workers.jobs.send_password_reset_email"
+RESET_EMAIL_MAX_TRIES = 3
+# Built from parts rather than written as one literal, so no credential-shaped string appears in
+# this source for a secret scanner to flag (R-108).
+PLACEHOLDER_RESEND_KEY = "_".join(("re", "unit", "placeholder"))
+
+
+@pytest.mark.usefixtures("worker_environment")
+async def test_b47_worker_settings_register_the_reset_email_job_with_three_tries() -> None:
+    """B-47: arq runs send_password_reset_email and retries it up to three tries in total."""
+    from arq.worker import create_worker  # noqa: PLC0415 (the test owns the import timing)
+
+    worker_settings_module = import_worker_settings_module()
+    reset_email_module = importlib.import_module(RESET_EMAIL_JOB_MODULE)
+
+    worker = create_worker(worker_settings_module.WorkerSettings, handle_signals=False)
+
+    registered_job = worker.functions[RESET_EMAIL_JOB_NAME]
+    assert registered_job.coroutine is reset_email_module.send_password_reset_email
+    assert registered_job.max_tries == RESET_EMAIL_MAX_TRIES
+
+
+@pytest.mark.usefixtures("worker_environment")
+@pytest.mark.parametrize(
+    ("resend_api_key", "expected_client"),
+    [(None, "DisabledEmailClient"), (PLACEHOLDER_RESEND_KEY, "ResendEmailClient")],
+    ids=["unconfigured", "configured"],
+)
+async def test_b47_worker_startup_stores_the_email_client_the_settings_call_for(
+    monkeypatch: pytest.MonkeyPatch, resend_api_key: str | None, expected_client: str
+) -> None:
+    """B-47: startup stores Resend when a key is set, and the logging stand-in when not."""
+    monkeypatch.setenv("WORKER_PORT", str(find_free_port()))
+    if resend_api_key is None:
+        monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("RESEND_API_KEY", resend_api_key)
+    clear_settings_cache()
+    worker_settings_module = import_worker_settings_module()
+    worker_context: dict[str, Any] = {"redis": FakeRedis()}
+
+    await worker_settings_module.start_worker_resources(worker_context)
+    try:
+        email_client = worker_context.get("email_client")
+    finally:
+        await worker_settings_module.stop_worker_resources(worker_context)
+
+    assert type(email_client).__name__ == expected_client
