@@ -24,3 +24,4 @@ Every user-facing feature in template-fastapi-nuxt is documented as a user story
 | `auth.md`           | The auth gate and the auth forms (US-AUTH-003, US-AUTH-004)                      |
 | `observability.md`  | Provider telemetry, PostHog and Sentry, and presigned uploads (US-OBS)           |
 | `theme.md`          | The theme preference and toggle (US-THEME)                                       |
+| `billing.md`        | Checkout, the billing portal, and the Stripe webhook (US-BILLING)                |
