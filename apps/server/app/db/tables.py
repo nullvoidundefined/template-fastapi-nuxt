@@ -153,6 +153,9 @@ request_idempotency_keys = sa.Table(
         nullable=False,
         server_default=sa.text("now()"),
     ),
+    sa.Column("response_body_bytes", sa.LargeBinary(), nullable=True),
+    sa.Column("response_content_type", sa.Text(), nullable=True),
+    sa.Column("response_headers", postgresql.JSONB(none_as_null=True), nullable=True),
     sa.Index("ix_request_idempotency_keys_created_at", "created_at"),
 )
 

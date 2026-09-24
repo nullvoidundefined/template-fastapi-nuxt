@@ -212,9 +212,11 @@
 - [x] Reusing a key for a different method, path, or body answers 422 `IDEMPOTENCY_KEY_REUSED` and runs no handler (spec B-40).
 - [x] Two simultaneous requests with one key run the handler once, and a claim left past its 60-second lease is taken over exactly once (spec B-44).
 - [x] A late completion or release by a request that was taken over changes nothing (spec B-53).
+- [x] A replay returns the stored raw body, content type, and allowlisted headers (`Location`, `Cache-Control`, `ETag`, and the other headers in `REPLAYED_RESPONSE_HEADERS`), so a plain-text or binary response replays like a JSON one; `Set-Cookie` is never stored or replayed (IAN-339).
+- [x] A streamed response, or one past 256 KiB, reaches the client whole, is never buffered past that bound, and releases its key rather than being stored (IAN-339).
 
 **E2E test:** exercised through the test-only router in `apps/server/tests/integration/middleware/idempotency/`; the first real replayable route is slice 06's checkout.
-**Ticket:** IAN-336
+**Ticket:** IAN-336, IAN-339
 
 ## US-INFRA-010: Prove every service starts and answers, and deploy it from committed configuration
 
