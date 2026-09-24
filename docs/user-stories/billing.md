@@ -14,7 +14,7 @@
 - [x] A deployment without `STRIPE_SECRET_KEY` answers 503 `BILLING_NOT_CONFIGURED` rather than failing on its first Stripe call.
 - [ ] The dashboard's checkout button redirects to the Checkout URL (spec B-50; the slice 06 client half).
 
-**E2E test:** pending; the slice 06 client half adds it against stripe-mock
+**E2E test:** `e2e/billing.spec.ts` (routes mounted, refusals shown in place); the Stripe round trip is covered by the API integration tests
 **Ticket:** IAN-338
 
 ## US-BILLING-002: Manage a subscription in the Stripe billing portal
@@ -28,7 +28,7 @@
 - [x] `POST /v1/billing/portal` answers 400 `BILLING_NO_ACCOUNT` for a user with no Stripe customer, and for a user with one answers the portal URL created with a return URL of `{client_url}/dashboard` (spec B-22).
 - [ ] The dashboard's portal button redirects to the portal URL (spec B-50; the slice 06 client half).
 
-**E2E test:** pending; the slice 06 client half adds it against stripe-mock
+**E2E test:** `e2e/billing.spec.ts` (routes mounted, refusals shown in place); the Stripe round trip is covered by the API integration tests
 **Ticket:** IAN-338
 
 ## US-BILLING-003: Stripe's webhook keeps the subscription current

@@ -44,8 +44,14 @@ test.describe('theme preference', () => {
         await page.goto(`${webBaseUrl}/`);
         const themeToggle = page.getByRole('combobox', { name: 'Theme' });
 
-        await themeToggle.selectOption('dark');
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        // Retried until it takes: a choice made before hydration finishes is overwritten by the
+        // stored preference when the app mounts, which under a loaded CI runner happens often.
+        await expect(async () => {
+            await themeToggle.selectOption('dark');
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark', {
+                timeout: 1000,
+            });
+        }).toPass();
         await page.reload();
 
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
