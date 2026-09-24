@@ -1,6 +1,6 @@
 # template-fastapi-nuxt Feature List
 
-Status key: **Complete** | **Partial** | **Planned**
+Status key: **Complete** | **Partial** | **Planned** | **Excluded**
 
 Last updated: 2026-09-24 (slices 05 and 07: idempotency, roles, admin, observability, and theme)
 
@@ -47,6 +47,10 @@ the date and what changed. Section shape:
 | Register, log-in and dashboard password-change forms with field-level errors                            | **Complete** | US-AUTH-004; spec B-38, B-50                                                                                                                                                  |
 | Password reset: `user_password_resets`, the forgot and reset endpoints, and the arq email job           | **Complete** | US-AUTH-005; spec B-14, B-15, B-36, B-47; the pages ship with it (Resend client, `with_client_telemetry`, retries); the two pages (B-36) arrive in the slice 04 frontend half |
 | Idempotency keys: replay, release on failure, reuse refusal, lease takeover                             | **Complete** | US-INFRA-009; spec B-17, B-18, B-40, B-44, B-53                                                                                                                               |
+| Smoke suite (`pnpm smoke`), run by CI against the compose stack built from the production images        | **Complete** | US-INFRA-010; spec B-28 as amended on 2026-09-24; `e2e/smoke/services.smoke.ts`                                                                                               |
+| Railway configuration, one file per service, with the API's `alembic upgrade head` pre-deploy command   | **Complete** | US-INFRA-010; configuration only, because the template is never deployed and the first real deploy happens in the first fork                                                  |
+| Accessibility: Lighthouse 100 on all seven pages, keyboard operability, and reduced motion              | **Complete** | US-INFRA-011; spec B-27, B-48; `e2e/accessibility.spec.ts`                                                                                                                    |
+| Hourly cleanup job `delete_expired_rows` (sessions, idempotency keys, webhook ledger)                   | **Planned**  | spec B-26; waits for slice 06's webhook ledger table; replaces the Express template's in-process timer and pg_cron schedule                                                   |
 
 ## Landing
 
@@ -74,3 +78,33 @@ the date and what changed. Section shape:
 | Feature                                                                                 | Status       | Notes                                        |
 | --------------------------------------------------------------------------------------- | ------------ | -------------------------------------------- |
 | Light, dark, and system theme with a toggle in both layouts, applied before first paint | **Complete** | US-THEME-001; spec B-37; `e2e/theme.spec.ts` |
+
+## Billing
+
+| Feature                                           | Status      | Notes                                                                                        |
+| ------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| Stripe checkout and customer portal               | **Planned** | Slice 06; parity with the Express template's `/v1/billing/checkout` and `/v1/billing/portal` |
+| Stripe webhook with an event ledger               | **Planned** | Slice 06; served at `/v1/billing/webhook`                                                    |
+| Dashboard billing actions and the checkout banner | **Planned** | Slice 06                                                                                     |
+
+## Observability and integrations
+
+| Feature                                         | Status      | Notes    |
+| ----------------------------------------------- | ----------- | -------- |
+| PostHog analytics on the server and the web app | **Planned** | Slice 07 |
+| Sentry on the server and the web app            | **Planned** | Slice 07 |
+| Cloudflare R2 storage client                    | **Planned** | Slice 07 |
+| Theme composable and dark mode                  | **Planned** | Slice 07 |
+
+## Excluded from parity
+
+Features of `template-express-next` that this template deliberately does not carry, with the reason for each.
+
+| Feature                                | Status       | Notes                                                                                          |
+| -------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| `address-copilot-review` workflow      | **Excluded** | The Copilot coding agent was dropped for cost on 2026-09-18 (spec: Decisions already made)     |
+| `vercel.json`                          | **Excluded** | The Docker image on Railway is the only deploy path (R-351)                                    |
+| The `posts` sample resource            | **Excluded** | Every fork deletes the sample resource, so it is not carried over                              |
+| Circuit breaker service                | **Excluded** | The Express breaker is never called and no provider needs one yet (spec decision, stack audit) |
+| `scripts/deploy.sh`                    | **Excluded** | Railway builds each service from its committed config file, so no deploy script is needed      |
+| `dev-watch.sh` and `ensure-test-db.sh` | **Excluded** | `pnpm dev` reloads both apps, and compose provides Postgres and Redis                          |
