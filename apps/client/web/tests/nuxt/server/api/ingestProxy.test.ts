@@ -179,6 +179,53 @@ describe('the PostHog ingestion proxy at /api/ingest/**', () => {
         expect(upstreamRequests[0]!.headers.get('cookie')).toBeNull();
     });
 
+    it.each([
+        '/api/ingest/%2e%2e/%2e%2e/api/ingest@169.254.169.254/latest/',
+        '/api/ingest/@169.254.169.254/latest/',
+        '/api/ingest/api/projects/',
+    ])(
+        'refuses %s rather than fetching anything but a PostHog ingest endpoint',
+        async (hostilePath) => {
+            const handleRequest = await createNitroRouteTable();
+
+            const response = await handleRequest(new Request(`http://web.test${hostilePath}`));
+
+            const strayRequests = upstreamRequests.filter(
+                (upstreamRequest) => !upstreamRequest.url.startsWith(`${posthogHost}/`),
+            );
+            expect(strayRequests).toEqual([]);
+            expect(
+                upstreamRequests.filter((upstreamRequest) =>
+                    upstreamRequest.url.startsWith(posthogHost),
+                ),
+            ).toEqual([]);
+            expect(response.status).toBe(404);
+        },
+    );
+
+    it('forwards no credential or forwarding header from the visitor to PostHog', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/ingest/e/', {
+                method: 'POST',
+                headers: {
+                    authorization: ['Bearer', 'visitor-held-value'].join(' '),
+                    'content-type': 'application/json',
+                    'x-forwarded-for': '203.0.113.9',
+                    'x-request-id': 'req-ingest-0001',
+                },
+                body: '{}',
+            }),
+        );
+
+        expect(upstreamRequests).toHaveLength(1);
+        const [ingestRequest] = upstreamRequests;
+        expect(ingestRequest!.headers.get('authorization')).toBeNull();
+        expect(ingestRequest!.headers.get('x-forwarded-for')).toBeNull();
+        expect(ingestRequest!.headers.get('content-type')).toBe('application/json');
+    });
+
     it('B-24: leaves every other /api path to the backend proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 

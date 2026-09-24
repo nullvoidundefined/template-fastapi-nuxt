@@ -10,6 +10,7 @@
  * and reset do nothing, so a deployment without a key sends nothing at all.
  */
 import posthog from 'posthog-js';
+import { stripQueryString } from '#shared/services/stripQueryString';
 
 const ANALYTICS_PROXY_PATH = '/api/ingest';
 
@@ -20,12 +21,29 @@ function initializeAnalytics(projectKey: string): void {
     posthog.init(projectKey, {
         api_host: ANALYTICS_PROXY_PATH,
         autocapture: false,
+        before_send: stripEventQueryStrings,
         capture_pageleave: true,
         capture_pageview: 'history_change',
         disable_session_recording: true,
         person_profiles: 'identified_only',
     });
     isAnalyticsInitialized = true;
+}
+
+/**
+ * Drop the query string from every property of an event before it is sent, because the page URL,
+ * the referrer and their siblings would otherwise carry a reset token to PostHog.
+ */
+function stripEventQueryStrings<T extends { properties?: Record<string, unknown> } | null>(
+    event: T,
+): T {
+    if (!event?.properties) {
+        return event;
+    }
+    const strippedProperties = Object.fromEntries(
+        Object.entries(event.properties).map(([name, value]) => [name, stripQueryString(value)]),
+    );
+    return { ...event, properties: strippedProperties };
 }
 
 /** Tie later events to the signed-in user by ID, never by email. */

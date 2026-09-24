@@ -73,6 +73,29 @@ describe('the browser analytics client', () => {
         });
     });
 
+    it('B-24: strips query strings from every URL property before an event is sent', async () => {
+        const analytics = await importAnalyticsClient();
+        analytics.initialize(projectKey);
+        const initOptions = posthogCalls[0]!.args[1] as {
+            before_send: (event: { properties: Record<string, unknown> }) => {
+                properties: Record<string, unknown>;
+            };
+        };
+        const resetLink = ['https://app.test/reset-password', 'token=from-the-email'].join('?');
+
+        const sent = initOptions.before_send({
+            properties: {
+                $current_url: resetLink,
+                $pathname: '/reset-password',
+                $referrer: 'https://mail.example.test/inbox?id=7',
+            },
+        });
+
+        expect(JSON.stringify(sent.properties)).not.toContain('?');
+        expect(sent.properties.$current_url).toBe('https://app.test/reset-password');
+        expect(sent.properties.$pathname).toBe('/reset-password');
+    });
+
     it('B-24: identify sends the user ID and nothing else', async () => {
         const analytics = await importAnalyticsClient();
         analytics.initialize(projectKey);
