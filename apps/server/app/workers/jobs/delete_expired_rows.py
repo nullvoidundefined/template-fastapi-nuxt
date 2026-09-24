@@ -23,6 +23,7 @@ from app.repositories.billing_webhook_events import delete_stale_webhook_events_
 from app.repositories.request_idempotency_keys import delete_stale_idempotency_keys_batch
 from app.repositories.user_sessions import delete_expired_sessions_batch
 from app.workers.context import WorkerContext
+from app.workers.report_job_failure import report_job_failure
 
 logger = structlog.get_logger(__name__)
 
@@ -35,6 +36,7 @@ TABLE_BATCH_DELETERS: tuple[tuple[str, BatchDeleter], ...] = (
 )
 
 
+@report_job_failure
 async def delete_expired_rows(ctx: WorkerContext) -> dict[str, int]:
     """Clear each table's expired rows in batches, log each table's count, and return the counts."""
     deleted_counts: dict[str, int] = {}

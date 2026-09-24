@@ -22,6 +22,7 @@ from app.core.settings import get_settings
 from app.services.auth.issue_password_reset import issue_password_reset
 from app.services.email.build_password_reset_email import build_password_reset_email
 from app.workers.context import WorkerContext
+from app.workers.report_job_failure import report_job_failure
 
 logger = structlog.get_logger(__name__)
 
@@ -30,6 +31,7 @@ logger = structlog.get_logger(__name__)
 RESET_EMAIL_RETRY_DELAY_SECONDS = 5.0
 
 
+@report_job_failure
 async def send_password_reset_email(
     ctx: WorkerContext, email: str, request_id: str | None = None
 ) -> None:
