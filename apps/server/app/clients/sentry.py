@@ -8,23 +8,48 @@ an unhandled exception from the outermost layer after the 500 handler has answer
 An event is identified by the request ID tag and the user's ID, never the email (R-104).
 `send_default_pii` and frame locals stay off, and `scrub_sentry_event` removes cookies, the
 Authorization header, and every user field other than the ID before an event leaves the process,
-so a later change to what the SDK collects cannot leak a session token.
+so a later change to what the SDK collects cannot leak a session token. Free text is scrubbed too:
+breadcrumb messages, exception values, and a log event's message and parameters lose email
+addresses, bearer values, `name=value` secrets, and long opaque tokens, while UUIDs (request and
+user IDs) stay readable so the event still joins its logs.
+
+The arq worker starts the SDK in its startup hook, and each job reports its own final failure
+through `open_sentry_job_scope` and `report_sentry_exception`, tagged with the arq job ID. The
+SDK's own arq integration is disabled: it wraps job functions only when the worker is built, which
+happens before the startup hook runs, so it would never report, and the global patch it installs
+would outlive the client that installed it.
 """
 
+import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 
 import sentry_sdk
 import structlog
+from sentry_sdk.integrations.arq import ArqIntegration
 from sentry_sdk.types import Event, Hint
 
 from app.core.settings import Settings
 
 REQUEST_ID_TAG = "request_id"
+JOB_ID_TAG = "job_id"
 # The Referer is withheld because Nitro forwards the reset page's address, token included.
 SCRUBBED_HEADER_NAMES = frozenset(
     {"authorization", "cookie", "set-cookie", "proxy-authorization", "referer"}
 )
 KEPT_USER_FIELDS = frozenset({"id"})
+REDACTED_TEXT = "[REDACTED]"
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+BEARER_PATTERN = re.compile(r"(?i)\b(bearer)\s+[^\s,;]+")
+NAMED_SECRET_PATTERN = re.compile(r"(?i)\b(token|password|secret|api[_-]?key|session)=[^&\s,;]+")
+# 32 or more URL-safe characters in a run: a session or reset token (43), a hex digest, an API
+# key. A UUID is 36 characters of hex and hyphens and is excluded, because it is an identifier.
+OPAQUE_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_-])"
+    r"(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![A-Za-z0-9_-]))"
+    r"[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])"
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -46,6 +71,7 @@ def initialize_sentry(settings: Settings) -> bool:
         # Authorization value verbatim; the end-to-end test of this client caught exactly that.
         include_local_variables=False,
         before_send=scrub_sentry_event,
+        disabled_integrations=[ArqIntegration()],
     )
     return True
 
@@ -69,6 +95,7 @@ def scrub_sentry_event(event: Event, hint: Hint) -> Event | None:
                 if name.lower() not in SCRUBBED_HEADER_NAMES
             }
     strip_breadcrumb_queries(event)
+    scrub_event_free_text(event)
     user = cast(dict[str, Any] | None, event.get("user"))
     if user is not None:
         event["user"] = {name: value for name, value in user.items() if name in KEPT_USER_FIELDS}
@@ -92,6 +119,39 @@ def strip_breadcrumb_queries(event: Event) -> None:
             }
 
 
+def scrub_sensitive_text(text: str) -> str:
+    """Return the text with emails, bearer values, named secrets, and opaque tokens redacted."""
+    text = EMAIL_PATTERN.sub(REDACTED_TEXT, text)
+    text = BEARER_PATTERN.sub(rf"\1 {REDACTED_TEXT}", text)
+    text = NAMED_SECRET_PATTERN.sub(rf"\1={REDACTED_TEXT}", text)
+    return OPAQUE_TOKEN_PATTERN.sub(REDACTED_TEXT, text)
+
+
+def scrub_event_free_text(event: Event) -> None:
+    """Scrub every breadcrumb message, exception value, and log message the event carries."""
+    breadcrumbs = cast(dict[str, Any] | None, event.get("breadcrumbs"))
+    scrub_text_fields((breadcrumbs or {}).get("values", []), "message")
+    exception = cast(dict[str, Any] | None, event.get("exception"))
+    scrub_text_fields((exception or {}).get("values", []), "value")
+    scrub_text_fields([event], "message")
+    logentry = cast(dict[str, Any] | None, event.get("logentry"))
+    if logentry is not None:
+        scrub_text_fields([logentry], "message", "formatted")
+        params = logentry.get("params")
+        if isinstance(params, list):
+            logentry["params"] = [
+                scrub_sensitive_text(param) if isinstance(param, str) else param for param in params
+            ]
+
+
+def scrub_text_fields(entries: list[Any], *field_names: str) -> None:
+    """Scrub the named string fields of each dict entry in place."""
+    for entry in entries:
+        for field_name in field_names:
+            if isinstance(entry, dict) and isinstance(entry.get(field_name), str):
+                entry[field_name] = scrub_sensitive_text(entry[field_name])
+
+
 def tag_sentry_request(request_id: str | None) -> None:
     """Tag every event raised in this request's scope with its request ID."""
     if request_id:
@@ -101,3 +161,18 @@ def tag_sentry_request(request_id: str | None) -> None:
 def identify_sentry_user(user_id: str) -> None:
     """Name the signed-in user on this request's events by ID only."""
     sentry_sdk.set_user({"id": user_id})
+
+
+@contextmanager
+def open_sentry_job_scope(job_id: str | None) -> Iterator[None]:
+    """Isolate one job's events and breadcrumbs, tagging them with its arq job ID."""
+    with sentry_sdk.isolation_scope() as scope:
+        scope.clear_breadcrumbs()
+        if job_id:
+            scope.set_tag(JOB_ID_TAG, job_id)
+        yield
+
+
+def report_sentry_exception(err: BaseException) -> None:
+    """Send one exception to Sentry from the current scope."""
+    sentry_sdk.capture_exception(err)

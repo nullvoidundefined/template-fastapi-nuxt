@@ -8,10 +8,12 @@ the log context for the length of the run (R-341).
 import structlog
 
 from app.workers.context import WorkerContext
+from app.workers.report_job_failure import report_job_failure
 
 logger = structlog.get_logger()
 
 
+@report_job_failure
 async def log_worker_heartbeat(ctx: WorkerContext) -> None:
     """Log one `worker_heartbeat` event carrying the job ID."""
     with structlog.contextvars.bound_contextvars(job_id=ctx["job_id"]):
