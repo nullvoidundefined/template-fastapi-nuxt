@@ -5,6 +5,8 @@
  */
 import { NuxtLink } from '#components';
 
+import ThemeToggle from '~/components/ThemeToggle/ThemeToggle.vue';
+
 import styles from './default.module.scss';
 
 defineOptions({ name: 'DefaultLayout' });
@@ -14,6 +16,7 @@ defineOptions({ name: 'DefaultLayout' });
     <div data-test-id="default-layout" :class="styles.shell">
         <header :class="styles.header">
             <NuxtLink to="/" :class="styles.brand">template-fastapi-nuxt</NuxtLink>
+            <ThemeToggle />
         </header>
         <main :class="styles.main">
             <slot />

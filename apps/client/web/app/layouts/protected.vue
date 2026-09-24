@@ -10,6 +10,7 @@
  */
 import { NuxtLink } from '#components';
 
+import ThemeToggle from '~/components/ThemeToggle/ThemeToggle.vue';
 import { useSessionQuery } from '~/composables/useSessionQuery';
 import { useSignOutMutation } from '~/composables/useSignOutMutation';
 import styles from './protected.module.scss';
@@ -30,6 +31,7 @@ async function signOutAndLeave(): Promise<void> {
     <div data-test-id="protected-layout" :class="styles.shell">
         <header :class="styles.header">
             <NuxtLink to="/dashboard" :class="styles.brand">template-fastapi-nuxt</NuxtLink>
+            <ThemeToggle />
             <div v-if="hasSession" :class="styles.account">
                 <span data-test-id="signed-in-email">{{ signedInUser?.email }}</span>
                 <button

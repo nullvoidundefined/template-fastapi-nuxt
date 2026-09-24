@@ -53,27 +53,30 @@ Postgres and Redis publish on 5433 and 6380 so that a locally installed Postgres
 
 For live reload, run the API and the web app on the host instead (`pnpm dev`), with the compose Postgres and Redis (`docker compose up --detach --wait postgres redis`) and these variables exported in your shell:
 
-| Variable               | Read by           | Value for local development                                     |
-| ---------------------- | ----------------- | --------------------------------------------------------------- |
-| `DATABASE_URL`         | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                   |
-| `REDIS_URL`            | API, worker       | `redis://localhost:6380/0`                                      |
-| `ENVIRONMENT`          | API, worker       | `development`                                                   |
-| `PORT`                 | API image         | `3001`                                                          |
-| `WORKER_PORT`          | worker            | `3002`                                                          |
-| `DATABASE_CA_CERT`     | API, worker       | unset locally; a CA bundle path when deployed                   |
-| `CORS_ORIGIN`          | API               | unset locally; the web origin when deployed                     |
-| `FORWARDED_ALLOW_IPS`  | API image         | `172.28.0.10` under compose; the web service's address deployed |
-| `CLIENT_URL`           | worker            | `http://localhost:3000`, the origin reset-email links open      |
-| `RESEND_API_KEY`       | worker            | unset locally, so reset emails are logged instead of sent       |
-| `EMAIL_FROM`           | worker            | `Template <noreply@example.test>`; a verified sender deployed   |
-| `NUXT_API_BASE_URL`    | web (server side) | `http://localhost:3001`                                         |
-| `SENTRY_DSN`           | API               | unset locally; the Sentry project's DSN when deployed           |
-| `POSTHOG_API_KEY`      | API               | unset locally; the PostHog project key when deployed            |
-| `POSTHOG_HOST`         | API               | `https://us.i.posthog.com`                                      |
-| `R2_ACCOUNT_ID`        | API               | unset locally; the Cloudflare account ID when deployed          |
-| `R2_BUCKET`            | API               | unset locally; the upload bucket's name when deployed           |
-| `R2_ACCESS_KEY_ID`     | API               | unset locally; an R2 API token's key ID when deployed           |
-| `R2_SECRET_ACCESS_KEY` | API               | unset locally; that token's secret when deployed                |
+| Variable                  | Read by           | Value for local development                                     |
+| ------------------------- | ----------------- | --------------------------------------------------------------- |
+| `DATABASE_URL`            | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                   |
+| `REDIS_URL`               | API, worker       | `redis://localhost:6380/0`                                      |
+| `ENVIRONMENT`             | API, worker       | `development`                                                   |
+| `PORT`                    | API image         | `3001`                                                          |
+| `WORKER_PORT`             | worker            | `3002`                                                          |
+| `DATABASE_CA_CERT`        | API, worker       | unset locally; a CA bundle path when deployed                   |
+| `CORS_ORIGIN`             | API               | unset locally; the web origin when deployed                     |
+| `FORWARDED_ALLOW_IPS`     | API image         | `172.28.0.10` under compose; the web service's address deployed |
+| `CLIENT_URL`              | worker            | `http://localhost:3000`, the origin reset-email links open      |
+| `RESEND_API_KEY`          | worker            | unset locally, so reset emails are logged instead of sent       |
+| `EMAIL_FROM`              | worker            | `Template <noreply@example.test>`; a verified sender deployed   |
+| `NUXT_API_BASE_URL`       | web (server side) | `http://localhost:3001`                                         |
+| `SENTRY_DSN`              | API               | unset locally; the Sentry project's DSN when deployed           |
+| `POSTHOG_API_KEY`         | API               | unset locally; the PostHog project key when deployed            |
+| `POSTHOG_HOST`            | API               | `https://us.i.posthog.com`                                      |
+| `R2_ACCOUNT_ID`           | API               | unset locally; the Cloudflare account ID when deployed          |
+| `R2_BUCKET`               | API               | unset locally; the upload bucket's name when deployed           |
+| `R2_ACCESS_KEY_ID`        | API               | unset locally; an R2 API token's key ID when deployed           |
+| `R2_SECRET_ACCESS_KEY`    | API               | unset locally; that token's secret when deployed                |
+| `NUXT_POSTHOG_HOST`       | web (server side) | `https://us.i.posthog.com`, where `/api/ingest` forwards        |
+| `NUXT_PUBLIC_POSTHOG_KEY` | web               | unset locally; the PostHog project key when deployed            |
+| `NUXT_PUBLIC_SENTRY_DSN`  | web               | unset locally; the web Sentry project's DSN when deployed       |
 
 Deployed environments set these from the platform's secrets; no value is ever committed or baked into an image.
 
@@ -81,7 +84,7 @@ The API reads `REDIS_URL` from slice 02 PR 5 onward, not the worker alone: the r
 
 Three of them are mandatory in production and the API refuses to start without all three: `CORS_ORIGIN`, `REDIS_URL`, and `FORWARDED_ALLOW_IPS`. Each protects something that degrades quietly rather than failing loudly when it is missing. Without `CORS_ORIGIN` the allowed-origin list is empty and the CSRF guard loses the preflight that gives its header meaning; without `REDIS_URL` the rate limiter counts per process, so a client can rotate across instances past the auth limit; and without `FORWARDED_ALLOW_IPS` uvicorn keys every proxied request on the proxy's own address, putting the whole site in one rate-limit bucket.
 
-The integrations are optional everywhere. Without `SENTRY_DSN` the API reports no errors, without `POSTHOG_API_KEY` it sends no analytics events, and without all four `R2_*` values `POST /v1/uploads` answers 503 `UPLOADS_STORAGE_UNCONFIGURED`; each logs one warning at startup, so a missing value is visible rather than silent. Server analytics events carry the user's ID and never an email address, and Sentry events are stripped of cookies and the `Authorization` header before they leave the process.
+The integrations are optional everywhere. Without `SENTRY_DSN` the API reports no errors, without `POSTHOG_API_KEY` it sends no analytics events, and without all four `R2_*` values `POST /v1/uploads` answers 503 `UPLOADS_STORAGE_UNCONFIGURED`; each logs one warning at startup, so a missing value is visible rather than silent. The web app follows the same rule: without `NUXT_PUBLIC_POSTHOG_KEY` the browser sends no analytics, and without `NUXT_PUBLIC_SENTRY_DSN` neither the browser nor the Nitro server reports errors. The browser reaches PostHog only through the `/api/ingest` proxy, which never forwards the session cookie, and it calls `identify` with the user's ID alone. Server analytics events carry the user's ID and never an email address, and Sentry events are stripped of cookies and the `Authorization` header before they leave the process.
 
 ## Tests
 

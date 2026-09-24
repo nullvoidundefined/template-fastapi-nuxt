@@ -2,11 +2,13 @@
  * Signs in and records the session in the query cache (spec: B-11).
  *
  * `onSuccess` writes the returned user into the session entry, so the dashboard's gate finds a
- * session without a second round trip; the gate still revalidates on navigation.
+ * session without a second round trip; the gate still revalidates on navigation. It also identifies
+ * the user to PostHog by ID, never by email (B-24).
  */
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 
 import { signInUser } from '~/api/signInUser';
+import { identifyAnalyticsUser } from '~/clients/analytics';
 import { useApiClient } from '~/composables/useApiClient';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 import type { CredentialsInput } from '~/types/credentialsInput';
@@ -22,6 +24,7 @@ export function useSignInMutation(): ReturnType<
         mutationFn: (credentials) => signInUser(apiClient, credentials),
         onSuccess: (signedInUser) => {
             queryClient.setQueryData(sessionQueryKey, signedInUser);
+            identifyAnalyticsUser(signedInUser.id);
         },
     });
 }

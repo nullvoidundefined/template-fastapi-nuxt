@@ -6,12 +6,16 @@
  * and simultaneously watching a request fail; removing leaves the gate with no session, which is
  * exactly what has just become true.
  *
+ * A successful sign-out also resets PostHog's identified user (B-24), so the next visitor on this
+ * browser is not recorded as the last one.
+ *
  * A refused sign-out removes nothing, so the page does not claim a signed-out state the backend
  * does not agree with.
  */
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 
 import { signOutUser } from '~/api/signOutUser';
+import { resetAnalyticsUser } from '~/clients/analytics';
 import { useApiClient } from '~/composables/useApiClient';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 
@@ -26,6 +30,7 @@ export function useSignOutMutation(): ReturnType<typeof useMutation<undefined, E
         },
         onSuccess: () => {
             queryClient.removeQueries({ exact: true, queryKey: sessionQueryKey });
+            resetAnalyticsUser();
         },
     });
 }
