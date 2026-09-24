@@ -2,7 +2,8 @@
 
 arq imports `WorkerSettings` to start the process (`arq app.workers.settings.WorkerSettings`), so
 this is the one module allowed to read settings at import time; nothing else imports it. The jobs
-are the password-reset email, retried up to three tries, and a five-minute heartbeat cron job.
+are the password-reset email, retried up to three tries, a five-minute heartbeat cron job, and the
+hourly `delete_expired_rows` cleanup cron job at minute 0.
 Startup opens the engine, builds the email client (Resend, or a logging stand-in without a key),
 and serves the health probes on WORKER_PORT as a background uvicorn server, which the container's
 HEALTHCHECK calls; shutdown stops the server and closes the rest.
@@ -19,13 +20,15 @@ from arq.worker import func
 from app.clients.analytics import create_analytics_client
 from app.clients.disabled_email import DisabledEmailClient
 from app.clients.resend import ResendEmailClient
-from app.constants.job_names import RESET_EMAIL_JOB_NAME
+from app.constants.cleanup import CLEANUP_CRON_MINUTE, CLEANUP_JOB_TIMEOUT_SECONDS
+from app.constants.job_names import CLEANUP_JOB_NAME, RESET_EMAIL_JOB_NAME
 from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
 from app.workers.context import WorkerContext, WorkerEmailClient
 from app.workers.health import create_worker_health_app
+from app.workers.jobs.delete_expired_rows import delete_expired_rows
 from app.workers.jobs.log_worker_heartbeat import log_worker_heartbeat
 from app.workers.jobs.send_password_reset_email import send_password_reset_email
 
@@ -94,7 +97,7 @@ def build_redis_settings(settings: Settings) -> RedisSettings:
 
 
 class WorkerSettings:
-    """The class arq reads: the jobs, the heartbeat cron job, the Redis connection, the hooks."""
+    """The class arq reads: the jobs, the cron jobs, the Redis connection, the hooks."""
 
     functions = [
         func(
@@ -109,7 +112,14 @@ class WorkerSettings:
             name="log_worker_heartbeat",
             minute=HEARTBEAT_MINUTES,
             run_at_startup=False,
-        )
+        ),
+        cron(
+            delete_expired_rows,  # type: ignore[arg-type]  # arq's protocol wants *args jobs never take
+            name=CLEANUP_JOB_NAME,
+            minute=CLEANUP_CRON_MINUTE,
+            run_at_startup=False,
+            timeout=CLEANUP_JOB_TIMEOUT_SECONDS,
+        ),
     ]
     redis_settings = build_redis_settings(get_settings())
     on_startup = start_worker_resources

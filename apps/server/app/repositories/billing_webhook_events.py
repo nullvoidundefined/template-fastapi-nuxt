@@ -6,11 +6,17 @@ minutes old, the mark a crashed handler leaves. When the upsert takes nothing, t
 the same transaction to tell a processed event, which the caller acknowledges, from one another
 delivery claimed moments ago, which the caller refuses so Stripe delivers it again. Every
 comparison uses Postgres's `now()`, so the application's clock never enters into it.
+
+`delete_stale_webhook_events_batch` is the hourly cleanup job's statement for this table: it
+deletes at most one batch of ledger rows last attempted more than thirty days ago, found through
+the `attempted_at` index, and skips any row a webhook delivery holds locked. The batch is a
+materialized CTE, because a LIMIT subquery may run more than once per DELETE and so delete more
+than one batch.
 """
 
 from datetime import timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import func
@@ -20,6 +26,7 @@ from app.constants.billing import (
     BillingWebhookEventStatus,
     WebhookClaimOutcome,
 )
+from app.constants.cleanup import WEBHOOK_EVENT_RETENTION
 from app.db.tables import billing_webhook_events
 
 STALE_CLAIM_AGE = timedelta(minutes=STALE_CLAIM_MINUTES)
@@ -83,3 +90,17 @@ async def mark_webhook_event_failed(connection: AsyncConnection, stripe_event_id
         .values(status=BillingWebhookEventStatus.FAILED.value)
     )
     await connection.execute(statement)
+
+
+async def delete_stale_webhook_events_batch(connection: AsyncConnection, batch_size: int) -> int:
+    """Delete up to `batch_size` ledger rows past their retention and return how many went."""
+    stale_batch = (
+        select(events.c.id)
+        .where(events.c.attempted_at < func.now() - WEBHOOK_EVENT_RETENTION)
+        .limit(batch_size)
+        .with_for_update(skip_locked=True)
+        .cte("stale_batch")
+        .prefix_with("MATERIALIZED")
+    )
+    result = await connection.execute(delete(events).where(events.c.id == stale_batch.c.id))
+    return result.rowcount

@@ -203,14 +203,59 @@ def test_b3_worker_settings_schedule_the_heartbeat_every_five_minutes() -> None:
     heartbeat_module = importlib.import_module(HEARTBEAT_JOB_MODULE)
     worker_settings = worker_settings_module.WorkerSettings
 
-    cron_jobs = list(worker_settings.cron_jobs)
+    heartbeat_cron_jobs = [
+        cron_job for cron_job in worker_settings.cron_jobs if cron_job.name == HEARTBEAT_JOB_NAME
+    ]
 
-    assert len(cron_jobs) == 1
-    [heartbeat_cron_job] = cron_jobs
+    assert len(heartbeat_cron_jobs) == 1
+    [heartbeat_cron_job] = heartbeat_cron_jobs
     assert isinstance(heartbeat_cron_job, CronJob)
     assert heartbeat_cron_job.coroutine is heartbeat_module.log_worker_heartbeat
     assert set(heartbeat_cron_job.minute) == HEARTBEAT_MINUTES
     assert heartbeat_cron_job.run_at_startup is False
+
+
+CLEANUP_JOB_NAME = "delete_expired_rows"
+CLEANUP_JOB_MODULE = "app.workers.jobs.delete_expired_rows"
+
+
+@pytest.mark.usefixtures("worker_environment")
+def test_b26_worker_settings_schedule_delete_expired_rows_hourly_at_minute_zero() -> None:
+    """B-26: one cron job runs delete_expired_rows at minute 0 of every hour, not at startup."""
+    from arq.cron import CronJob  # noqa: PLC0415 (the test owns the import timing)
+
+    worker_settings_module = import_worker_settings_module()
+    cleanup_module = importlib.import_module(CLEANUP_JOB_MODULE)
+    worker_settings = worker_settings_module.WorkerSettings
+
+    cleanup_cron_jobs = [
+        cron_job for cron_job in worker_settings.cron_jobs if cron_job.name == CLEANUP_JOB_NAME
+    ]
+
+    assert len(cleanup_cron_jobs) == 1
+    [cleanup_cron_job] = cleanup_cron_jobs
+    assert isinstance(cleanup_cron_job, CronJob)
+    assert cleanup_cron_job.coroutine is cleanup_module.delete_expired_rows
+    assert cleanup_cron_job.minute == 0
+    assert cleanup_cron_job.hour is None
+    assert cleanup_cron_job.run_at_startup is False
+
+
+# arq's default job timeout is 300 seconds; a first run over a large backlog in the first table
+# would spend it all and starve the tables after it until that backlog cleared.
+CLEANUP_JOB_MINIMUM_TIMEOUT_SECONDS = 1800
+
+
+@pytest.mark.usefixtures("worker_environment")
+def test_b26_the_cleanup_cron_has_a_timeout_long_enough_for_a_backlog() -> None:
+    """B-26: the cleanup job gets its own, longer timeout rather than arq's 300 second default."""
+    worker_settings = import_worker_settings_module().WorkerSettings
+    [cleanup_cron_job] = [
+        cron_job for cron_job in worker_settings.cron_jobs if cron_job.name == CLEANUP_JOB_NAME
+    ]
+
+    assert cleanup_cron_job.timeout_s is not None
+    assert cleanup_cron_job.timeout_s >= CLEANUP_JOB_MINIMUM_TIMEOUT_SECONDS
 
 
 RESET_EMAIL_JOB_NAME = "send_password_reset_email"

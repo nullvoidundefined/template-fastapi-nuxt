@@ -13,6 +13,13 @@ second request updates nothing.
 `find_session_with_user` is the one lookup that turns a cookie's token hash into a session and its
 user. The session dependency and the idempotency middleware both resolve a cookie through it, so
 the two can never disagree about who a request belongs to.
+
+`delete_expired_sessions_batch` is the hourly cleanup job's statement for this table. It deletes
+at most one batch of sessions whose `expires_at` has passed, found through the `expires_at` index,
+and skips any row another transaction holds, so the cleanup never waits on a request's write.
+The batch is a materialized CTE rather than an `IN (SELECT ... LIMIT)` subquery, because Postgres
+may run such a subquery more than once in one DELETE, and each run locks and returns a fresh set
+of rows, so the statement would delete more than one batch.
 """
 
 import uuid
@@ -95,3 +102,19 @@ async def delete_session(connection: AsyncConnection, session_id: uuid.UUID) -> 
 async def delete_user_sessions(connection: AsyncConnection, user_id: uuid.UUID) -> None:
     """Remove every session this user holds, which signs the account out of every browser."""
     await connection.execute(delete(user_sessions).where(user_sessions.c.user_id == user_id))
+
+
+async def delete_expired_sessions_batch(connection: AsyncConnection, batch_size: int) -> int:
+    """Delete up to `batch_size` sessions whose expiry has passed and return how many went."""
+    expired_batch = (
+        select(user_sessions.c.id)
+        .where(user_sessions.c.expires_at <= func.now())
+        .limit(batch_size)
+        .with_for_update(skip_locked=True)
+        .cte("expired_batch")
+        .prefix_with("MATERIALIZED")
+    )
+    result = await connection.execute(
+        delete(user_sessions).where(user_sessions.c.id == expired_batch.c.id)
+    )
+    return result.rowcount

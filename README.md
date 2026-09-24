@@ -134,7 +134,7 @@ The template itself is never deployed (owner decision, 2026-09-24). A fork deplo
 
 | Service  | Root Directory      | Config File                        | Healthcheck     | Notes                                                    |
 | -------- | ------------------- | ---------------------------------- | --------------- | -------------------------------------------------------- |
-| `api`    | `apps/server`       | `/apps/server/railway.api.toml`    | `/health/ready` | Runs `alembic upgrade head` as its pre-deploy command    |
+| `api`    | `apps/server`       | `/apps/server/railway.api.toml`    | `/health`       | Runs `alembic upgrade head` as its pre-deploy command    |
 | `worker` | `apps/server`       | `/apps/server/railway.worker.toml` | `/health/ready` | Never migrates; the API's pre-deploy command owns schema |
 | `web`    | the repository root | `/apps/client/web/railway.toml`    | `/api/health`   | Builds from the root because it needs the workspace      |
 
@@ -142,20 +142,20 @@ Railway builds a service from its Root Directory but reads a config file only fr
 
 Set these variables on each service before its first deploy. Railway variables are per service, so a value the API and the worker both need is set on both. Mark every secret as sealed.
 
-| Variable              | Service     | Value                                                                                                                     |
-| --------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ENVIRONMENT`         | api, worker | `production`, or `staging` for a staging environment; never left unset                                                    |
-| `DATABASE_URL`        | api, worker | Secret. The Postgres URL with the `postgresql+asyncpg://` scheme                                                          |
-| `DATABASE_CA_CERT`    | api, worker | The path of a CA bundle when the database's certificate needs one; unset otherwise                                        |
-| `REDIS_URL`           | api, worker | Secret. The Railway Redis URL; the API refuses to start in production without it                                          |
-| `CORS_ORIGIN`         | api         | The web service's public origin; the API refuses to start in production without it                                        |
-| `FORWARDED_ALLOW_IPS` | api         | The web service's private-network address; the API refuses to start in production without it                              |
-| `PORT`                | api, web    | Injected by Railway                                                                                                       |
-| `WORKER_PORT`         | worker      | Leave unset: Railway injects `PORT` and probes it, and the worker serves its probes on `PORT` when `WORKER_PORT` is unset |
-| `CLIENT_URL`          | worker      | The web service's public origin, from which the reset-email link is built                                                 |
-| `RESEND_API_KEY`      | worker      | Secret. Without it, reset emails are logged rather than sent                                                              |
-| `EMAIL_FROM`          | worker      | A sender address on a domain verified with Resend                                                                         |
-| `NUXT_API_BASE_URL`   | web         | The API's private-network URL, such as `http://api.railway.internal:<port>`                                               |
+| Variable              | Service     | Value                                                                                                                         |
+| --------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ENVIRONMENT`         | api, worker | `production`, or `staging` for a staging environment; never left unset                                                        |
+| `DATABASE_URL`        | api, worker | Secret. The Postgres URL with the `postgresql+asyncpg://` scheme                                                              |
+| `DATABASE_CA_CERT`    | api, worker | The path of a CA bundle when the database's certificate needs one; unset otherwise                                            |
+| `REDIS_URL`           | api, worker | Secret. The Railway Redis URL; the API refuses to start in production without it                                              |
+| `CORS_ORIGIN`         | api         | The web service's public origin; the API refuses to start in production without it                                            |
+| `FORWARDED_ALLOW_IPS` | api         | The private network's CIDR (the web service's address changes on redeploy); the API refuses to start in production without it |
+| `PORT`                | api, web    | Injected by Railway                                                                                                           |
+| `WORKER_PORT`         | worker      | Leave unset: Railway injects `PORT` and probes it, and the worker serves its probes on `PORT` when `WORKER_PORT` is unset     |
+| `CLIENT_URL`          | worker      | The web service's public origin, from which the reset-email link is built                                                     |
+| `RESEND_API_KEY`      | worker      | Secret. Without it, reset emails are logged rather than sent                                                                  |
+| `EMAIL_FROM`          | worker      | A sender address on a domain verified with Resend                                                                             |
+| `NUXT_API_BASE_URL`   | web         | The API's private-network URL, such as `http://api.railway.internal:<port>`                                                   |
 
 Billing adds the Stripe variables and the webhook endpoint (`/v1/billing/webhook`) with slice 06, and slice 07 adds the PostHog, Sentry, and R2 variables; each slice extends this table.
 
@@ -179,28 +179,35 @@ The repository's `CLAUDE.md` files and the design spec hold the full conventions
 
 This template is checked against `template-express-next` feature by feature. Where the Express template's approach was replaced rather than copied, the notes say with what and why.
 
-| Express feature                                                       | Here                                                                                                                                                                                    |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Register, log in, log out, read and change the signed-in user         | Complete                                                                                                                                                                                |
-| Forgot and reset password with a Resend email                         | Complete; the email is sent by an arq job with retries, where Express made an unawaited call                                                                                            |
-| Roles, the admin guard, and the `/admin` page                         | Complete, and beyond Express: `GET /v1/admin/users` feeds a real user list                                                                                                              |
-| The seven pages and the auth route gate                               | Complete; every page scores 100 for accessibility in Lighthouse                                                                                                                         |
-| API proxy on the web server                                           | Complete (the Nitro route `server/api/[...path].ts`)                                                                                                                                    |
-| CSRF header guard, rate limiting, idempotency keys, security headers  | Complete; rate limits are counted atomically in Redis and shared by every replica                                                                                                       |
-| Health endpoints                                                      | Complete, plus the Nuxt `/api/health` route and the worker's own probes                                                                                                                 |
-| Background worker                                                     | Complete (arq in place of BullMQ, with a real email job and a heartbeat)                                                                                                                |
-| OpenAPI document                                                      | Complete, generated from the code, with typed client types and a drift check                                                                                                            |
-| UI kit with Storybook and visual regression                           | Complete; the billing component stories arrive with billing                                                                                                                             |
-| Docker and compose                                                    | Complete: three images, and compose runs a one-shot migration before the API and worker                                                                                                 |
-| CI                                                                    | Complete, with more jobs than Express and one aggregate required check                                                                                                                  |
-| Smoke suite                                                           | Complete; it runs in CI against the compose stack rather than against a live deployment                                                                                                 |
-| Railway configuration (`railway.toml`)                                | Complete, one file per service; the template is never deployed itself                                                                                                                   |
-| Stripe checkout, portal, webhook ledger, and the billing dashboard UI | Arrives with slice 06                                                                                                                                                                   |
-| PostHog analytics, Sentry, Cloudflare R2, and the theme               | Arrive with slice 07                                                                                                                                                                    |
-| Hourly cleanup of expired sessions and stale idempotency keys         | Arrives as the arq cron job `delete_expired_rows`, after slice 06's billing table exists; it replaces both the in-process timer and the pg_cron schedule, so one code path does the job |
-| `scripts/deploy.sh`                                                   | Not ported: Railway builds each service from its config file on push, so no script is needed                                                                                            |
-| `dev-watch.sh`, `ensure-test-db.sh`, and `dev:payments`               | Not ported: `pnpm dev` reloads both apps and compose provides the databases; `stripe listen` belongs to slice 06                                                                        |
-| Circuit breaker service                                               | Dropped: the Express breaker is never called and no provider needs one yet (spec decision)                                                                                              |
-| `address-copilot-review` workflow                                     | Excluded: the Copilot coding agent was dropped for cost on 2026-09-18                                                                                                                   |
-| `vercel.json`                                                         | Excluded: the Docker image on Railway is the only deploy path                                                                                                                           |
-| The `posts` sample resource                                           | Excluded: every fork deletes the sample resource, so it is not carried over                                                                                                             |
+| Express feature                                                                   | Here                                                                                                                                                                           |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Register, log in, log out, read and change the signed-in user                     | Complete                                                                                                                                                                       |
+| Forgot and reset password with a Resend email                                     | Complete; the email is sent by an arq job with retries, where Express made an unawaited call                                                                                   |
+| Roles, the admin guard, and the `/admin` page                                     | Complete, and beyond Express: `GET /v1/admin/users` feeds a real user list                                                                                                     |
+| The seven pages and the auth route gate                                           | Complete; every page scores 100 for accessibility in Lighthouse                                                                                                                |
+| API proxy on the web server                                                       | Complete (the Nitro route `server/api/[...path].ts`)                                                                                                                           |
+| CSRF header guard, rate limiting, idempotency keys, security headers              | Complete; rate limits are counted atomically in Redis and shared by every replica                                                                                              |
+| Health endpoints                                                                  | Complete, plus the Nuxt `/api/health` route and the worker's own probes                                                                                                        |
+| Background worker                                                                 | Complete (arq in place of BullMQ, with a real email job and a heartbeat)                                                                                                       |
+| OpenAPI document                                                                  | Complete, generated from the code, with typed client types and a drift check                                                                                                   |
+| UI kit with Storybook and visual regression                                       | Complete; the billing component stories arrive with billing                                                                                                                    |
+| Docker and compose                                                                | Complete: three images, and compose runs a one-shot migration before the API and worker                                                                                        |
+| CI                                                                                | Complete, with more jobs than Express and one aggregate required check                                                                                                         |
+| Smoke suite                                                                       | Complete; it runs in CI against the compose stack rather than against a live deployment                                                                                        |
+| Railway configuration (`railway.toml`)                                            | Complete, one file per service; the template is never deployed itself                                                                                                          |
+| Stripe checkout, portal, webhook ledger, and the billing dashboard UI             | Arrives with slice 06                                                                                                                                                          |
+| PostHog analytics, Sentry, Cloudflare R2, and the theme                           | Arrive with slice 07                                                                                                                                                           |
+| Hourly cleanup of expired sessions, stale idempotency keys and old webhook events | Runs as the arq cron job `delete_expired_rows` at minute 0, in 1000-row batches; it replaces both the in-process timer and the pg_cron schedule, so one code path does the job |
+| `scripts/deploy.sh`                                                               | Not ported: Railway builds each service from its config file on push, so no script is needed                                                                                   |
+| `dev-watch.sh`, `ensure-test-db.sh`, and `dev:payments`                           | Not ported: `pnpm dev` reloads both apps and compose provides the databases; `stripe listen` belongs to slice 06                                                               |
+| Circuit breaker service                                                           | Dropped: the Express breaker is never called and no provider needs one yet (spec decision)                                                                                     |
+| `address-copilot-review` workflow                                                 | Excluded: the Copilot coding agent was dropped for cost on 2026-09-18                                                                                                          |
+| `vercel.json`                                                                     | Excluded: the Docker image on Railway is the only deploy path                                                                                                                  |
+| The `posts` sample resource                                                       | Excluded: every fork deletes the sample resource, so it is not carried over                                                                                                    |
+
+## Documentation
+
+| Document                | Covers                                                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/stack.md`         | Every significant language, runtime, framework, library, tool, service, and infrastructure piece, grouped by layer, with its version, what it does here, why it was chosen, and where it is configured |
+| `docs/observability.md` | Every request ID, analytics event, structured log event, error code, Sentry behavior, outbound-call telemetry field, and health endpoint the application can dispatch                                  |
