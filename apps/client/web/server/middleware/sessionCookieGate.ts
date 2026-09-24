@@ -11,6 +11,10 @@
  * rather than exposed, which is the failure mode worth choosing: a page wrongly gated is noticed
  * on the first visit, and a page wrongly exposed is noticed by whoever finds it.
  *
+ * Every page response it lets through is marked `Cache-Control: no-store` (IAN-335). A page render
+ * carries the session it was rendered with, and the browser's gate trusts a fresh server render
+ * while hydrating, so a render replayed from the HTTP cache by Back must never exist.
+ *
  * `/api/**` is skipped deliberately. A proxied call from the browser must receive the backend's
  * own 401 envelope; answering it with a 302 to an HTML sign-in page gives `fetch` a page to parse
  * as JSON, which fails somewhere far away from the cause.
@@ -20,6 +24,7 @@ import { SESSION_COOKIE_NAME } from '#shared/constants/session';
 const LOGIN_PATH = '/login';
 // A found redirect: the visitor may come back to this page once they have signed in.
 const FOUND_REDIRECT_STATUS = 302;
+const PAGE_CACHE_CONTROL = 'no-store';
 // The pages a signed-out visitor is meant to reach. `/login` is here for a reason of its own: a
 // gate that redirected it would redirect it to itself, forever.
 // The two recovery pages are reached from an email by someone who by definition cannot sign in.
@@ -36,7 +41,13 @@ const UNGATED_EXACT_PATHS = new Set(['/favicon.ico', '/robots.txt', '/sitemap.xm
 
 export default defineEventHandler((event) => {
     const requestPath = getRequestURL(event).pathname;
-    if (isUngatedPath(requestPath) || PUBLIC_PAGE_PATHS.has(requestPath)) {
+    if (isUngatedPath(requestPath)) {
+        return undefined;
+    }
+    // Every page render can carry the visitor's session in its payload, so none may be stored:
+    // a Back navigation replaying a stored render would hydrate a session revoked since.
+    setResponseHeader(event, 'cache-control', PAGE_CACHE_CONTROL);
+    if (PUBLIC_PAGE_PATHS.has(requestPath)) {
         return undefined;
     }
     if (getCookie(event, SESSION_COOKIE_NAME)) {
