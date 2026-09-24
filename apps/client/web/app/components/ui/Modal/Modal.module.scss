@@ -1,0 +1,67 @@
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 40%);
+    animation: fade-in var(--transition-state) ease-out;
+}
+
+.content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: min(100%, 32rem);
+    padding: var(--spacing-6);
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius-card);
+    background: var(--background);
+    color: var(--foreground);
+    animation: rise-in var(--transition-state) ease-out;
+}
+
+.title {
+    margin: 0 0 var(--spacing-2);
+    font-size: var(--font-size-subtitle);
+    font-weight: var(--font-weight-semibold);
+}
+
+.description {
+    margin: 0 0 var(--spacing-4);
+    color: var(--foreground-muted);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.close {
+    margin-top: var(--spacing-4);
+    padding: var(--spacing-2) var(--spacing-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    background: var(--background);
+    color: var(--foreground);
+    cursor: pointer;
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, calc(-50% + var(--spacing-3)));
+    }
+}
+
+/* B-48: the preference asks for no motion, so the animation is switched off rather than hurried. */
+@media (prefers-reduced-motion: reduce) {
+    .overlay,
+    .content {
+        animation: none;
+    }
+}

@@ -13,6 +13,8 @@ import { execFileSync } from 'node:child_process';
 
 const MIGRATE_SERVICE_NAME = 'migrate';
 const MIGRATE_TIMEOUT_MS = 120_000;
+const RATE_LIMIT_RESET_SCRIPT =
+    "for _, key in ipairs(redis.call('KEYS', 'ratelimit:*')) do redis.call('DEL', key) end";
 
 export default function migrateBeforeEndToEndSuite(): void {
     if (process.env.E2E_SKIP_MIGRATE) {
@@ -25,4 +27,18 @@ export default function migrateBeforeEndToEndSuite(): void {
         stdio: 'inherit',
         timeout: MIGRATE_TIMEOUT_MS,
     });
+    clearRateLimitCounters();
+}
+
+/**
+ * Delete every rate-limit counter in the compose Redis, so the specs' own requests in earlier runs
+ * cannot push this run over the auth bucket (IAN-326). The counters persist between runs because
+ * the compose Redis does, and the auth bucket allows only ten requests per fifteen minutes.
+ */
+function clearRateLimitCounters(): void {
+    execFileSync(
+        'docker',
+        ['compose', 'exec', '-T', 'redis', 'redis-cli', 'EVAL', RATE_LIMIT_RESET_SCRIPT, '0'],
+        { stdio: 'inherit' },
+    );
 }

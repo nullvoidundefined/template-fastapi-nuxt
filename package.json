@@ -19,7 +19,9 @@
         "format:check": "prettier --check .",
         "check:contract": "scripts/check-contract-drift.sh",
         "prepare": "if git rev-parse --git-dir >/dev/null 2>&1; then lefthook install; fi",
-        "test:e2e": "playwright test"
+        "test:e2e": "playwright test",
+        "test:visual": "playwright test --config playwright.visual.config.ts",
+        "test:visual:update": "scripts/update-visual-baselines.sh"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

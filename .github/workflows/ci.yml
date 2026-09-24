@@ -208,6 +208,30 @@ jobs:
         if: always()
         run: docker compose down --volumes
 
+  # B-39: every Storybook story is snapshotted and compared with its committed baseline. It runs
+  # in the Playwright image because the baselines are rendered there; a runner's own fonts differ.
+  visual-regression:
+    name: visual-regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dependencies
+        run: corepack enable && pnpm install --frozen-lockfile
+      - name: Snapshot every story
+        env:
+          CI: 'true'
+          HOME: /root
+        run: pnpm test:visual
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-regression-report
+          path: playwright-report
+          retention-days: 7
+
   # The 80 percent floor is enforced here and nowhere else, so it measures what the whole suite
   # exercises. Before this job existed the floor ran inside the unit job alone, which counted a
   # module proved only by an integration test against real Postgres and Redis as entirely
@@ -249,7 +273,18 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [lint, typecheck, unit, integration, coverage, openapi-drift, docker-build, e2e]
+    needs:
+      [
+        lint,
+        typecheck,
+        unit,
+        integration,
+        coverage,
+        openapi-drift,
+        docker-build,
+        e2e,
+        visual-regression,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

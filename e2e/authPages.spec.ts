@@ -1,0 +1,137 @@
+/**
+ * End-to-end checks of the auth pages in a real browser against the running stack
+ * (US-AUTH-003, US-AUTH-004; spec B-12, B-38, B-45, B-50, B-52).
+ *
+ * Accounts are created through the Nitro proxy with the browser context's own request client, so
+ * the session cookie lands in that context's jar exactly as a form submission would put it there.
+ * The auth rate-limit bucket allows ten requests per fifteen minutes per client; this file spends
+ * five, and the global setup clears the counters before each run.
+ */
+import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+
+// Nitro's fixed compose address. Its own rate-limit bucket must never move (B-52).
+const NITRO_ADDRESS = '172.28.0.10';
+const CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
+const passphrase = ['e2e', 'pages', 'passphrase', '6190'].join('-');
+const replacementPassphrase = ['e2e', 'pages', 'replacement', '2754'].join('-');
+
+/** Return an address no earlier run registered. */
+function buildUniqueEmailAddress(label: string): string {
+    return `e2e-pages-${label}-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
+}
+
+/** Register through the proxy with this context's cookie jar, leaving the context signed in. */
+async function registerThroughProxy(context: BrowserContext, email: string): Promise<void> {
+    const response = await context.request.post('/api/v1/auth/register', {
+        headers: CSRF_HEADERS,
+        data: Object.fromEntries([
+            ['email', email],
+            ['password', passphrase],
+        ]),
+    });
+    expect(response.status(), await response.text()).toBe(201);
+}
+
+/** Return whether the compose Redis holds a key, read through the container. */
+function hasRedisKey(key: string): boolean {
+    const output = execFileSync('docker', [
+        'compose',
+        'exec',
+        '-T',
+        'redis',
+        'redis-cli',
+        'EXISTS',
+        key,
+    ]);
+    return output.toString().trim() === '1';
+}
+
+/** Navigate with the application's own router, without a document load. */
+async function navigateClientSide(page: Page, path: string): Promise<void> {
+    await page.evaluate(async (targetPath) => {
+        const appRoot = document.querySelector('#__nuxt') as unknown as {
+            __vue_app__: {
+                config: { globalProperties: { $router: { push(to: string): Promise<unknown> } } };
+            };
+        };
+        await appRoot.__vue_app__.config.globalProperties.$router.push(targetPath);
+    }, path);
+}
+
+/** Fill a labelled field. */
+async function fillField(page: Page, label: string, value: string): Promise<void> {
+    await page.getByLabel(label, { exact: true }).fill(value);
+}
+
+test.describe('the auth gate', () => {
+    test('B-12: a signed-out browser loading /dashboard lands on /login', async ({ page }) => {
+        await page.goto('/dashboard');
+
+        await expect(page).toHaveURL(/\/login$/);
+        await expect(page.getByRole('heading', { level: 1, name: 'Log in' })).toBeVisible();
+    });
+
+    test('B-45, B-50, B-12: one signed-in journey through the gate and the profile form', async ({
+        context,
+        page,
+    }) => {
+        // One account for all three, because each registration spends the shared auth bucket.
+        await registerThroughProxy(context, buildUniqueEmailAddress('journey'));
+
+        for (const signedOutPath of ['/login', '/register']) {
+            await page.goto(signedOutPath);
+            await expect(page).toHaveURL(/\/dashboard$/);
+        }
+
+        await fillField(page, 'Current password', passphrase);
+        await fillField(page, 'New password', replacementPassphrase);
+        await page.getByRole('button', { name: 'Change password' }).click();
+        await expect(page.getByRole('status')).toContainText('Password changed');
+
+        // End the session, then leave and return through the client-side router, so the route
+        // middleware (not the Nitro gate on a full page load) is what has to notice.
+        await context.clearCookies();
+        await navigateClientSide(page, '/');
+        await navigateClientSide(page, '/dashboard');
+        await expect(page).toHaveURL(/\/login$/);
+    });
+});
+
+test.describe('the auth forms', () => {
+    test('B-38: an invalid email shows the field error beside the email input', async ({
+        page,
+    }) => {
+        await page.goto('/register');
+
+        await fillField(page, 'Email', 'no-at-sign');
+        await fillField(page, 'Password', passphrase);
+        await page.getByRole('button', { name: 'Create account' }).click();
+
+        const emailInput = page.getByLabel('Email', { exact: true });
+        await expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+        const describedById = await emailInput.getAttribute('aria-describedby');
+        await expect(page.locator(`[id="${describedById}"]`)).toBeVisible();
+        await expect(page).toHaveURL(/\/register$/);
+    });
+});
+
+test('B-52: two concurrent server renders each show their own user and spare Nitro', async ({
+    browser,
+}) => {
+    const emails = [buildUniqueEmailAddress('first'), buildUniqueEmailAddress('second')];
+    const contexts = await Promise.all(emails.map(() => browser.newContext()));
+    await Promise.all(
+        contexts.map((context, index) => registerThroughProxy(context, emails[index]!)),
+    );
+    const pages = await Promise.all(contexts.map((context) => context.newPage()));
+
+    await Promise.all(pages.map((page) => page.goto('/dashboard')));
+
+    for (const [index, page] of pages.entries()) {
+        await expect(page.getByTestId('dashboard-email')).toContainText(emails[index]!);
+    }
+    expect(hasRedisKey(`ratelimit:global:${NITRO_ADDRESS}`)).toBe(false);
+    await Promise.all(contexts.map((context) => context.close()));
+});
