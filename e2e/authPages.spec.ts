@@ -11,6 +11,8 @@ import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
+import { clearRateLimitCounters } from './rateLimitCounters';
+
 // Nitro's fixed compose address. Its own rate-limit bucket must never move (B-52).
 const NITRO_ADDRESS = '172.28.0.10';
 const CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -64,6 +66,16 @@ async function navigateClientSide(page: Page, path: string): Promise<void> {
 async function fillField(page: Page, label: string, value: string): Promise<void> {
     await page.getByLabel(label, { exact: true }).fill(value);
 }
+
+test.beforeAll(() => {
+    clearRateLimitCounters();
+});
+
+// This file's own client address, so its requests count in a rate-limit bucket no other spec
+// shares. Nitro takes the last X-Forwarded-For entry as the client, which in compose, with no
+// edge in front, is whatever the browser sends (documentation range, RFC 5737).
+const CLIENT_ADDRESS = '198.51.100.10';
+test.use({ extraHTTPHeaders: { 'X-Forwarded-For': CLIENT_ADDRESS } });
 
 test.describe('the auth gate', () => {
     test('B-12: a signed-out browser loading /dashboard lands on /login', async ({ page }) => {
@@ -121,7 +133,11 @@ test('B-52: two concurrent server renders each show their own user and spare Nit
     browser,
 }) => {
     const emails = [buildUniqueEmailAddress('first'), buildUniqueEmailAddress('second')];
-    const contexts = await Promise.all(emails.map(() => browser.newContext()));
+    const contexts = await Promise.all(
+        emails.map(() =>
+            browser.newContext({ extraHTTPHeaders: { 'X-Forwarded-For': CLIENT_ADDRESS } }),
+        ),
+    );
     await Promise.all(
         contexts.map((context, index) => registerThroughProxy(context, emails[index]!)),
     );

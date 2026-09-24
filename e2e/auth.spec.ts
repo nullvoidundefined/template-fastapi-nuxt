@@ -26,6 +26,8 @@ import {
 } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
+import { clearRateLimitCounters } from './rateLimitCounters';
+
 const apiBaseUrl = process.env.API_BASE_URL ?? '';
 const SESSION_COOKIE_NAME = 'sid';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,6 +69,10 @@ async function readStoredSessionCookie(
     const { cookies } = await context.storageState();
     return cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAME);
 }
+
+test.beforeAll(() => {
+    clearRateLimitCounters();
+});
 
 test.describe('auth account lifecycle', () => {
     // Serial, because these tests are the steps of one journey and each depends on the session the
