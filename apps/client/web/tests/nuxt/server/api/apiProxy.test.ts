@@ -260,6 +260,70 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         );
     });
 
+    it('US-AUTH-003: strips a client-sent X-Forwarded-For chain when no trustworthy address resolves, so the backend never keys on a forged entry', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        // The web handler has no socket peer, and the edge entry here is not an address, so
+        // nothing resolves and the forged chain is the only thing that could reach the backend.
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/login', {
+                method: 'POST',
+                headers: {
+                    'X-Forwarded-For': [forgedForwardedForEntry, 'not-an-address'].join(', '),
+                    'Content-Type': 'application/json',
+                },
+                body: '{"email":"person@example.test"}',
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        expect(backendRequests[0]!.headers.get('x-forwarded-for')).toBeNull();
+    });
+
+    it('US-AUTH-003: strips client-sent X-Forwarded-Proto, X-Forwarded-Host, and Forwarded, which uvicorn trusts from Nitro, while other headers still pass', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/me', {
+                headers: {
+                    'X-Forwarded-Proto': 'https',
+                    'X-Forwarded-Host': 'forged.example.test',
+                    Forwarded: `for=${forgedForwardedForEntry};proto=https;host=forged.example.test`,
+                    'X-Requested-With': csrfHeaderValue,
+                },
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        const { headers: backendHeaders } = backendRequests[0]!;
+        expect(backendHeaders.get('x-forwarded-proto')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-host')).toBeNull();
+        expect(backendHeaders.get('forwarded')).toBeNull();
+        expect(backendHeaders.get('x-requested-with')).toBe(csrfHeaderValue);
+    });
+
+    it('US-AUTH-003, IAN-335: strips client-sent X-Real-IP, X-Forwarded-Port, and X-Forwarded-Prefix too', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/me', {
+                headers: {
+                    'X-Real-IP': forgedForwardedForEntry,
+                    'X-Forwarded-Port': '8443',
+                    'X-Forwarded-Prefix': '/forged',
+                    'X-Requested-With': csrfHeaderValue,
+                },
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        const { headers: backendHeaders } = backendRequests[0]!;
+        expect(backendHeaders.get('x-real-ip')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-port')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-prefix')).toBeNull();
+        expect(backendHeaders.get('x-requested-with')).toBe(csrfHeaderValue);
+    });
+
     it('US-AUTH-003: answers /api/health from the Nuxt server itself, never through the proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 

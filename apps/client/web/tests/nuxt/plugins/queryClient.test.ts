@@ -79,6 +79,23 @@ describe('the query client plugin', () => {
         expect(secondRequestClient.getQueryData(cachedSessionKey)).toBeUndefined();
     });
 
+    it('IAN-335: hydrates the payload during plugin setup, before app:created starts the initial navigation and its gate', async () => {
+        const serverRenderedClient = new QueryClient();
+        serverRenderedClient.setQueryData(cachedSessionKey, signedInUser);
+        const transferredPayload: unknown = JSON.parse(
+            JSON.stringify(dehydrate(serverRenderedClient)),
+        );
+        await seedServerRenderedPayload(transferredPayload);
+        const browserRequest = createStubNuxtApp();
+
+        // Nuxt's router plugin runs the initial navigation, route middleware included, from its
+        // own app:created hook, which is registered before this plugin's; so the hook is not fired.
+        await runQueryClientPlugin(queryClientPlugin, browserRequest);
+
+        const hydratedClient = readInstalledQueryClient(browserRequest.vueApp);
+        expect(hydratedClient.getQueryData(cachedSessionKey)).toEqual(signedInUser);
+    });
+
     it('hydrates the server-rendered payload into the cache instead of refetching it', async () => {
         const serverRenderedClient = new QueryClient();
         serverRenderedClient.setQueryData(cachedSessionKey, signedInUser);

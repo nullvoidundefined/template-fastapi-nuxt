@@ -20,7 +20,14 @@ outbound call for that request (R-341).
   `useRequestHeaders(['cookie', 'x-request-id', 'x-forwarded-for'])` to forward to FastAPI.
 - **The `/api/[...path]` proxy.** `apps/client/web/server/api/[...path].ts` forwards whatever
   request-ID header is present on the proxied call (it does not strip or replace it, unlike
-  `X-Forwarded-For`, which it does replace).
+  `X-Forwarded-For`, which it replaces with the resolved client address or strips when no
+  trustworthy address resolves). It also strips client-sent `X-Forwarded-Proto`,
+  `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Prefix`, `X-Real-IP`, and `Forwarded`,
+  since uvicorn trusts forwarding headers from Nitro. The list lives in
+  `apps/client/web/server/constants/clientForwardingHeaderNames.ts` and is shared with the
+  PostHog ingest proxy. `apps/client/web/server/services/withholdRequestHeaders.ts` deletes the
+  headers from the inbound request itself, so Sentry's server-side events for a proxied call do
+  not carry them either.
 - **FastAPI.** `asgi-correlation-id`'s `CorrelationIdMiddleware`, registered outermost in
   `apps/server/app/main.py`, validates an inbound `X-Request-Id` with
   `is_valid_request_id` (the same character-and-length rule as the Nitro middleware), mints one

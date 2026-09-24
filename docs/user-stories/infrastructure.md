@@ -187,7 +187,7 @@
 **Acceptance criteria:**
 
 - [ ] A signed-out browser asking for `/dashboard` lands on `/login`, whether it arrives by a full page load or by a client-side navigation (spec B-12).
-- [ ] A session that expired while a tab sat open redirects on the next navigation rather than after the cache goes stale: the session query revalidates on every mount instead of trusting a cached success. The test populates the cache with a valid session first, so it exercises revalidation rather than an empty cache.
+- [ ] A session that expired while a tab sat open redirects on the next navigation rather than after the cache goes stale: the session gate revalidates on every client-side navigation instead of trusting a cached success, and the page's own readers reuse that answer rather than asking again. The test populates the cache with a valid session first, so it exercises revalidation rather than an empty cache.
 - [ ] A backend outage is not treated as a sign-out. Only the status the backend actually answers with for an absent or expired session sends anyone to `/login`.
 - [ ] A signed-in browser asking for `/login` or for `/register` is sent to `/dashboard`, both pages asserted, since a redirect applied to one and not the other is the likely mistake (spec B-45).
 - [ ] The protected layout renders nothing until the session resolves, so a protected page never paints content for a visitor who turns out to be signed out.

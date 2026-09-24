@@ -28,6 +28,10 @@ export async function readSessionOutcome(
     apiClient: ApiClient,
 ): Promise<SessionOutcome> {
     try {
+        // Marked stale first, because `fetchQuery` answers from the cache while an entry is
+        // younger than zero stale time, which an entry dated after the browser's clock (a server
+        // clock ahead of it) always is; the gate must ask the backend regardless (IAN-335).
+        await queryClient.invalidateQueries({ queryKey: sessionQueryKey, refetchType: 'none' });
         const user = await queryClient.fetchQuery({
             queryFn: () => fetchCurrentUser(apiClient),
             queryKey: sessionQueryKey,
