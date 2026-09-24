@@ -141,6 +141,7 @@ components:
       - SERVER_INTERNAL_ERROR
       - SERVER_RATE_LIMIT_UNAVAILABLE
       - SERVER_REQUEST_TIMEOUT
+      - UPLOADS_STORAGE_UNCONFIGURED
       title: ErrorCode
       type: string
     ErrorResponse:
@@ -315,6 +316,58 @@ components:
       - offset
       title: PageMeta
       type: object
+    PresignUploadRequest:
+      additionalProperties: false
+      description: 'What the client wants to upload: its purpose and its file extension.'
+      properties:
+        extension:
+          maxLength: 5
+          minLength: 1
+          title: Extension
+          type: string
+        purpose:
+          $ref: '#/components/schemas/UploadPurpose'
+      required:
+      - purpose
+      - extension
+      title: PresignUploadRequest
+      type: object
+    PresignedUploadData:
+      description: Everything the browser needs to PUT the file straight to R2.
+      properties:
+        content_type:
+          title: Content Type
+          type: string
+        expires_in_seconds:
+          title: Expires In Seconds
+          type: integer
+        key:
+          title: Key
+          type: string
+        method:
+          const: PUT
+          default: PUT
+          title: Method
+          type: string
+        upload_url:
+          title: Upload Url
+          type: string
+      required:
+      - upload_url
+      - key
+      - content_type
+      - expires_in_seconds
+      title: PresignedUploadData
+      type: object
+    PresignedUploadResponse:
+      description: The success envelope for a presigned upload.
+      properties:
+        data:
+          $ref: '#/components/schemas/PresignedUploadData'
+      required:
+      - data
+      title: PresignedUploadResponse
+      type: object
     RegisterRequest:
       additionalProperties: false
       description: The body of a registration.
@@ -360,6 +413,12 @@ components:
       - password
       title: ResetPasswordRequest
       type: object
+    UploadPurpose:
+      description: What the uploaded file is for; each purpose has its own extension allowlist.
+      enum:
+      - avatar
+      title: UploadPurpose
+      type: string
     UserRole:
       description: Every role the `user_role` enum holds, in its declared order.
       enum:
@@ -868,3 +927,41 @@ paths:
       summary: Receive Webhook
       tags:
       - billing
+  /v1/uploads:
+    post:
+      description: Answer a URL the browser can PUT the file to within fifteen minutes.
+      operationId: create_presigned_upload_v1_uploads_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignUploadRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUploadResponse'
+          description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: An unexpected error occurred
+      summary: Create Presigned Upload
+      tags:
+      - uploads
