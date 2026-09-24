@@ -3,7 +3,7 @@
 asgi-correlation-id, which wraps this middleware, validates or mints the ID and echoes it on the
 response; the validator it uses lives here with the rest of the request-ID concern. This class
 binds that ID into structlog's per-request context and restores whatever was bound before when
-the request ends.
+the request ends, and tags the request's Sentry scope with it so an error report joins its logs.
 
 The body limit holds before the route runs (spec B-43): the whole body is read, up to the
 limit, before the app is called, and then replayed to it. A body that declares or streams more
@@ -19,6 +19,7 @@ import structlog
 from asgi_correlation_id import correlation_id
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.clients.sentry import tag_sentry_request
 from app.constants.error_codes import ErrorCode
 
 MAX_BODY_BYTES = 100 * 1024
@@ -45,7 +46,9 @@ class RequestContextMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        with structlog.contextvars.bound_contextvars(request_id=correlation_id.get()):
+        request_id = correlation_id.get()
+        tag_sentry_request(request_id)
+        with structlog.contextvars.bound_contextvars(request_id=request_id):
             await self._handle_http(scope, receive, send)
 
     async def _handle_http(self, scope: Scope, receive: Receive, send: Send) -> None:

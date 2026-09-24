@@ -175,7 +175,11 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+<<<<<<< HEAD
     "/v1/auth/reset-password": {
+=======
+    "/v1/uploads": {
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         parameters: {
             query?: never;
             header?: never;
@@ -185,10 +189,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
+<<<<<<< HEAD
          * Reset Password With Token
          * @description Set a new password from an emailed token and sign the account out everywhere.
          */
         post: operations["reset_password_with_token_v1_auth_reset_password_post"];
+=======
+         * Create Presigned Upload
+         * @description Answer a URL the browser can PUT the file to within fifteen minutes.
+         */
+        post: operations["create_presigned_upload_v1_uploads_post"];
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         delete?: never;
         options?: never;
         head?: never;
@@ -263,7 +274,11 @@ export interface components {
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
+<<<<<<< HEAD
         ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+=======
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -378,6 +393,7 @@ export interface components {
             password: string;
         };
         /**
+<<<<<<< HEAD
          * PageMeta
          * @description Where a page sits in the whole list: the total, and the bounds that produced this page.
          */
@@ -388,6 +404,42 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+=======
+         * PresignUploadRequest
+         * @description What the client wants to upload: its purpose and its file extension.
+         */
+        PresignUploadRequest: {
+            /** Extension */
+            extension: string;
+            purpose: components["schemas"]["UploadPurpose"];
+        };
+        /**
+         * PresignedUploadData
+         * @description Everything the browser needs to PUT the file straight to R2.
+         */
+        PresignedUploadData: {
+            /** Content Type */
+            content_type: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Key */
+            key: string;
+            /**
+             * Method
+             * @default PUT
+             * @constant
+             */
+            method: "PUT";
+            /** Upload Url */
+            upload_url: string;
+        };
+        /**
+         * PresignedUploadResponse
+         * @description The success envelope for a presigned upload.
+         */
+        PresignedUploadResponse: {
+            data: components["schemas"]["PresignedUploadData"];
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         };
         /**
          * RegisterRequest
@@ -400,6 +452,7 @@ export interface components {
             password: string;
         };
         /**
+<<<<<<< HEAD
          * ResetPasswordRequest
          * @description The body of a reset: the token from the email's link and the new password.
          *
@@ -419,6 +472,13 @@ export interface components {
          * @enum {string}
          */
         UserRole: "member" | "admin";
+=======
+         * UploadPurpose
+         * @description What the uploaded file is for; each purpose has its own extension allowlist.
+         * @enum {string}
+         */
+        UploadPurpose: "avatar";
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -854,7 +914,11 @@ export interface operations {
             };
         };
     };
+<<<<<<< HEAD
     reset_password_with_token_v1_auth_reset_password_post: {
+=======
+    create_presigned_upload_v1_uploads_post: {
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
         parameters: {
             query?: never;
             header?: never;
@@ -863,16 +927,30 @@ export interface operations {
         };
         requestBody: {
             content: {
+<<<<<<< HEAD
                 "application/json": components["schemas"]["ResetPasswordRequest"];
+=======
+                "application/json": components["schemas"]["PresignUploadRequest"];
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
             };
         };
         responses: {
             /** @description Successful Response */
+<<<<<<< HEAD
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+=======
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUploadResponse"];
+                };
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
             };
             /** @description The request failed validation */
             400: {

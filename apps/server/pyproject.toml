@@ -9,11 +9,14 @@ dependencies = [
     "asgi-correlation-id>=5.0.1",
     "asyncpg>=0.31.0",
     "bcrypt>=4.2",
+    "boto3>=1.43.101",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
+    "posthog>=7.60.0",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
     "redis>=5.3",
+    "sentry-sdk>=2.70.0",
     "sqlalchemy[asyncio]>=2.0.54",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.53.0",
@@ -62,6 +65,12 @@ plugins = ["pydantic.mypy"]
 # only to recognize a lost connection, so the missing types cost nothing here.
 [[tool.mypy.overrides]]
 module = ["asyncpg.*"]
+ignore_missing_imports = true
+
+# boto3 and botocore ship no type information; the stubs are a separate package, and the one
+# method R2 presigning calls is typed by the `S3Presigner` protocol in app/clients/r2.py instead.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "boto3", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

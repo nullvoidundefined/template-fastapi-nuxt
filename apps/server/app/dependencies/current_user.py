@@ -26,6 +26,7 @@ from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.requests import Request
 
+from app.clients.sentry import identify_sentry_user
 from app.constants.error_codes import ErrorCode
 from app.constants.session import SESSION_COOKIE_NAME
 from app.constants.user_roles import UserRole
@@ -112,8 +113,9 @@ OptionalCurrentUser = Annotated[AuthenticatedUser | None, Depends(resolve_curren
 
 
 def build_authenticated_user(session_row: Row[Any]) -> AuthenticatedUser:
-    """Bind the user id into the log context and return the resolved session."""
+    """Bind the user id into the log context and Sentry's scope, and return the session."""
     structlog.contextvars.bind_contextvars(user_id=str(session_row.user_id))
+    identify_sentry_user(str(session_row.user_id))
     return AuthenticatedUser(
         user=SessionUser(
             id=session_row.user_id, email=session_row.email, role=UserRole(session_row.role)

@@ -104,6 +104,7 @@ components:
       - SERVER_INTERNAL_ERROR
       - SERVER_RATE_LIMIT_UNAVAILABLE
       - SERVER_REQUEST_TIMEOUT
+      - UPLOADS_STORAGE_UNCONFIGURED
       title: ErrorCode
       type: string
     ErrorResponse:
@@ -259,6 +260,7 @@ components:
       - password
       title: LoginRequest
       type: object
+<<<<<<< HEAD
     PageMeta:
       description: 'Where a page sits in the whole list: the total, and the bounds that produced this
         page.'
@@ -277,6 +279,59 @@ components:
       - limit
       - offset
       title: PageMeta
+=======
+    PresignUploadRequest:
+      additionalProperties: false
+      description: 'What the client wants to upload: its purpose and its file extension.'
+      properties:
+        extension:
+          maxLength: 5
+          minLength: 1
+          title: Extension
+          type: string
+        purpose:
+          $ref: '#/components/schemas/UploadPurpose'
+      required:
+      - purpose
+      - extension
+      title: PresignUploadRequest
+      type: object
+    PresignedUploadData:
+      description: Everything the browser needs to PUT the file straight to R2.
+      properties:
+        content_type:
+          title: Content Type
+          type: string
+        expires_in_seconds:
+          title: Expires In Seconds
+          type: integer
+        key:
+          title: Key
+          type: string
+        method:
+          const: PUT
+          default: PUT
+          title: Method
+          type: string
+        upload_url:
+          title: Upload Url
+          type: string
+      required:
+      - upload_url
+      - key
+      - content_type
+      - expires_in_seconds
+      title: PresignedUploadData
+      type: object
+    PresignedUploadResponse:
+      description: The success envelope for a presigned upload.
+      properties:
+        data:
+          $ref: '#/components/schemas/PresignedUploadData'
+      required:
+      - data
+      title: PresignedUploadResponse
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
       type: object
     RegisterRequest:
       additionalProperties: false
@@ -297,6 +352,7 @@ components:
       - password
       title: RegisterRequest
       type: object
+<<<<<<< HEAD
     ResetPasswordRequest:
       additionalProperties: false
       description: 'The body of a reset: the token from the email''s link and the new password.
@@ -329,6 +385,13 @@ components:
       - member
       - admin
       title: UserRole
+=======
+    UploadPurpose:
+      description: What the uploaded file is for; each purpose has its own extension allowlist.
+      enum:
+      - avatar
+      title: UploadPurpose
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
       type: string
     ValidationError:
       properties:
@@ -681,18 +744,36 @@ paths:
       summary: Register
       tags:
       - auth
+<<<<<<< HEAD
   /v1/auth/reset-password:
     post:
       description: Set a new password from an emailed token and sign the account out everywhere.
       operationId: reset_password_with_token_v1_auth_reset_password_post
+=======
+  /v1/uploads:
+    post:
+      description: Answer a URL the browser can PUT the file to within fifteen minutes.
+      operationId: create_presigned_upload_v1_uploads_post
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
       requestBody:
         content:
           application/json:
             schema:
+<<<<<<< HEAD
               $ref: '#/components/schemas/ResetPasswordRequest'
         required: true
       responses:
         '204':
+=======
+              $ref: '#/components/schemas/PresignUploadRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUploadResponse'
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
           description: Successful Response
         '400':
           content:
@@ -712,6 +793,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: An unexpected error occurred
+<<<<<<< HEAD
       summary: Reset Password With Token
       tags:
       - auth
+=======
+      summary: Create Presigned Upload
+      tags:
+      - uploads
+>>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)

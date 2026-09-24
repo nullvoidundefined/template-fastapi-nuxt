@@ -48,3 +48,5 @@ class ErrorCode(StrEnum):
     SERVER_RATE_LIMIT_UNAVAILABLE = "SERVER_RATE_LIMIT_UNAVAILABLE"
     # The handler ran past the 30-second timeout (slice 02, PR 4).
     SERVER_REQUEST_TIMEOUT = "SERVER_REQUEST_TIMEOUT"
+    # POST /v1/uploads was called on a deployment with no R2 bucket configured (slice 07).
+    UPLOADS_STORAGE_UNCONFIGURED = "UPLOADS_STORAGE_UNCONFIGURED"
