@@ -16,6 +16,7 @@ ID of the request that enqueued it, so its log lines and its Resend call carry t
 import structlog
 from arq.worker import Retry
 
+from app.analytics.events import AnalyticsEvent
 from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
 from app.core.settings import get_settings
 from app.services.auth.issue_password_reset import issue_password_reset
@@ -69,3 +70,8 @@ async def issue_and_send_reset_email(
         message = build_password_reset_email(get_settings().client_url, issued.raw_token)
         await ctx["email_client"].send_email(issued.email, message.subject, message.html)
         logger.info("password_reset_email_sent", user_id=str(issued.user_id))
+        analytics_client = ctx.get("analytics_client")
+        if analytics_client is not None:
+            await analytics_client.track_event(
+                issued.user_id, AnalyticsEvent.USER_PASSWORD_RESET_REQUESTED
+            )

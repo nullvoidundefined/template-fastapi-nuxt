@@ -155,9 +155,10 @@ async def request_password_reset(
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_password_with_token(
-    body: ResetPasswordRequest, connection: RequestConnection
+    body: ResetPasswordRequest, connection: RequestConnection, analytics: RequestAnalytics
 ) -> Response:
     """Set a new password from an emailed token and sign the account out everywhere."""
     user_id = await reset_password(connection, body.token, body.password)
     logger.info("user_password_reset", user_id=str(user_id))
+    await analytics.track_event(user_id, AnalyticsEvent.USER_PASSWORD_RESET_COMPLETED)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
