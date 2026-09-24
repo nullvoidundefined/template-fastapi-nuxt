@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
- * The first signed-in page (spec: B-12, B-50).
+ * The first signed-in page (spec: B-12, B-50, including its billing buttons).
  *
  * It names the signed-in address, which is not decoration: it is what proves a server-rendered
  * page shows its own visitor's session rather than whichever one a shared cache happened to hold.
  */
 import { definePageMeta, useSeoMeta } from '#imports';
 
+import BillingActions from '~/components/BillingActions/BillingActions.vue';
 import PasswordChangeForm from '~/components/PasswordChangeForm/PasswordChangeForm.vue';
 import { useSessionQuery } from '~/composables/useSessionQuery';
 
@@ -27,5 +28,6 @@ const { data: signedInUser } = useSessionQuery();
         <h1>Dashboard</h1>
         <p data-test-id="dashboard-email">Signed in as {{ signedInUser?.email }}</p>
         <PasswordChangeForm />
+        <BillingActions />
     </section>
 </template>

@@ -195,6 +195,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Checkout
+         * @description Create a subscription Checkout session for the signed-in user; answer its URL.
+         */
+        post: operations["create_checkout_v1_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Portal
+         * @description Open the billing portal for the signed-in user's Stripe customer; answer its URL.
+         */
+        post: operations["create_portal_v1_billing_portal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Webhook
+         * @description Verify a Stripe delivery against its raw bytes and apply it at most once.
+         *
+         *     The body is read as bytes and never parsed before the signature is checked, because any
+         *     re-serialization would change the bytes Stripe signed. No session and no CSRF header are
+         *     involved: Stripe sends neither, and the signature is what authenticates the request.
+         */
+        post: operations["receive_webhook_v1_billing_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/uploads": {
         parameters: {
             query?: never;
@@ -269,6 +333,21 @@ export interface components {
             data: components["schemas"]["AuthenticatedUserData"];
         };
         /**
+         * BillingRedirectData
+         * @description The hosted Stripe page the browser is sent to next.
+         */
+        BillingRedirectData: {
+            /** Url */
+            url: string;
+        };
+        /**
+         * BillingRedirectResponse
+         * @description The `{ data }` envelope around a Checkout or portal URL.
+         */
+        BillingRedirectResponse: {
+            data: components["schemas"]["BillingRedirectData"];
+        };
+        /**
          * ChangePasswordRequest
          * @description The body of a password change, which proves the caller knows the current password.
          */
@@ -279,11 +358,19 @@ export interface components {
             new_password: string;
         };
         /**
+         * CheckoutCreate
+         * @description The body of `POST /v1/billing/checkout`: the Stripe price to subscribe to.
+         */
+        CheckoutCreate: {
+            /** Price Id */
+            price_id: string;
+        };
+        /**
          * ErrorCode
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "BILLING_NO_ACCOUNT" | "BILLING_NOT_CONFIGURED" | "BILLING_WEBHOOK_MISCONFIGURED" | "BILLING_WEBHOOK_INVALID_SIGNATURE" | "BILLING_WEBHOOK_IN_PROGRESS" | "BILLING_WEBHOOK_PROCESSING_FAILED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -493,6 +580,21 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * WebhookReceivedData
+         * @description The acknowledgement Stripe needs: any 2xx stops its retries.
+         */
+        WebhookReceivedData: {
+            /** Received */
+            received: boolean;
+        };
+        /**
+         * WebhookReceivedResponse
+         * @description The `{ data }` envelope around the webhook's acknowledgement.
+         */
+        WebhookReceivedResponse: {
+            data: components["schemas"]["WebhookReceivedData"];
         };
     };
     responses: never;
@@ -955,6 +1057,142 @@ export interface operations {
                 };
             };
             /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_checkout_v1_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingRedirectResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_portal_v1_billing_portal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingRedirectResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    receive_webhook_v1_billing_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookReceivedResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Another delivery is processing the event */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The event could not be processed */
             500: {
                 headers: {
                     [name: string]: unknown;

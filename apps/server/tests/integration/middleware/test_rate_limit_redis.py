@@ -140,7 +140,10 @@ async def test_b7_health_routes_and_the_webhook_are_served_after_the_global_limi
     assert exhausted.status_code == 429, "the global bucket must be spent for this to mean anything"
     assert liveness.status_code == 200
     assert readiness.status_code in {200, 503}
-    assert webhook.status_code == 404
+    # The webhook answers for itself: an unsigned delivery is refused by the route (B-42), which
+    # proves the limiter let it through. A 429 here would mean the budget reached it.
+    assert webhook.status_code == 400
+    assert webhook.json()["code"] == "BILLING_WEBHOOK_MISCONFIGURED"
     for exempt_response in (liveness, readiness, webhook):
         assert exempt_response.status_code != 429
         assert exempt_response.json().get("code") != "RATE_LIMIT_EXCEEDED"

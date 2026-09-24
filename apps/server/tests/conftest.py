@@ -17,12 +17,15 @@ never mounts that router, and `tests/unit/test_main_exception_handlers.py` asser
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
 import structlog
 from fastapi import APIRouter, FastAPI
+from pydantic import SecretStr
 
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/none"
 TEST_BASE_URL = "http://testserver"
@@ -165,3 +168,80 @@ def captured_log_events(server_app: FastAPI) -> Iterator[list[dict[str, Any]]]:
     )
     yield recorded_events
     structlog.configure(**original_config)
+
+
+# Built from parts at run time, so no credential-shaped literal appears in this source (R-108).
+STRIPE_TEST_API_KEY = "_".join(("sk", "test", "placeholder"))
+STRIPE_CHECKOUT_SESSIONS_PATH = "/v1/checkout/sessions"
+STRIPE_PORTAL_SESSIONS_PATH = "/v1/billing_portal/sessions"
+
+
+@dataclass
+class StripeRecorder:
+    """Answers the Stripe API over `httpx.MockTransport` and records every request it received.
+
+    The Stripe client under test is the real one, built by its own factory, so what a test asserts
+    is the HTTP request the SDK really sent: its path, its form fields, its headers, and its
+    timeout. Each answer carries a URL numbered by the request that produced it, so a second
+    Checkout session would carry a different URL than the first and a replay is recognizable.
+    Setting `failure_status` makes every answer a Stripe API error with that status instead.
+    """
+
+    requests: list[httpx.Request] = field(default_factory=list)
+    failure_status: int | None = None
+
+    def answer(self, request: httpx.Request) -> httpx.Response:
+        """Record the request and answer it as Stripe would."""
+        self.requests.append(request)
+        number = len(self.requests)
+        if self.failure_status is not None:
+            error = {"error": {"type": "api_error", "message": "Test-only Stripe failure"}}
+            return httpx.Response(self.failure_status, json=error)
+        if request.url.path == STRIPE_CHECKOUT_SESSIONS_PATH:
+            return httpx.Response(
+                200,
+                json={
+                    "id": f"cs_test_{number}",
+                    "object": "checkout.session",
+                    "url": f"https://checkout.stripe.test/c/pay/cs_test_{number}",
+                },
+            )
+        if request.url.path == STRIPE_PORTAL_SESSIONS_PATH:
+            return httpx.Response(
+                200,
+                json={
+                    "id": f"bps_test_{number}",
+                    "object": "billing_portal.session",
+                    "url": f"https://billing.stripe.test/p/session/bps_test_{number}",
+                },
+            )
+        return httpx.Response(404, json={"error": {"type": "invalid_request_error"}})
+
+    def read_form(self, index: int = 0) -> dict[str, str]:
+        """Return the form fields of the recorded request at `index`, as Stripe encodes them."""
+        return dict(parse_qsl(self.requests[index].content.decode()))
+
+    def build_client(self, api_base: str | None = None) -> Any:
+        """Return the real Stripe billing client whose HTTP calls this recorder answers.
+
+        The transport is swapped on the SDK's own httpx client after the client's factory built
+        it, so the timeout the factory configured is still the one every request carries.
+        """
+        from app.clients.stripe import (  # noqa: PLC0415 (missing until implemented)
+            StripeBillingClient,
+            build_stripe_http_client,
+        )
+
+        http_client = build_stripe_http_client()
+        http_client._client_async = httpx.AsyncClient(  # noqa: SLF001 (the SDK's only seam)
+            transport=httpx.MockTransport(self.answer)
+        )
+        return StripeBillingClient(
+            SecretStr(STRIPE_TEST_API_KEY), api_base=api_base, http_client=http_client
+        )
+
+
+@pytest.fixture
+def stripe_recorder() -> StripeRecorder:
+    """Return a fresh recorder standing in for the Stripe API."""
+    return StripeRecorder()

@@ -52,6 +52,15 @@ the date and what changed. Section shape:
 | Accessibility: Lighthouse 100 on all seven pages, keyboard operability, and reduced motion              | **Complete** | US-INFRA-011; spec B-27, B-48; `e2e/accessibility.spec.ts`                                                                                                                    |
 | Hourly cleanup job `delete_expired_rows` (sessions, idempotency keys, webhook ledger)                   | **Planned**  | spec B-26; waits for slice 06's webhook ledger table; replaces the Express template's in-process timer and pg_cron schedule                                                   |
 
+## Billing
+
+| Feature                                                                                                          | Status       | Notes                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------- |
+| Stripe Checkout: `POST /v1/billing/checkout`, replayed by `Idempotency-Key`                                      | **Partial**  | US-BILLING-001; spec B-33, B-40; backend complete, the dashboard button arrives in the slice 06 client half |
+| Billing portal: `POST /v1/billing/portal`                                                                        | **Partial**  | US-BILLING-002; spec B-22; backend complete, the dashboard button arrives in the slice 06 client half       |
+| Stripe webhook: signature check, five-event allowlist, the `billing_webhook_events` ledger, `user_subscriptions` | **Complete** | US-BILLING-003; spec B-6, B-7, B-20, B-21, B-34, B-41, B-42, B-51                                           |
+| stripe-mock as the `e2e` compose profile                                                                         | **Complete** | spec Architecture; `docker compose --profile e2e up`                                                        |
+
 ## Landing
 
 | Feature                                        | Status       | Notes                                                                               |

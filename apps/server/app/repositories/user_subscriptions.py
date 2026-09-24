@@ -1,0 +1,166 @@
+"""Data access for user_subscriptions: the portal's lookup and the webhook's writes.
+
+A user's row is found by the user id for a request and by the Stripe subscription id for a
+webhook, because a subscription event names the subscription rather than our user. Every write is
+one statement, so a webhook's changes to a row land together or not at all. The upserts conflict
+on `user_id`, the one-row-per-user constraint, so a user who subscribes again after cancelling has
+the same row pointed at the new customer and subscription by that checkout. A subscription event's
+own upsert is narrower: it takes over a row only when the row names no subscription yet or names
+this one, so a late event for a subscription the user has since replaced cannot repoint the row.
+Both subscription writes also require the event to be at least as new as the one last applied,
+by Stripe's `created` time, so an event delivered out of order never overwrites newer state.
+"""
+
+import uuid
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import ColumnElement, Row, and_, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from app.constants.billing import UserSubscriptionStatus
+from app.db.tables import user_subscriptions
+
+
+@dataclass(slots=True, frozen=True)
+class SubscriptionState:
+    """The columns a Stripe subscription event writes, all of them at once, and the event's time."""
+
+    status: UserSubscriptionStatus
+    plan_id: str | None
+    current_period_start: datetime | None
+    current_period_end: datetime | None
+    is_canceling_at_period_end: bool
+    last_stripe_event_created_at: datetime
+
+
+async def get_subscription_by_user_id(
+    connection: AsyncConnection, user_id: uuid.UUID
+) -> Row[Any] | None:
+    """Return the user's subscription row, or None when the user has never had one."""
+    statement = select(user_subscriptions).where(user_subscriptions.c.user_id == user_id)
+    return (await connection.execute(statement)).one_or_none()
+
+
+async def get_subscription_by_customer_id(
+    connection: AsyncConnection, customer_id: str
+) -> Row[Any] | None:
+    """Return the row naming the Stripe customer, or None when no user holds that customer."""
+    statement = select(user_subscriptions).where(
+        user_subscriptions.c.stripe_customer_id == customer_id
+    )
+    return (await connection.execute(statement)).one_or_none()
+
+
+async def link_subscription_to_user(
+    connection: AsyncConnection, user_id: uuid.UUID, customer_id: str, subscription_id: str
+) -> bool:
+    """Create the user's row naming the customer and subscription; False when it names another.
+
+    The status is left alone: the subscription's own events carry it, and a checkout that arrives
+    after them must not overwrite what they wrote.
+    """
+    ids = {"stripe_customer_id": customer_id, "stripe_subscription_id": subscription_id}
+    current_subscription = user_subscriptions.c.stripe_subscription_id
+    # A row that already names a different subscription keeps it: a checkout delivered late for a
+    # subscription since replaced must not point the row back at the old one.
+    statement = (
+        insert(user_subscriptions)
+        .values(user_id=user_id, **ids)
+        .on_conflict_do_update(
+            index_elements=[user_subscriptions.c.user_id],
+            set_=ids,
+            where=or_(current_subscription.is_(None), current_subscription == subscription_id),
+        )
+        .returning(user_subscriptions.c.id)
+    )
+    return (await connection.execute(statement)).first() is not None
+
+
+async def update_subscription_state(
+    connection: AsyncConnection, subscription_id: str, state: SubscriptionState
+) -> bool:
+    """Write the state onto the row naming the subscription; False when none, or it is newer."""
+    statement = (
+        update(user_subscriptions)
+        .where(
+            user_subscriptions.c.stripe_subscription_id == subscription_id,
+            build_not_newer_condition(state),
+        )
+        .values(**build_state_values(state))
+        .returning(user_subscriptions.c.id)
+    )
+    return (await connection.execute(statement)).first() is not None
+
+
+async def upsert_subscription_for_user(
+    connection: AsyncConnection,
+    user_id: uuid.UUID,
+    customer_id: str,
+    subscription_id: str,
+    state: SubscriptionState,
+) -> bool:
+    """Create the user's row, or fill one naming no other subscription or no newer event.
+
+    False when the row names another subscription or holds a newer event, and nothing is written.
+    """
+    values = {
+        "stripe_customer_id": customer_id,
+        "stripe_subscription_id": subscription_id,
+        **build_state_values(state),
+    }
+    statement = (
+        insert(user_subscriptions)
+        .values(user_id=user_id, **values)
+        .on_conflict_do_update(
+            index_elements=[user_subscriptions.c.user_id],
+            set_=values,
+            where=and_(
+                or_(
+                    user_subscriptions.c.stripe_subscription_id.is_(None),
+                    user_subscriptions.c.stripe_subscription_id == subscription_id,
+                ),
+                build_not_newer_condition(state),
+            ),
+        )
+        .returning(user_subscriptions.c.id)
+    )
+    return (await connection.execute(statement)).first() is not None
+
+
+async def set_subscription_status(
+    connection: AsyncConnection,
+    subscription_id: str,
+    status: UserSubscriptionStatus,
+    event_created_at: datetime,
+) -> bool:
+    """Set only the status, unless the row already holds a newer event; False when not written.
+
+    An invoice event goes through the same ordering guard as the subscription events, because a
+    payment failure delivered after the recovery that followed it would otherwise mark a paying
+    subscription past due.
+    """
+    last_applied = user_subscriptions.c.last_stripe_event_created_at
+    statement = (
+        update(user_subscriptions)
+        .where(
+            user_subscriptions.c.stripe_subscription_id == subscription_id,
+            or_(last_applied.is_(None), last_applied <= event_created_at),
+        )
+        .values(status=status.value, last_stripe_event_created_at=event_created_at)
+        .returning(user_subscriptions.c.id)
+    )
+    return (await connection.execute(statement)).first() is not None
+
+
+def build_not_newer_condition(state: SubscriptionState) -> ColumnElement[bool]:
+    """Match a row whose last applied event is no newer than this state's, or that has none."""
+    last_applied = user_subscriptions.c.last_stripe_event_created_at
+    return or_(last_applied.is_(None), last_applied <= state.last_stripe_event_created_at)
+
+
+def build_state_values(state: SubscriptionState) -> dict[str, Any]:
+    """Return the state as column values, the status as its enum label."""
+    return {**asdict(state), "status": state.status.value}

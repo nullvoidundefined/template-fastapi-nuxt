@@ -1,0 +1,16 @@
+.billing {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    margin-top: var(--spacing-5);
+}
+
+.buttons {
+    display: flex;
+    gap: var(--spacing-3);
+}
+
+.alert {
+    margin: 0;
+    color: var(--error);
+}

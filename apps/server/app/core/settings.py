@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENVIRONMENT = "production"
@@ -42,12 +42,34 @@ class Settings(BaseSettings):
     # WORKER_PORT when set, as under compose; otherwise the PORT a platform such as Railway
     # injects and health-checks, so the worker's probes answer where the platform looks.
     worker_port: int = Field(default=3002, validation_alias=AliasChoices("WORKER_PORT", "PORT"))
-    # The web origin the reset-email link is built from, and later the Stripe redirect URLs.
+    # The web origin the reset-email link and the Stripe redirect URLs are built from.
     client_url: str = "http://localhost:3000"
     # Without a key the worker logs each email instead of sending it, so development and tests
     # run without the provider.
     resend_api_key: SecretStr | None = None
     email_from: str = "Template <noreply@example.test>"
+    # Billing is optional in every environment, production included, so a deployment that has
+    # not set up Stripe still starts. The absence is loud where it matters instead: without the
+    # key the checkout and portal routes answer 503 `BILLING_NOT_CONFIGURED`, and without the
+    # signing secret every webhook delivery answers 400 `BILLING_WEBHOOK_MISCONFIGURED`, which
+    # Stripe's dashboard shows as failing deliveries.
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    # Replaces https://api.stripe.com, so the end-to-end stack can point the SDK at stripe-mock.
+    stripe_api_base: str | None = None
+
+    @field_validator("stripe_secret_key", "stripe_webhook_secret", "stripe_api_base", mode="after")
+    @classmethod
+    def treat_blank_stripe_value_as_unset(
+        cls, value: SecretStr | str | None
+    ) -> SecretStr | str | None:
+        """Read an empty Stripe variable as unset, so billing reports itself unconfigured.
+
+        docker-compose passes `STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}` through as an empty
+        string when the host has none, and an empty key would otherwise build a client whose
+        every call Stripe refuses, answering 500 where 503 `BILLING_NOT_CONFIGURED` is the truth.
+        """
+        return None if is_blank(value) else value
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:

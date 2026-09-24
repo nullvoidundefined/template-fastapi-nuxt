@@ -18,6 +18,7 @@ dependencies = [
     "redis>=5.3",
     "sentry-sdk>=2.70.0",
     "sqlalchemy[asyncio]>=2.0.54",
+    "stripe>=15.6.1",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.53.0",
 ]
