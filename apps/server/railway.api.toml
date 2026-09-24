@@ -13,8 +13,9 @@ watchPatterns = ["/apps/server/**"]
 # Runs once per deploy on the new image, before any replica takes traffic, so replicas never
 # race each other to migrate and no replica serves against an unmigrated schema.
 preDeployCommand = ["alembic upgrade head"]
-# Readiness, not liveness: a new deploy takes traffic only once it reaches Postgres.
-healthcheckPath = "/health/ready"
+# Liveness, as the deployment rules require: a database outage or a Neon cold start must not fail
+# a deploy that only changes code. The pre-deploy migration has already proven Postgres answers.
+healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

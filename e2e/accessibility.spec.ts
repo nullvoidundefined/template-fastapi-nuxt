@@ -32,7 +32,13 @@ test.beforeAll(() => {
 const CLIENT_ADDRESS = '198.51.100.40';
 test.use({ extraHTTPHeaders: { 'X-Forwarded-For': CLIENT_ADDRESS } });
 
-type AuditResult = { failedAuditIds: string[]; score: number };
+type AuditResult = {
+    failedAuditIds: string[];
+    // The page Lighthouse finally rendered, so a gate that redirected is caught rather than
+    // audited in its place: /login scores 100 too.
+    landedPath: string;
+    score: number;
+};
 
 const webBaseUrl = process.env.WEB_BASE_URL ?? '';
 const CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -130,7 +136,12 @@ async function auditAccessibility(debuggingPort: number, path: string): Promise<
     const failedAuditIds = Object.values(audits)
         .filter((audit) => audit.scoreDisplayMode === 'binary' && audit.score === 0)
         .map((audit) => audit.id);
-    return { failedAuditIds, score: Math.round((categories.accessibility?.score ?? 0) * 100) };
+    const landedPath = new URL(runnerResult!.lhr.finalDisplayedUrl).pathname;
+    return {
+        failedAuditIds,
+        landedPath,
+        score: Math.round((categories.accessibility?.score ?? 0) * 100),
+    };
 }
 
 /** Audit each path in turn, keyed by path, so a failure names the page and its audits. */
@@ -147,7 +158,12 @@ async function auditPaths(
 
 /** Return the perfect result for each path, the shape `auditPaths` must equal. */
 function buildPerfectResults(paths: string[]): Record<string, AuditResult> {
-    return Object.fromEntries(paths.map((path) => [path, { failedAuditIds: [], score: 100 }]));
+    return Object.fromEntries(
+        paths.map((path) => [
+            path,
+            { failedAuditIds: [], landedPath: new URL(path, webBaseUrl).pathname, score: 100 },
+        ]),
+    );
 }
 
 /** Number each visible focusable control on the page; return how many there are. */

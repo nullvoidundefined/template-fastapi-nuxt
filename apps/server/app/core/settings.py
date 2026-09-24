@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENVIRONMENT = "production"
@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     redis_url: SecretStr | None = None
     cors_origin: str | None = None
     forwarded_allow_ips: str | None = None
-    worker_port: int = 3002
+    # WORKER_PORT when set, as under compose; otherwise the PORT a platform such as Railway
+    # injects and health-checks, so the worker's probes answer where the platform looks.
+    worker_port: int = Field(default=3002, validation_alias=AliasChoices("WORKER_PORT", "PORT"))
     # The web origin the reset-email link is built from, and later the Stripe redirect URLs.
     client_url: str = "http://localhost:3000"
     # Without a key the worker logs each email instead of sending it, so development and tests

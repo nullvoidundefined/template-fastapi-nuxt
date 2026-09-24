@@ -12,6 +12,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 
 SERVER_DIRECTORY = Path(__file__).resolve().parents[3]
@@ -74,3 +75,12 @@ def test_the_web_builds_from_the_repository_root_and_checks_its_nitro_route() ->
     assert deploy["healthcheckPath"] == "/api/health"
     assert (REPOSITORY_ROOT / "apps/client/web/server/api/health.get.ts").is_file()
     assert "preDeployCommand" not in deploy
+
+
+@pytest.mark.parametrize("config_path", [API_CONFIG_PATH, WORKER_CONFIG_PATH, WEB_CONFIG_PATH])
+def test_every_service_restarts_on_failure_and_carries_no_variables(config_path: Path) -> None:
+    """Variables and secrets are set on the service, never committed in its config file."""
+    config = read_railway_config(config_path)
+
+    assert config["deploy"]["restartPolicyType"] == "ON_FAILURE"
+    assert set(config) <= {"build", "deploy"}, "an [env] or [variables] block does not belong here"

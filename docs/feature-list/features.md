@@ -94,7 +94,6 @@ the date and what changed. Section shape:
 | PostHog analytics on the server and the web app | **Planned** | Slice 07 |
 | Sentry on the server and the web app            | **Planned** | Slice 07 |
 | Cloudflare R2 storage client                    | **Planned** | Slice 07 |
-| Theme composable and dark mode                  | **Planned** | Slice 07 |
 
 ## Excluded from parity
 

@@ -6,7 +6,7 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "apps/client/web/Dockerfile"
-watchPatterns = ["/apps/client/web/**", "/packages/**", "/pnpm-lock.yaml"]
+watchPatterns = ["/apps/client/web/**", "/packages/**", "/pnpm-lock.yaml", "/package.json", "/pnpm-workspace.yaml"]
 
 [deploy]
 # The Nitro route answers without calling the API, so an API outage never fails a web deploy.
