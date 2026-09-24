@@ -198,3 +198,20 @@
 
 **E2E test:** `e2e/authGate.spec.ts`
 **Ticket:** IAN-328
+
+## US-INFRA-009: Retry a request without doing it twice
+
+**As** a client of the API
+**I want to** retry a `POST` or `PUT` with the same `Idempotency-Key` and get the first answer back
+**So that** a network failure never makes me charge, create, or send something twice
+
+**Acceptance criteria:**
+
+- [x] A repeated request with the same key from the same user within 24 hours replays the stored status and body without running the handler (spec B-17).
+- [x] A handler that fails releases its claim, so the retry runs again rather than answering 409 (spec B-18).
+- [x] Reusing a key for a different method, path, or body answers 422 `IDEMPOTENCY_KEY_REUSED` and runs no handler (spec B-40).
+- [x] Two simultaneous requests with one key run the handler once, and a claim left past its 60-second lease is taken over exactly once (spec B-44).
+- [x] A late completion or release by a request that was taken over changes nothing (spec B-53).
+
+**E2E test:** exercised through the test-only router in `apps/server/tests/integration/middleware/idempotency/`; the first real replayable route is slice 06's checkout.
+**Ticket:** IAN-336

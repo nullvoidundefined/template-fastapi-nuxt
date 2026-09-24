@@ -1,0 +1,12 @@
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-body);
+}
+
+.table th,
+.table td {
+    padding: var(--spacing-3);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}

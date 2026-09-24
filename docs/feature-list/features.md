@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-24 (slice 04: password reset end to end)
+Last updated: 2026-09-24 (slice 05: idempotency keys, roles, and the admin page)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -46,9 +46,16 @@ the date and what changed. Section shape:
 | UI kit: Button, Modal, Toast, TextField with Storybook stories and a visual-regression CI job           | **Complete** | US-AUTH-004; spec B-39, B-48                                                                                                                                                  |
 | Register, log-in and dashboard password-change forms with field-level errors                            | **Complete** | US-AUTH-004; spec B-38, B-50                                                                                                                                                  |
 | Password reset: `user_password_resets`, the forgot and reset endpoints, and the arq email job           | **Complete** | US-AUTH-005; spec B-14, B-15, B-36, B-47; the pages ship with it (Resend client, `with_client_telemetry`, retries); the two pages (B-36) arrive in the slice 04 frontend half |
+| Idempotency keys: replay, release on failure, reuse refusal, lease takeover                             | **Complete** | US-INFRA-009; spec B-17, B-18, B-40, B-44, B-53                                                                                                                               |
 
 ## Landing
 
 | Feature                                        | Status       | Notes                                                                               |
 | ---------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
 | Landing page with links to log in and register | **Complete** | US-LANDING-001; spec B-49; PR #7; the log-in and register pages shipped in slice 03 |
+
+## Admin
+
+| Feature                                                              | Status       | Notes                   |
+| -------------------------------------------------------------------- | ------------ | ----------------------- |
+| Roles, `require_admin`, `GET /v1/admin/users`, and the `/admin` page | **Complete** | US-ADMIN-001; spec B-19 |
