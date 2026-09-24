@@ -171,14 +171,21 @@ def make_stripe_id(prefix: str) -> str:
 
 
 def build_stripe_event(
-    event_type: str, data_object: dict[str, Any], event_id: str | None = None
+    event_type: str,
+    data_object: dict[str, Any],
+    event_id: str | None = None,
+    created: int | None = None,
 ) -> dict[str, Any]:
-    """Return a Stripe event envelope around one object, as Stripe delivers it."""
+    """Return a Stripe event envelope around one object, as Stripe delivers it.
+
+    `created` is the Unix second Stripe stamps on the event, now unless a test sets it, which is
+    how a test delivers events out of the order Stripe created them.
+    """
     return {
         "id": event_id or make_stripe_id("evt"),
         "object": "event",
         "api_version": "2025-03-31.basil",
-        "created": int(time.time()),
+        "created": int(time.time()) if created is None else created,
         "type": event_type,
         "livemode": False,
         "data": {"object": data_object},

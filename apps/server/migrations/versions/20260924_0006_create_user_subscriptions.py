@@ -6,6 +6,10 @@ one, and both are nullable, because a row can exist before Stripe has named both
 CASCADE` removes a deleted account's row with it; the unique constraint on `user_id` is also the
 index the portal's lookup uses.
 
+`last_stripe_event_created_at` holds the `created` time of the subscription event last applied to
+the row. Stripe does not deliver events in order, so a subscription event older than it is
+dropped rather than applied over newer state. It is null until the first subscription event.
+
 The status enum holds the Express template's `subscription_status` values, which are Stripe's own,
 and defaults to `incomplete`, which is what Stripe calls a subscription that has not yet been paid.
 
@@ -69,6 +73,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("false"),
         ),
+        sa.Column("last_stripe_event_created_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

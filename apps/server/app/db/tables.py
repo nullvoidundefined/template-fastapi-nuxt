@@ -190,6 +190,8 @@ user_subscriptions = sa.Table(
     sa.Column(
         "is_canceling_at_period_end", sa.Boolean(), nullable=False, server_default=sa.text("false")
     ),
+    # The `created` time of the subscription event last applied; an older event is dropped.
+    sa.Column("last_stripe_event_created_at", sa.DateTime(timezone=True), nullable=True),
     sa.Column(
         "created_at",
         sa.DateTime(timezone=True),

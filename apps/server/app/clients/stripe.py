@@ -140,10 +140,14 @@ def require_session_url(url: str | None) -> str:
 
 @dataclass(slots=True, frozen=True)
 class StripeWebhookEvent:
-    """One verified Stripe event: its id, its type, and the object it is about, as plain JSON."""
+    """One verified Stripe event: its id, its type, when Stripe created it, and its object.
+
+    `created` is Stripe's Unix second, which orders events that Stripe may deliver out of order.
+    """
 
     id: str
     type: str
+    created: int
     data_object: dict[str, Any]
 
 
@@ -171,7 +175,10 @@ def construct_webhook_event(
         )
         event = json.loads(payload)
         return StripeWebhookEvent(
-            id=str(event["id"]), type=str(event["type"]), data_object=dict(event["data"]["object"])
+            id=str(event["id"]),
+            type=str(event["type"]),
+            created=int(event["created"]),
+            data_object=dict(event["data"]["object"]),
         )
     except (stripe.SignatureVerificationError, ValueError, LookupError, TypeError) as err:
         logger.warning("stripe_webhook_signature_rejected", exc_info=err)

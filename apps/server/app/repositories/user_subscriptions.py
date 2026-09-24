@@ -7,6 +7,8 @@ on `user_id`, the one-row-per-user constraint, so a user who subscribes again af
 the same row pointed at the new customer and subscription by that checkout. A subscription event's
 own upsert is narrower: it takes over a row only when the row names no subscription yet or names
 this one, so a late event for a subscription the user has since replaced cannot repoint the row.
+Both subscription writes also require the event to be at least as new as the one last applied,
+by Stripe's `created` time, so an event delivered out of order never overwrites newer state.
 """
 
 import uuid
@@ -14,7 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, or_, select, update
+from sqlalchemy import ColumnElement, Row, and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -24,13 +26,14 @@ from app.db.tables import user_subscriptions
 
 @dataclass(slots=True, frozen=True)
 class SubscriptionState:
-    """The columns a Stripe subscription event writes, all of them at once."""
+    """The columns a Stripe subscription event writes, all of them at once, and the event's time."""
 
     status: UserSubscriptionStatus
     plan_id: str | None
     current_period_start: datetime | None
     current_period_end: datetime | None
     is_canceling_at_period_end: bool
+    last_stripe_event_created_at: datetime
 
 
 async def get_subscription_by_user_id(
@@ -61,10 +64,13 @@ async def link_subscription_to_user(
 async def update_subscription_state(
     connection: AsyncConnection, subscription_id: str, state: SubscriptionState
 ) -> bool:
-    """Write the state onto the row naming the subscription; False when no row names it."""
+    """Write the state onto the row naming the subscription; False when none, or it is newer."""
     statement = (
         update(user_subscriptions)
-        .where(user_subscriptions.c.stripe_subscription_id == subscription_id)
+        .where(
+            user_subscriptions.c.stripe_subscription_id == subscription_id,
+            build_not_newer_condition(state),
+        )
         .values(**build_state_values(state))
         .returning(user_subscriptions.c.id)
     )
@@ -78,7 +84,10 @@ async def upsert_subscription_for_user(
     subscription_id: str,
     state: SubscriptionState,
 ) -> bool:
-    """Create the user's row, or fill one naming no other subscription; False when it names one."""
+    """Create the user's row, or fill one naming no other subscription or no newer event.
+
+    False when the row names another subscription or holds a newer event, and nothing is written.
+    """
     values = {
         "stripe_customer_id": customer_id,
         "stripe_subscription_id": subscription_id,
@@ -90,9 +99,12 @@ async def upsert_subscription_for_user(
         .on_conflict_do_update(
             index_elements=[user_subscriptions.c.user_id],
             set_=values,
-            where=or_(
-                user_subscriptions.c.stripe_subscription_id.is_(None),
-                user_subscriptions.c.stripe_subscription_id == subscription_id,
+            where=and_(
+                or_(
+                    user_subscriptions.c.stripe_subscription_id.is_(None),
+                    user_subscriptions.c.stripe_subscription_id == subscription_id,
+                ),
+                build_not_newer_condition(state),
             ),
         )
         .returning(user_subscriptions.c.id)
@@ -111,6 +123,12 @@ async def set_subscription_status(
         .returning(user_subscriptions.c.id)
     )
     return (await connection.execute(statement)).first() is not None
+
+
+def build_not_newer_condition(state: SubscriptionState) -> ColumnElement[bool]:
+    """Match a row whose last applied event is no newer than this state's, or that has none."""
+    last_applied = user_subscriptions.c.last_stripe_event_created_at
+    return or_(last_applied.is_(None), last_applied <= state.last_stripe_event_created_at)
 
 
 def build_state_values(state: SubscriptionState) -> dict[str, Any]:

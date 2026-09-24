@@ -63,6 +63,10 @@ INSERT_LEDGER_SQL = text(
     "RETURNING id, attempted_at, processed_at"
 )
 DELETE_LEDGER_SQL = text("DELETE FROM billing_webhook_events WHERE stripe_event_id = :event_id")
+COLUMN_SHAPE_SQL = text(
+    "SELECT data_type, is_nullable FROM information_schema.columns "
+    "WHERE table_name = :table_name AND column_name = :column_name"
+)
 
 
 @pytest_asyncio.fixture
@@ -151,6 +155,31 @@ async def test_user_subscriptions_holds_one_row_per_user_with_express_statuses(
         async with database_engine.begin() as connection:
             await connection.execute(DELETE_USER_SQL, {"user_id": user_id})
             await connection.execute(DELETE_USER_SQL, {"user_id": other_user_id})
+
+
+@pytest.mark.integration
+async def test_user_subscriptions_records_the_last_applied_stripe_event_time(
+    database_engine: AsyncEngine,
+) -> None:
+    """A nullable timestamptz holds the `created` of the subscription event last applied.
+
+    It is null until a subscription event is applied, which is what lets a row seeded by checkout
+    take the first subscription event whatever its time.
+    """
+    async with database_engine.connect() as connection:
+        shape = (
+            await connection.execute(
+                COLUMN_SHAPE_SQL,
+                {
+                    "column_name": "last_stripe_event_created_at",
+                    "table_name": "user_subscriptions",
+                },
+            )
+        ).one_or_none()
+
+    assert shape is not None, "user_subscriptions.last_stripe_event_created_at is missing"
+    assert shape.data_type == "timestamp with time zone"
+    assert shape.is_nullable == "YES"
 
 
 @pytest.mark.integration

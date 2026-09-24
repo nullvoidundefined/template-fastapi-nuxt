@@ -8,6 +8,7 @@ which the shared trigger advances on any UPDATE, so even a write of unchanged va
 """
 
 import json
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -29,6 +30,7 @@ PERIOD_START_AT = datetime(2026, 1, 1, tzinfo=UTC)
 PERIOD_END_AT = datetime(2026, 2, 1, tzinfo=UTC)
 STALE_SIGNATURE_AGE_SECONDS = 3600
 GLOBAL_RATE_LIMIT = 100
+EARLIER_EVENT_SECONDS = 60
 STALE_CLAIM_MINUTES_AGO = 11
 FRESH_CLAIM_MINUTES_AGO = 2
 
@@ -361,6 +363,65 @@ async def test_b51_a_subscription_event_fills_a_row_that_names_no_subscription_y
     stored = await billing_db.read_subscription(user_id)
     assert stored.stripe_subscription_id == subscription_id
     assert stored.status == "active"
+
+
+@pytest.mark.integration
+async def test_b51_an_update_created_before_the_deletion_but_delivered_after_it_changes_nothing(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """Stripe does not order deliveries, so an older `updated` must not revive a canceled row.
+
+    The late update carries the user's metadata too, so neither the update by subscription id nor
+    the metadata fallback may apply it.
+    """
+    user_id, customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "out-of-order"
+    )
+    metadata = {"user_id": str(user_id)}
+    deleted_at = int(time.time())
+    deletion = build_stripe_event(
+        "customer.subscription.deleted",
+        build_subscription(subscription_id, customer_id, "canceled", metadata=metadata),
+        created=deleted_at,
+    )
+    late_update = build_stripe_event(
+        "customer.subscription.updated",
+        build_subscription(subscription_id, customer_id, "active", metadata=metadata),
+        created=deleted_at - EARLIER_EVENT_SECONDS,
+    )
+
+    deleted = await webhook_sender.deliver(deletion)
+    canceled = await billing_db.read_subscription(user_id)
+    updated = await webhook_sender.deliver(late_update)
+
+    assert deleted.status_code == 200, deleted.text
+    assert canceled.status == "canceled"
+    assert updated.status_code == 200, updated.text
+    assert await billing_db.read_subscription(user_id) == canceled
+    [ledger_row] = await webhook_sender.read_ledger(late_update["id"])
+    assert ledger_row.status == "processed"
+
+
+@pytest.mark.integration
+async def test_b51_a_subscription_event_created_in_the_same_second_as_the_last_is_applied(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """Stripe stamps whole seconds, so an event as old as the stored one is still applied."""
+    user_id, customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "same-second"
+    )
+    created_at = int(time.time())
+    for status in ("trialing", "active"):
+        response = await webhook_sender.deliver(
+            build_stripe_event(
+                "customer.subscription.updated",
+                build_subscription(subscription_id, customer_id, status),
+                created=created_at,
+            )
+        )
+        assert response.status_code == 200, response.text
+
+    assert (await billing_db.read_subscription(user_id)).status == "active"
 
 
 @pytest.mark.integration

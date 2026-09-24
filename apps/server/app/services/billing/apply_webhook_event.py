@@ -7,7 +7,9 @@ row naming the subscription; when no row names it yet, because Stripe delivered 
 before the checkout, the subscription's own `metadata.user_id` (set at checkout) creates the row,
 or fills the user's row when it names no subscription yet. A user's row that already names a
 different subscription is left alone: the event is a late one for a subscription the user has
-since replaced, and it is logged as `billing_subscription_event_ignored`.
+since replaced, and it is logged as `billing_subscription_event_ignored`. Stripe does not deliver
+events in order, so a subscription event created before the one last applied to the row is
+dropped the same way: the row stores the event's `created` time with the state it wrote.
 `invoice.payment_failed` sets `past_due` on the row naming the invoice's subscription.
 
 A payload whose fields do not validate raises, which fails the event so Stripe retries it. An event
@@ -18,7 +20,6 @@ changes nothing: retrying it could never succeed.
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -41,22 +42,20 @@ from app.schemas.billing import (
 
 USER_ID_METADATA_KEY = "user_id"
 
-EventHandler = Callable[[AsyncConnection, dict[str, Any]], Awaitable[None]]
+EventHandler = Callable[[AsyncConnection, StripeWebhookEvent], Awaitable[None]]
 
 logger = structlog.get_logger(__name__)
 
 
 async def apply_webhook_event(connection: AsyncConnection, event: StripeWebhookEvent) -> None:
-    """Run the handler registered for the event's type on the object it carries."""
+    """Run the handler registered for the event's type on the event."""
     handler = EVENT_HANDLERS[StripeEventType(event.type)]
-    await handler(connection, event.data_object)
+    await handler(connection, event)
 
 
-async def apply_checkout_completed(
-    connection: AsyncConnection, data_object: dict[str, Any]
-) -> None:
+async def apply_checkout_completed(connection: AsyncConnection, event: StripeWebhookEvent) -> None:
     """Link the session's customer and subscription to the user its metadata names."""
-    session = StripeCheckoutSession.model_validate(data_object)
+    session = StripeCheckoutSession.model_validate(event.data_object)
     user_id = read_metadata_user_id(session.metadata or {})
     if user_id is None or session.customer is None or session.subscription is None:
         logger.warning("billing_checkout_unlinkable", checkout_session_id=session.id)
@@ -64,12 +63,10 @@ async def apply_checkout_completed(
     await link_subscription_to_user(connection, user_id, session.customer, session.subscription)
 
 
-async def apply_subscription_change(
-    connection: AsyncConnection, data_object: dict[str, Any]
-) -> None:
+async def apply_subscription_change(connection: AsyncConnection, event: StripeWebhookEvent) -> None:
     """Write the subscription's state onto its row, creating the row from metadata if needed."""
-    subscription = StripeSubscription.model_validate(data_object)
-    state = build_subscription_state(subscription)
+    subscription = StripeSubscription.model_validate(event.data_object)
+    state = build_subscription_state(subscription, event.created)
     if await update_subscription_state(connection, subscription.id, state):
         return
     user_id = read_metadata_user_id(subscription.metadata)
@@ -86,9 +83,9 @@ async def apply_subscription_change(
         )
 
 
-async def apply_payment_failed(connection: AsyncConnection, data_object: dict[str, Any]) -> None:
+async def apply_payment_failed(connection: AsyncConnection, event: StripeWebhookEvent) -> None:
     """Mark the invoice's subscription past due."""
-    invoice = StripeInvoice.model_validate(data_object)
+    invoice = StripeInvoice.model_validate(event.data_object)
     subscription_id = read_invoice_subscription_id(invoice)
     if subscription_id is None:
         logger.info("billing_invoice_without_subscription", stripe_invoice_id=invoice.id)
@@ -105,7 +102,9 @@ EVENT_HANDLERS: Mapping[StripeEventType, EventHandler] = {
 }
 
 
-def build_subscription_state(subscription: StripeSubscription) -> SubscriptionState:
+def build_subscription_state(
+    subscription: StripeSubscription, event_created: int
+) -> SubscriptionState:
     """Return the columns to write, reading the price and period from the first item."""
     first_item = subscription.items.data[0] if subscription.items.data else None
     period_start, period_end = read_subscription_period(subscription, first_item)
@@ -115,6 +114,7 @@ def build_subscription_state(subscription: StripeSubscription) -> SubscriptionSt
         current_period_start=convert_stripe_timestamp(period_start),
         current_period_end=convert_stripe_timestamp(period_end),
         is_canceling_at_period_end=subscription.cancel_at_period_end,
+        last_stripe_event_created_at=datetime.fromtimestamp(event_created, UTC),
     )
 
 

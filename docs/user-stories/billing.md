@@ -46,6 +46,7 @@
 - [x] A handler exception marks the event `failed` and answers 500 `BILLING_WEBHOOK_PROCESSING_FAILED`; a failed event and a claim older than ten minutes are processed on redelivery (spec B-41, B-42).
 - [x] A delivery that meets another delivery's claim younger than ten minutes answers 409 `BILLING_WEBHOOK_IN_PROGRESS`, so Stripe retries it rather than losing the event if that holder crashes; a redelivery of an event already processed answers 200 and changes nothing.
 - [x] A subscription event that no row names links the user its `metadata.user_id` names only when that user's row names no subscription yet; a late event for a subscription the user has since replaced changes nothing.
+- [x] Subscription events apply in the order Stripe created them: the row stores the `created` time of the last one applied, and an older event delivered later changes nothing.
 - [x] The webhook is exempt from the CSRF guard and from both rate-limit buckets (spec B-6, B-7).
 
 **E2E test:** none; Stripe cannot deliver to the end-to-end stack, so the integration suite `apps/server/tests/integration/routers/billing/test_billing_webhook.py` covers it with signed deliveries
