@@ -79,6 +79,7 @@ async def stop_worker_resources(ctx: WorkerContext) -> None:
     ctx["health_server"].should_exit = True
     await ctx["health_server_task"]
     await ctx["email_client"].close()
+    await ctx["analytics_client"].close()
     await ctx["engine"].dispose()
     structlog.get_logger().info("worker_stopped")
 

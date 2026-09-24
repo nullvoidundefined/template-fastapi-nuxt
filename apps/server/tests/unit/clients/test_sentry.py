@@ -112,6 +112,35 @@ def test_b30_before_send_removes_cookies_and_the_authorization_header() -> None:
     assert BEARER_VALUE not in repr(scrubbed)
 
 
+def test_b30_before_send_drops_the_request_body_and_every_query_string() -> None:
+    """A login body carries the email and a reset link carries its token; neither leaves."""
+    from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
+
+    event = {
+        "request": {
+            "data": {"email": "person@example.test", "password": "[Filtered]"},
+            "query_string": "token=from-the-email",
+            "url": "https://api.example.test/v1/auth/reset-password?token=from-the-email",
+        },
+        "breadcrumbs": {
+            "values": [
+                {"category": "httplib", "data": {"url": "https://x.test/a?token=t"}},
+                {"category": "log", "message": "no data here"},
+            ]
+        },
+    }
+
+    scrubbed = scrub_sentry_event(event, {})
+
+    assert scrubbed is not None
+    assert "data" not in scrubbed["request"]
+    assert "query_string" not in scrubbed["request"]
+    assert scrubbed["request"]["url"] == "https://api.example.test/v1/auth/reset-password"
+    assert scrubbed["breadcrumbs"]["values"][0]["data"] == {"url": "https://x.test/a"}
+    assert "person@example.test" not in repr(scrubbed)
+    assert "from-the-email" not in repr(scrubbed)
+
+
 def test_b30_before_send_accepts_an_event_with_no_request() -> None:
     """An event raised outside a request, such as in a job, passes through unchanged."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415

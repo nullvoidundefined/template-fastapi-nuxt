@@ -66,8 +66,16 @@ class AnalyticsClient:
             await with_client_telemetry(
                 POSTHOG_PROVIDER, CAPTURE_OPERATION, capture, POSTHOG_TIMEOUT_SECONDS
             )
-        except (OSError, TimeoutError, ValueError) as err:
+        # Broad on purpose: analytics must never be the reason a request fails (R-344 still holds,
+        # since the error is logged with its cause). Every failure is caught and reported alike.
+        except Exception as err:  # noqa: BLE001
             logger.warning("analytics_capture_failed", analytics_event=event.value, exc_info=err)
+
+    async def close(self) -> None:
+        """Flush queued events and stop the SDK, so a shutdown does not drop them."""
+        shutdown = getattr(self.posthog, "shutdown", None)
+        if shutdown is not None:
+            await asyncio.to_thread(shutdown)
 
 
 def build_event_properties(forwarded_headers: Mapping[str, str]) -> dict[str, object]:

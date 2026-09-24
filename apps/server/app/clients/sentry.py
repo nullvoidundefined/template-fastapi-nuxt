@@ -52,6 +52,12 @@ def scrub_sentry_event(event: Event, hint: Hint) -> Event | None:
     request = cast(dict[str, Any] | None, event.get("request"))
     if request is not None:
         request.pop("cookies", None)
+        # The body of a failing login or registration carries the email, and a reset link's query
+        # string carries its token, so neither the body nor any query string leaves the process.
+        request.pop("data", None)
+        request.pop("query_string", None)
+        if isinstance(request.get("url"), str):
+            request["url"] = strip_query_string(request["url"])
         headers = request.get("headers")
         if isinstance(headers, dict):
             request["headers"] = {
@@ -59,10 +65,28 @@ def scrub_sentry_event(event: Event, hint: Hint) -> Event | None:
                 for name, value in headers.items()
                 if name.lower() not in SCRUBBED_HEADER_NAMES
             }
+    strip_breadcrumb_queries(event)
     user = cast(dict[str, Any] | None, event.get("user"))
     if user is not None:
         event["user"] = {name: value for name, value in user.items() if name in KEPT_USER_FIELDS}
     return event
+
+
+def strip_query_string(url: str) -> str:
+    """Return the URL with everything from its first `?` or `#` removed."""
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+def strip_breadcrumb_queries(event: Event) -> None:
+    """Remove the query string from every string value a breadcrumb's data carries."""
+    breadcrumbs = cast(dict[str, Any] | None, event.get("breadcrumbs"))
+    for breadcrumb in (breadcrumbs or {}).get("values", []):
+        data = breadcrumb.get("data")
+        if isinstance(data, dict):
+            breadcrumb["data"] = {
+                name: strip_query_string(value) if isinstance(value, str) else value
+                for name, value in data.items()
+            }
 
 
 def tag_sentry_request(request_id: str | None) -> None:

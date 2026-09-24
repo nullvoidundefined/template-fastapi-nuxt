@@ -124,7 +124,11 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
             try:
                 await app.state.job_queue.aclose()
             finally:
-                await app.state.engine.dispose()
+                try:
+                    # Flushes PostHog's queue, so events from the last requests are not dropped.
+                    await app.state.analytics_client.close()
+                finally:
+                    await app.state.engine.dispose()
 
     return lifespan
 

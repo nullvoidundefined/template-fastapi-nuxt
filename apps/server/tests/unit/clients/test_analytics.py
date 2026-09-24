@@ -41,6 +41,71 @@ class RefusingPosthog:
         raise OSError("posthog unreachable")
 
 
+class BrokenPosthog:
+    """Stands in for an SDK failing in a way nobody anticipated, and records its shutdown."""
+
+    def __init__(self) -> None:
+        """Start running."""
+        self.is_shut_down = False
+
+    def capture(self, event: str, **kwargs: object) -> None:
+        """Raise an error outside the anticipated network and value errors."""
+        raise RuntimeError("posthog internal failure")
+
+    def shutdown(self) -> None:
+        """Record that queued events were flushed and the SDK stopped."""
+        self.is_shut_down = True
+
+
+async def test_b24_an_unanticipated_sdk_error_is_logged_and_never_fails_the_request() -> None:
+    """Analytics is never a reason a sign-in fails, whatever the SDK raises."""
+    from app.analytics.events import AnalyticsEvent  # noqa: PLC0415
+    from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
+
+    with structlog.testing.capture_logs() as logs:
+        try:
+            await AnalyticsClient(BrokenPosthog()).track_event(
+                USER_ID, AnalyticsEvent.USER_SIGNED_IN
+            )
+        except RuntimeError as err:
+            raise AssertionError("an analytics failure escaped into the request") from err
+
+    assert "analytics_capture_failed" in [log["event"] for log in logs]
+
+
+async def test_b24_closing_the_client_flushes_and_stops_the_sdk() -> None:
+    """Queued events are sent before the process exits, so a deploy does not drop them."""
+    from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
+
+    posthog = BrokenPosthog()
+    analytics_client = AnalyticsClient(posthog)
+
+    assert hasattr(analytics_client, "close"), "the client has no way to flush on shutdown"
+    await analytics_client.close()
+
+    assert posthog.is_shut_down
+
+
+async def test_b24_the_api_lifespan_closes_the_analytics_client_on_shutdown(monkeypatch) -> None:
+    """Shutting the API down flushes PostHog's queue."""
+    from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
+    from app.core.settings import get_settings  # noqa: PLC0415
+    from app.main import create_app  # noqa: PLC0415
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://127.0.0.1:1/none")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
+    get_settings.cache_clear()
+    application = create_app()
+    posthog = BrokenPosthog()
+    application.state.analytics_client = AnalyticsClient(posthog)
+
+    async with application.router.lifespan_context(application):
+        assert not posthog.is_shut_down
+
+    assert posthog.is_shut_down
+    get_settings.cache_clear()
+
+
 @pytest.fixture(autouse=True)
 def empty_structlog_context() -> Iterator[None]:
     """Start and end every test with no bound request ID."""
