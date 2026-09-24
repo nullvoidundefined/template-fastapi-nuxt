@@ -93,6 +93,45 @@ async def test_b18_a_cancellation_while_storing_the_response_still_completes_the
 
 
 @pytest.mark.integration
+async def test_b18_a_settlement_outliving_its_request_is_held_until_it_finishes(
+    idempotency_app, idempotency_db, handler_probe, monkeypatch
+) -> None:
+    """The event loop keeps only a weak reference to a task, so the module must hold it."""
+    real_complete = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
+    completion_entered = asyncio.Event()
+    completion_may_finish = asyncio.Event()
+
+    async def slow_complete(*args, **kwargs):
+        completion_entered.set()
+        await completion_may_finish.wait()
+        return await real_complete(*args, **kwargs)
+
+    monkeypatch.setattr(idempotency_module, COMPLETE_FUNCTION_NAME, slow_complete)
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+
+    async with idempotency_app as client:
+        request_task = asyncio.create_task(
+            client.post(
+                ECHO_PATH, content=encode_body({"n": 1}), headers=build_request_headers(user, key)
+            )
+        )
+        await asyncio.wait_for(completion_entered.wait(), timeout=10)
+        request_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request_task
+        held_while_running = len(getattr(idempotency_module, "PENDING_SETTLEMENTS", ()))
+        completion_may_finish.set()
+        for _ in range(100):
+            if not getattr(idempotency_module, "PENDING_SETTLEMENTS", ()):
+                break
+            await asyncio.sleep(0.05)
+
+    assert held_while_running == 1
+    assert len(getattr(idempotency_module, "PENDING_SETTLEMENTS", ())) == 0
+
+
+@pytest.mark.integration
 async def test_b40_the_same_key_on_a_different_query_string_is_a_reuse(
     idempotency_app, idempotency_db, handler_probe
 ) -> None:

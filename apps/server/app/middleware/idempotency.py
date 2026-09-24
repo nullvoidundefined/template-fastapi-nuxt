@@ -70,6 +70,8 @@ SERVER_ERROR_STATUS = 500
 # claim is left for its lease to lapse.
 COMPLETION_ATTEMPTS = 3
 COMPLETION_RETRY_DELAY_SECONDS = 0.05
+# Settlements still running after their request task was cancelled, held so none is collected.
+PENDING_SETTLEMENTS: set["asyncio.Future[None]"] = set()
 
 logger = structlog.get_logger(__name__)
 
@@ -189,6 +191,10 @@ class IdempotencyMiddleware:
         # lands now must not strand the claim in progress, where a retry would take it over and
         # run the side effect again. The settlement finishes even when this task is cancelled.
         settlement = asyncio.ensure_future(settle_claim(claim, captured))
+        # Held until done: once this task is cancelled nothing else references the settlement,
+        # and the event loop keeps only a weak reference to a running task.
+        PENDING_SETTLEMENTS.add(settlement)
+        settlement.add_done_callback(PENDING_SETTLEMENTS.discard)
         await asyncio.shield(settlement)
 
 
@@ -211,7 +217,11 @@ async def resolve_request_claim(scope: Scope, key: str, body: bytes) -> "Request
 
 
 def read_request_target(scope: Scope) -> str:
-    """Return the path with its query string, since both are part of what a key promises."""
+    """Return the path with its query string, since both are part of what a key promises.
+
+    The bytes are compared as sent, unsorted: a genuine retry resends the identical request, so a
+    reordered query string under the same key is treated as a different request, which is safe.
+    """
     query_string = scope.get("query_string", b"").decode("latin-1")
     return f"{scope['path']}?{query_string}" if query_string else scope["path"]
 
