@@ -12,6 +12,9 @@ from app.constants.user_roles import UserRole
 
 DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 100
+# Far past any real table, and far inside the int64 a Postgres OFFSET takes, so an absurd value
+# is a validation error rather than a database one.
+MAX_PAGE_OFFSET = 1_000_000
 
 
 class AdminUserData(BaseModel):

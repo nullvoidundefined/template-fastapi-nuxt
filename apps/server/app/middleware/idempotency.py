@@ -24,6 +24,7 @@ or a body that is not JSON releases the claim, so the client's retry runs again 
 statements carry this request's claim token, so a holder that was taken over changes nothing.
 """
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -64,6 +65,11 @@ KEY_REUSED_MESSAGE = "That Idempotency-Key was already used for a different requ
 KEY_IN_PROGRESS_MESSAGE = "A request with that Idempotency-Key is still in progress"
 CLAIM_INSERT_ATTEMPTS = 2
 SERVER_ERROR_STATUS = 500
+
+# Storing the response is retried this many times, with a short growing pause, before the
+# claim is left for its lease to lapse.
+COMPLETION_ATTEMPTS = 3
+COMPLETION_RETRY_DELAY_SECONDS = 0.05
 
 logger = structlog.get_logger(__name__)
 
@@ -179,7 +185,11 @@ class IdempotencyMiddleware:
             # must release its claim exactly as a failing one does.
             await release_claim_safely(claim)
             raise
-        await settle_claim(claim, captured)
+        # Shielded: the handler has answered and its transaction has committed, so a timeout that
+        # lands now must not strand the claim in progress, where a retry would take it over and
+        # run the side effect again. The settlement finishes even when this task is cancelled.
+        settlement = asyncio.ensure_future(settle_claim(claim, captured))
+        await asyncio.shield(settlement)
 
 
 async def resolve_request_claim(scope: Scope, key: str, body: bytes) -> "RequestClaim | None":
@@ -192,12 +202,18 @@ async def resolve_request_claim(scope: Scope, key: str, body: bytes) -> "Request
         key=key,
         user_id=user_id,
         method=scope["method"],
-        path=scope["path"],
+        path=read_request_target(scope),
         body_hash=hashlib.sha256(body).hexdigest(),
     )
     claim_token = uuid.uuid4()
     outcome = await resolve_claim(engine, request, claim_token)
     return RequestClaim(engine, request, claim_token, outcome)
+
+
+def read_request_target(scope: Scope) -> str:
+    """Return the path with its query string, since both are part of what a key promises."""
+    query_string = scope.get("query_string", b"").decode("latin-1")
+    return f"{scope['path']}?{query_string}" if query_string else scope["path"]
 
 
 def read_idempotency_key_header(scope: Scope) -> bytes | None:
@@ -332,16 +348,24 @@ async def settle_claim(claim: RequestClaim, captured: CapturedResponse) -> None:
 async def complete_claim_safely(
     claim: RequestClaim, status_code: int, response_body: object
 ) -> None:
-    """Store the response; a failure only logs, because the client already has its answer."""
-    try:
-        async with claim.engine.begin() as connection:
-            is_completed = await complete_idempotency_key(
-                connection, claim.request, claim.claim_token, status_code, response_body
-            )
-    except CONNECT_FAILURE_TYPES as err:
-        # The claim stays in progress until its lease lapses, and the next retry takes it over.
-        logger.error("idempotency_completion_failed", exc_info=err, path=claim.request.path)
-        return
+    """Store the response, retrying a transient failure, because an open claim can run twice.
+
+    The client already has its answer, so a failure is logged rather than raised. Retrying matters
+    because the handler's side effect has committed: a claim left in progress is taken over once
+    its lease lapses, and the retry that takes it over runs the side effect a second time.
+    """
+    for attempt in range(1, COMPLETION_ATTEMPTS + 1):
+        try:
+            async with claim.engine.begin() as connection:
+                is_completed = await complete_idempotency_key(
+                    connection, claim.request, claim.claim_token, status_code, response_body
+                )
+            break
+        except CONNECT_FAILURE_TYPES as err:
+            if attempt == COMPLETION_ATTEMPTS:
+                logger.error("idempotency_completion_failed", exc_info=err, path=claim.request.path)
+                return
+            await asyncio.sleep(COMPLETION_RETRY_DELAY_SECONDS * attempt)
     if not is_completed:
         logger.warning("idempotency_claim_superseded", path=claim.request.path)
 

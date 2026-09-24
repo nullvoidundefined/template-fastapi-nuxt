@@ -143,6 +143,7 @@ async def test_b19_limit_and_offset_page_through_users_in_a_stable_order(
         {"limit": "ten"},
         {"offset": "1; DROP TABLE users"},
         {"limit": "9" * 40},
+        {"offset": "9" * 40},
     ],
 )
 async def test_b19_an_out_of_range_or_malformed_page_answers_400(

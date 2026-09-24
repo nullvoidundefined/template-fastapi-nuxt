@@ -18,6 +18,7 @@ from app.dependencies.current_user import RequestConnection
 from app.schemas.admin import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
+    MAX_PAGE_OFFSET,
     AdminUserData,
     AdminUserListResponse,
     PageMeta,
@@ -27,7 +28,7 @@ from app.services.admin.list_users import list_users
 router = APIRouter(prefix="/v1/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 PageLimit = Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)]
-PageOffset = Annotated[int, Query(ge=0)]
+PageOffset = Annotated[int, Query(ge=0, le=MAX_PAGE_OFFSET)]
 
 
 @router.get("/users", response_model=AdminUserListResponse)
