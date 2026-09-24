@@ -19,6 +19,8 @@ export default defineNuxtConfig({
             // Both empty by default, which leaves PostHog and Sentry off (NUXT_PUBLIC_*).
             posthogKey: '',
             sentryDsn: '',
+            // The Stripe price the dashboard's Subscribe button buys (NUXT_PUBLIC_STRIPE_PRICE_ID).
+            stripePriceId: '',
         },
     },
     // Source maps upload from CI only, never from a developer machine (the Nuxt track's Sentry
