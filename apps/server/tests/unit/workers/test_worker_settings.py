@@ -241,6 +241,23 @@ def test_b26_worker_settings_schedule_delete_expired_rows_hourly_at_minute_zero(
     assert cleanup_cron_job.run_at_startup is False
 
 
+# arq's default job timeout is 300 seconds; a first run over a large backlog in the first table
+# would spend it all and starve the tables after it until that backlog cleared.
+CLEANUP_JOB_MINIMUM_TIMEOUT_SECONDS = 1800
+
+
+@pytest.mark.usefixtures("worker_environment")
+def test_b26_the_cleanup_cron_has_a_timeout_long_enough_for_a_backlog() -> None:
+    """B-26: the cleanup job gets its own, longer timeout rather than arq's 300 second default."""
+    worker_settings = import_worker_settings_module().WorkerSettings
+    [cleanup_cron_job] = [
+        cron_job for cron_job in worker_settings.cron_jobs if cron_job.name == CLEANUP_JOB_NAME
+    ]
+
+    assert cleanup_cron_job.timeout_s is not None
+    assert cleanup_cron_job.timeout_s >= CLEANUP_JOB_MINIMUM_TIMEOUT_SECONDS
+
+
 RESET_EMAIL_JOB_NAME = "send_password_reset_email"
 RESET_EMAIL_JOB_MODULE = "app.workers.jobs.send_password_reset_email"
 RESET_EMAIL_MAX_TRIES = 3

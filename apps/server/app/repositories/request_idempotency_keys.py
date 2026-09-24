@@ -12,8 +12,11 @@ so other requests see a claim the moment it is taken.
 
 `delete_stale_idempotency_keys_batch` is the hourly cleanup job's statement for this table: it
 deletes at most one batch of keys older than the replay window, found through the `created_at`
-index, and skips any row a live request holds locked. The batch is a materialized CTE, for the
-reason `delete_expired_sessions_batch` gives: a LIMIT subquery may run more than once per DELETE.
+index, and skips a row another transaction holds locked at that instant. A claim holds no lock
+while its handler runs, so a key claimed or taken over near the end of the window can still be
+deleted; its completion then finds nothing and the client's retry runs the handler again, the
+same exposure the claim's own replay-window check already has. The batch is a materialized CTE,
+for the reason `delete_expired_sessions_batch` gives: a LIMIT subquery may run more than once.
 """
 
 import uuid

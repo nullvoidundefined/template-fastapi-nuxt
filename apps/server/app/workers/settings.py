@@ -20,7 +20,7 @@ from arq.worker import func
 from app.clients.analytics import create_analytics_client
 from app.clients.disabled_email import DisabledEmailClient
 from app.clients.resend import ResendEmailClient
-from app.constants.cleanup import CLEANUP_CRON_MINUTE
+from app.constants.cleanup import CLEANUP_CRON_MINUTE, CLEANUP_JOB_TIMEOUT_SECONDS
 from app.constants.job_names import CLEANUP_JOB_NAME, RESET_EMAIL_JOB_NAME
 from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
 from app.core.logging import configure_logging
@@ -118,6 +118,7 @@ class WorkerSettings:
             name=CLEANUP_JOB_NAME,
             minute=CLEANUP_CRON_MINUTE,
             run_at_startup=False,
+            timeout=CLEANUP_JOB_TIMEOUT_SECONDS,
         ),
     ]
     redis_settings = build_redis_settings(get_settings())

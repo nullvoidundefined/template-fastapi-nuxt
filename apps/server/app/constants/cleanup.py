@@ -15,5 +15,8 @@ from app.constants.idempotency import REPLAY_WINDOW_HOURS
 
 CLEANUP_BATCH_SIZE = 1000
 CLEANUP_CRON_MINUTE = 0
+# arq's default is 300 seconds; a first run over a large backlog in the first table would spend
+# it all and starve the tables after it, so the hourly job gets half its interval instead.
+CLEANUP_JOB_TIMEOUT_SECONDS = 1800
 IDEMPOTENCY_KEY_RETENTION = timedelta(hours=REPLAY_WINDOW_HOURS)
 WEBHOOK_EVENT_RETENTION = timedelta(days=30)
