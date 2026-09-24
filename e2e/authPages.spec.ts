@@ -16,6 +16,7 @@ import { clearRateLimitCounters } from './rateLimitCounters';
 // Nitro's fixed compose address. Its own rate-limit bucket must never move (B-52).
 const NITRO_ADDRESS = '172.28.0.10';
 const CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
+const SESSION_COOKIE_NAME = 'sid';
 const passphrase = ['e2e', 'pages', 'passphrase', '6190'].join('-');
 const replacementPassphrase = ['e2e', 'pages', 'replacement', '2754'].join('-');
 
@@ -34,6 +35,27 @@ async function registerThroughProxy(context: BrowserContext, email: string): Pro
         ]),
     });
     expect(response.status(), await response.text()).toBe(201);
+}
+
+/**
+ * Log out through the proxy, then put the session cookie back into the jar.
+ *
+ * Logging out deletes the session row and answers with a `Set-Cookie` that expires the cookie, so
+ * the browser would otherwise hold no cookie at all. Restoring it leaves exactly the case B-12
+ * names: a cookie that is present and well formed but whose session the backend has revoked.
+ */
+async function revokeSessionKeepingCookie(context: BrowserContext): Promise<void> {
+    const sessionCookies = (await context.cookies()).filter(
+        (cookie) => cookie.name === SESSION_COOKIE_NAME,
+    );
+    expect(sessionCookies).toHaveLength(1);
+    const response = await context.request.post('/api/v1/auth/logout', { headers: CSRF_HEADERS });
+    expect(response.status(), await response.text()).toBe(204);
+    await context.addCookies(sessionCookies);
+    const restoredCookies = (await context.cookies()).filter(
+        (cookie) => cookie.name === SESSION_COOKIE_NAME,
+    );
+    expect(restoredCookies.map((cookie) => cookie.value)).toEqual([sessionCookies[0]!.value]);
 }
 
 /** Return whether the compose Redis holds a key, read through the container. */
@@ -102,9 +124,11 @@ test.describe('the auth gate', () => {
         await page.getByRole('button', { name: 'Change password' }).click();
         await expect(page.getByRole('status')).toContainText('Password changed');
 
-        // End the session, then leave and return through the client-side router, so the route
-        // middleware (not the Nitro gate on a full page load) is what has to notice.
-        await context.clearCookies();
+        // Revoke the session on the backend but keep its cookie in the jar, then leave and return
+        // through the client-side router. The cookie is still present, so only the route
+        // middleware asking the backend (not the Nitro gate's presence check, and not a missing
+        // cookie) can notice that the session behind it is gone.
+        await revokeSessionKeepingCookie(context);
         await navigateClientSide(page, '/');
         await navigateClientSide(page, '/dashboard');
         await expect(page).toHaveURL(/\/login$/);
