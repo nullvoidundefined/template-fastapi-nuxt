@@ -154,6 +154,33 @@ describe('the reset-password page', () => {
         );
     });
 
+    it('B-15: explains a link with no token instead of showing a form that cannot work', async () => {
+        await renderSuspended(App, { route: '/reset-password' });
+
+        await waitFor(() =>
+            expect(screen.queryByRole('alert')?.textContent ?? '').toContain('incomplete'),
+        );
+        expect(screen.queryByLabelText('New password')).toBeNull();
+        const requestLink = screen.queryByRole('link', { name: 'Request a new link' });
+        expect(requestLink?.getAttribute('href')).toBe('/forgot-password');
+    });
+
+    it('B-15: removes the token from the address bar and still submits it', async () => {
+        planRoutes({ [resetRoute]: { status: 204 } });
+        await renderSuspended(App, { route: `/reset-password?token=${resetToken}` });
+
+        await waitFor(() =>
+            expect(useRouter().currentRoute.value.fullPath).toBe('/reset-password'),
+        );
+        await fillField('New password', newPassphrase);
+        await fillField('Confirm new password', newPassphrase);
+        await pressButton('Reset password');
+
+        await waitFor(() => expect(readSentRequests(resetRoute)).toHaveLength(1));
+        const [sentRequest] = readSentRequests(resetRoute);
+        expect(((await sentRequest?.json()) as { token?: string }).token).toBe(resetToken);
+    });
+
     it('B-15: shows the refusal for a used or expired token', async () => {
         planRoutes({
             [resetRoute]: {
