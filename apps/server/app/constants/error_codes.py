@@ -24,6 +24,16 @@ class ErrorCode(StrEnum):
     AUTH_EMAIL_ALREADY_REGISTERED = "AUTH_EMAIL_ALREADY_REGISTERED"
     # A password-reset token is unknown, already used, expired, or superseded (slice 04).
     AUTH_RESET_TOKEN_INVALID = "AUTH_RESET_TOKEN_INVALID"  # noqa: S105 (a code, not a secret)
+    # The portal was requested by a user with no Stripe customer yet (slice 06).
+    BILLING_NO_ACCOUNT = "BILLING_NO_ACCOUNT"
+    # A billing route was called on a deployment with no STRIPE_SECRET_KEY (slice 06).
+    BILLING_NOT_CONFIGURED = "BILLING_NOT_CONFIGURED"
+    # A webhook arrived without a Stripe-Signature header, or with no signing secret set (slice 06).
+    BILLING_WEBHOOK_MISCONFIGURED = "BILLING_WEBHOOK_MISCONFIGURED"
+    # A webhook's signature did not verify against the signing secret (slice 06).
+    BILLING_WEBHOOK_INVALID_SIGNATURE = "BILLING_WEBHOOK_INVALID_SIGNATURE"
+    # A verified webhook's handler raised; the event is marked failed for a retry (slice 06).
+    BILLING_WEBHOOK_PROCESSING_FAILED = "BILLING_WEBHOOK_PROCESSING_FAILED"
     # A state-changing request arrived without X-Requested-With (slice 02, PR 4).
     CSRF_HEADER_MISSING = "CSRF_HEADER_MISSING"
     # Another request holding the same Idempotency-Key is still running (slice 05).

@@ -18,6 +18,7 @@ from app.clients.analytics import create_analytics_client
 from app.clients.job_queue import create_job_queue
 from app.clients.r2 import create_r2_client
 from app.clients.sentry import initialize_sentry
+from app.clients.stripe import create_stripe_billing_client
 from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
@@ -29,7 +30,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
-from app.routers import admin, auth, health, uploads
+from app.routers import admin, auth, billing, health, uploads
 from app.schemas.errors import ErrorResponse, FieldError
 
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(uploads.router)
+    app.include_router(billing.router)
     return app
 
 
@@ -111,24 +113,32 @@ def register_integrations(app: FastAPI, settings: Settings) -> None:
 
 
 def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
-    """Return a lifespan that opens the engine and the job queue, and closes both on shutdown."""
+    """Return a lifespan that opens the engine, the job queue, and Stripe, and closes all three.
+
+    The Stripe client is None when billing is not configured, and then there is nothing to close.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = create_database_engine(settings)
         app.state.job_queue = create_job_queue(settings)
+        app.state.stripe_billing_client = create_stripe_billing_client(settings)
         try:
             yield
         finally:
-            # Nested, so a Redis error while closing the queue cannot skip the engine's disposal.
+            # Nested, so an error while closing one resource cannot skip closing the next.
             try:
-                await app.state.job_queue.aclose()
+                if app.state.stripe_billing_client is not None:
+                    await app.state.stripe_billing_client.close()
             finally:
                 try:
-                    # Flushes PostHog's queue, so events from the last requests are not dropped.
-                    await app.state.analytics_client.close()
+                    await app.state.job_queue.aclose()
                 finally:
-                    await app.state.engine.dispose()
+                    try:
+                        # Flushes PostHog's queue, so events from the last requests are not lost.
+                        await app.state.analytics_client.close()
+                    finally:
+                        await app.state.engine.dispose()
 
     return lifespan
 

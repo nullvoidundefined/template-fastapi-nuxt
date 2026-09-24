@@ -40,12 +40,21 @@ class Settings(BaseSettings):
     cors_origin: str | None = None
     forwarded_allow_ips: str | None = None
     worker_port: int = 3002
-    # The web origin the reset-email link is built from, and later the Stripe redirect URLs.
+    # The web origin the reset-email link and the Stripe redirect URLs are built from.
     client_url: str = "http://localhost:3000"
     # Without a key the worker logs each email instead of sending it, so development and tests
     # run without the provider.
     resend_api_key: SecretStr | None = None
     email_from: str = "Template <noreply@example.test>"
+    # Billing is optional in every environment, production included, so a deployment that has
+    # not set up Stripe still starts. The absence is loud where it matters instead: without the
+    # key the checkout and portal routes answer 503 `BILLING_NOT_CONFIGURED`, and without the
+    # signing secret every webhook delivery answers 400 `BILLING_WEBHOOK_MISCONFIGURED`, which
+    # Stripe's dashboard shows as failing deliveries.
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    # Replaces https://api.stripe.com, so the end-to-end stack can point the SDK at stripe-mock.
+    stripe_api_base: str | None = None
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:
