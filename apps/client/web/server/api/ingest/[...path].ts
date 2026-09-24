@@ -13,21 +13,23 @@
  * otherwise turn the host into userinfo and send the request anywhere. And the visitor's
  * credentials and forwarding headers are removed, since PostHog has no use for them.
  */
+import {
+    CLIENT_FORWARDING_HEADER_NAMES,
+    withholdRequestHeaders,
+} from '../../services/withholdRequestHeaders';
+
 const INGEST_ROUTE_PREFIX = '/api/ingest';
 const NOT_FOUND_STATUS = 404;
 // The endpoints posthog-js calls: events, the batch and flag endpoints, and its static assets.
 const INGEST_PATH_PATTERN =
     /^\/(?:e|i\/v0\/e|batch|flags|decide|static\/\w[\w.-]*|array\/[\w-]+\/config(?:\.js)?)\/?$/;
+// The visitor's credentials and request ID on top of the shared forwarding headers.
 const WITHHELD_HEADER_NAMES = [
+    ...CLIENT_FORWARDING_HEADER_NAMES,
     'authorization',
     'cookie',
-    'forwarded',
     // The reset page's address, token included, would otherwise ride along as the referrer.
     'referer',
-    'x-forwarded-for',
-    'x-forwarded-host',
-    'x-forwarded-proto',
-    'x-real-ip',
     'x-request-id',
 ];
 
@@ -41,10 +43,7 @@ export default defineEventHandler(async (event) => {
         // backend catch-all, which would forward the hostile path to FastAPI instead.
         throw createError({ statusCode: NOT_FOUND_STATUS, statusMessage: 'Not Found' });
     }
-    const { headers } = event.node.req;
-    for (const headerName of WITHHELD_HEADER_NAMES) {
-        Reflect.deleteProperty(headers, headerName);
-    }
+    withholdRequestHeaders(event, WITHHELD_HEADER_NAMES);
     return proxyRequest(event, target);
 });
 

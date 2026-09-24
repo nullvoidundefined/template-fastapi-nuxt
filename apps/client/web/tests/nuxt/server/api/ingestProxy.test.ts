@@ -228,6 +228,30 @@ describe('the PostHog ingestion proxy at /api/ingest/**', () => {
         expect(ingestRequest!.headers.get('content-type')).toBe('application/json');
     });
 
+    it('IAN-335: withholds the port, prefix, and real-IP forwarding headers from PostHog as well', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/ingest/e/', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-forwarded-port': '8443',
+                    'x-forwarded-prefix': '/forged',
+                    'x-real-ip': '203.0.113.9',
+                },
+                body: '{}',
+            }),
+        );
+
+        expect(upstreamRequests).toHaveLength(1);
+        const { headers: ingestHeaders } = upstreamRequests[0]!;
+        expect(ingestHeaders.get('x-forwarded-port')).toBeNull();
+        expect(ingestHeaders.get('x-forwarded-prefix')).toBeNull();
+        expect(ingestHeaders.get('x-real-ip')).toBeNull();
+        expect(ingestHeaders.get('content-type')).toBe('application/json');
+    });
+
     it('B-24: leaves every other /api path to the backend proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 

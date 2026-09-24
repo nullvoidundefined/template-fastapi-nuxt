@@ -13,22 +13,23 @@
  * `X-Forwarded-For`, `X-Forwarded-Proto`, and their kin from Nitro's address. `X-Forwarded-For` is
  * replaced with the one trustworthy entry, or dropped when none resolves, because every entry but
  * the last is client-supplied and the backend's rate limiter keys on what arrives, so forwarding
- * the chain would let one client rotate buckets at will. `X-Forwarded-Proto`, `X-Forwarded-Host`,
- * and `Forwarded` are dropped, so a client cannot claim a scheme or host it did not use.
+ * the chain would let one client rotate buckets at will. Every other forwarding header in the
+ * shared list is dropped, so a client cannot claim an address, scheme, host, port, or prefix it
+ * did not use.
+ *
+ * The headers are deleted from the inbound request itself, because `proxyRequest` can only add or
+ * overwrite. Anything that reads the request afterwards, Sentry's error handler included, sees it
+ * without them, which loses nothing: they were the client's claims, not facts about the request.
  */
 import { resolveClientAddress } from '#shared/services/resolveClientAddress';
 
 import { isForwardableBackendPath } from '../services/isForwardableBackendPath';
+import {
+    CLIENT_FORWARDING_HEADER_NAMES,
+    withholdRequestHeaders,
+} from '../services/withholdRequestHeaders';
 
 const NOT_FOUND_STATUS = 404;
-// Headers a client can set to lie about where a request came from; the backend trusts them from
-// Nitro, so none of them is forwarded as the client sent it.
-const CLIENT_FORWARDING_HEADER_NAMES = new Set([
-    'forwarded',
-    'x-forwarded-for',
-    'x-forwarded-host',
-    'x-forwarded-proto',
-]);
 
 export default defineEventHandler(async (event) => {
     const { apiBaseUrl } = useRuntimeConfig(event);
@@ -38,34 +39,19 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: NOT_FOUND_STATUS, statusMessage: 'Not Found' });
     }
     const target = `${apiBaseUrl}/${backendPath}${getRequestURL(event).search}`;
+    // Resolved before the chain is withheld, since the trusted entry is read from it.
     const forwardedAddressHeader = buildForwardedAddressHeader(event);
-    stripClientForwardingHeaders(event);
+    withholdRequestHeaders(event, CLIENT_FORWARDING_HEADER_NAMES);
     return proxyRequest(event, target, { headers: forwardedAddressHeader });
 });
 
-type ProxiedEvent = Parameters<typeof getRequestIP>[0];
-
 /** Return the `X-Forwarded-For` override, or nothing to forward when no address is trustworthy. */
-function buildForwardedAddressHeader(event: ProxiedEvent): Record<string, string> {
+function buildForwardedAddressHeader(
+    event: Parameters<typeof getRequestIP>[0],
+): Record<string, string> {
     const clientAddress = resolveClientAddress(
         getRequestHeader(event, 'x-forwarded-for'),
         getRequestIP(event),
     );
     return clientAddress ? { 'x-forwarded-for': clientAddress } : {};
-}
-
-/**
- * Remove the client's own forwarding headers from the inbound request before it is copied.
- *
- * `proxyRequest` always starts from every inbound header and can only add or overwrite, never
- * remove, so the inbound request's headers are replaced with a copy that leaves them out. The route is the last reader
- * of the request, so nothing downstream loses a header it needed.
- */
-function stripClientForwardingHeaders(event: ProxiedEvent): void {
-    const inboundRequest = event.node.req;
-    inboundRequest.headers = Object.fromEntries(
-        Object.entries(inboundRequest.headers).filter(
-            ([headerName]) => !CLIENT_FORWARDING_HEADER_NAMES.has(headerName),
-        ),
-    );
 }

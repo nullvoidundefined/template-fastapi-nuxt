@@ -302,6 +302,28 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         expect(backendHeaders.get('x-requested-with')).toBe(csrfHeaderValue);
     });
 
+    it('US-AUTH-003, IAN-335: strips client-sent X-Real-IP, X-Forwarded-Port, and X-Forwarded-Prefix too', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/me', {
+                headers: {
+                    'X-Real-IP': forgedForwardedForEntry,
+                    'X-Forwarded-Port': '8443',
+                    'X-Forwarded-Prefix': '/forged',
+                    'X-Requested-With': csrfHeaderValue,
+                },
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        const { headers: backendHeaders } = backendRequests[0]!;
+        expect(backendHeaders.get('x-real-ip')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-port')).toBeNull();
+        expect(backendHeaders.get('x-forwarded-prefix')).toBeNull();
+        expect(backendHeaders.get('x-requested-with')).toBe(csrfHeaderValue);
+    });
+
     it('US-AUTH-003: answers /api/health from the Nuxt server itself, never through the proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 
