@@ -227,11 +227,11 @@ async def test_b26_delete_expired_rows_deletes_nothing_on_a_second_run(
         await seed_sessions(connection, seeded_user_id, markers["live"], 1, timedelta(hours=1))
 
     await run_cleanup_job(database_engine)
-    await run_cleanup_job(database_engine)
+    second_deleted_counts = await run_cleanup_job(database_engine)
 
-    # Asserted on this test's own rows only: the integration database is shared, and a test in
-    # another shard may be seeding expired rows of its own while this one runs.
-    assert await count_seeded_rows(database_engine, COUNT_SESSIONS_SQL, markers["expired"]) == 0
+    # Exact, because the integration suite runs serially against one database. If it is ever
+    # sharded, these cleanup tests need a database per worker rather than looser assertions.
+    assert second_deleted_counts == dict.fromkeys(CLEANED_TABLES, 0)
     assert await count_seeded_rows(database_engine, COUNT_SESSIONS_SQL, markers["live"]) == 1
 
 
@@ -330,7 +330,7 @@ async def test_b26_each_batch_deletes_at_most_the_batch_size_and_reports_its_cou
     async with database_engine.begin() as connection:
         deleted_count = await batch_function(connection, 2)
 
-    # The batch may take another shard's stale rows before this test's, so what is asserted is the
-    # bound: exactly the batch size went, and at least one of this test's three rows survived it.
+    # Exact, for the serial-suite reason given in the idempotency test above: the run beforehand
+    # cleared every other stale row, so the batch can only have taken two of these three.
     assert deleted_count == 2
-    assert await count_seeded_rows(database_engine, batch_case.count_sql, marker) >= 1
+    assert await count_seeded_rows(database_engine, batch_case.count_sql, marker) == 1
