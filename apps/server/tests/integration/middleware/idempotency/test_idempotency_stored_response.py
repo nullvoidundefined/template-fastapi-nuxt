@@ -22,9 +22,13 @@ from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
     HANDLER_COOKIE_NAME,
     HEADERS_PATH,
+    MALFORMED_LENGTH_PATH,
+    NO_CONTENT_PATH,
     OVERSIZED_PATH,
+    PROBLEM_PATH,
     STREAM_PATH,
     TEXT_PATH,
+    UNDECLARED_OVERSIZED_PATH,
     UNLISTED_HEADER_NAME,
     build_request_headers,
     build_unique_key,
@@ -81,12 +85,13 @@ async def test_a_replay_carries_the_allowlisted_headers_and_never_a_cookie(
     assert second.json() == first.json()
     assert second.headers.get("location") == CREATED_LOCATION
     assert second.headers.get("cache-control") == CREATED_CACHE_CONTROL
+    assert second.headers.get("content-encoding") == "identity"
     assert "set-cookie" not in second.headers
     assert UNLISTED_HEADER_NAME.lower() not in second.headers
     stored = await idempotency_db.read_stored_response(key, user.id)
     assert stored is not None
     stored_names = {name for name, _value in stored.response_headers}
-    assert stored_names == {"location", "cache-control"}
+    assert stored_names == {"location", "cache-control", "content-encoding"}
 
 
 @pytest.mark.integration
@@ -160,3 +165,95 @@ async def test_a_claim_completed_before_the_raw_body_columns_still_replays_its_j
     assert replayed.json() == stored_body
     assert replayed.headers["content-type"] == "application/json"
     assert handler_probe.calls == 0
+
+
+@pytest.mark.integration
+async def test_a_body_past_the_cap_with_no_declared_length_is_never_keyed(
+    idempotency_app, idempotency_db, handler_probe
+) -> None:
+    """The running total catches a body whose size no Content-Length announced."""
+    from app.constants.idempotency import MAX_STORED_RESPONSE_BYTES  # noqa: PLC0415
+
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+    body = encode_body({"item": "undeclared"})
+
+    async with idempotency_app as client:
+        first = await client.post(
+            UNDECLARED_OVERSIZED_PATH, content=body, headers=build_request_headers(user, key)
+        )
+        assert (await idempotency_db.read_claim(key, user.id)) is None
+        second = await client.post(
+            UNDECLARED_OVERSIZED_PATH, content=body, headers=build_request_headers(user, key)
+        )
+
+    assert len(first.content) == MAX_STORED_RESPONSE_BYTES + 1
+    assert first.json()["data"]["call"] == 1
+    assert second.json()["data"]["call"] == 2
+
+
+@pytest.mark.integration
+async def test_a_malformed_content_length_is_judged_by_the_body_and_still_replays(
+    idempotency_app, idempotency_db, handler_probe
+) -> None:
+    """An unparseable length neither breaks the response nor loses the key."""
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+    body = encode_body({"item": "malformed"})
+
+    async with idempotency_app as client:
+        first = await client.post(
+            MALFORMED_LENGTH_PATH, content=body, headers=build_request_headers(user, key)
+        )
+        second = await client.post(
+            MALFORMED_LENGTH_PATH, content=body, headers=build_request_headers(user, key)
+        )
+
+    assert first.status_code == 201
+    assert first.json() == {"data": {"call": 1}}
+    assert second.json() == first.json()
+    assert handler_probe.calls == 1
+
+
+@pytest.mark.integration
+async def test_a_replayed_204_carries_no_content_length(
+    idempotency_app, idempotency_db, handler_probe
+) -> None:
+    """RFC 9110 forbids Content-Length on a 204, so the replay sends none, as the handler did."""
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+    body = encode_body({"item": "no-content"})
+
+    async with idempotency_app as client:
+        first = await client.post(
+            NO_CONTENT_PATH, content=body, headers=build_request_headers(user, key)
+        )
+        second = await client.post(
+            NO_CONTENT_PATH, content=body, headers=build_request_headers(user, key)
+        )
+
+    assert first.status_code == second.status_code == 204
+    assert "content-length" not in first.headers
+    assert "content-length" not in second.headers
+    assert second.content == b""
+    assert handler_probe.calls == 1
+
+
+@pytest.mark.integration
+async def test_a_suffixed_json_body_is_kept_in_the_column_older_replicas_read(
+    idempotency_app, idempotency_db, handler_probe
+) -> None:
+    """An `application/problem+json` body is parsed into `response_body` like plain JSON."""
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+    body = encode_body({"item": "problem"})
+
+    async with idempotency_app as client:
+        first = await client.post(
+            PROBLEM_PATH, content=body, headers=build_request_headers(user, key)
+        )
+
+    assert first.status_code == 422
+    claim = await idempotency_db.read_claim(key, user.id)
+    assert claim is not None
+    assert claim.response_body == {"title": "rejected", "call": 1}

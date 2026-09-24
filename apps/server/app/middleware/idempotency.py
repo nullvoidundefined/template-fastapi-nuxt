@@ -76,6 +76,9 @@ KEY_IN_PROGRESS_MESSAGE = "A request with that Idempotency-Key is still in progr
 CLAIM_INSERT_ATTEMPTS = 2
 SERVER_ERROR_STATUS = 500
 JSON_CONTENT_TYPE = "application/json"
+JSON_MEDIA_TYPE_SUFFIX = "+json"
+# RFC 9110 forbids a Content-Length on these, so a replay of one sends none, as the handler did.
+BODILESS_STATUSES = frozenset({204, 304})
 
 # Storing the response is retried this many times, with a short growing pause, before the
 # claim is left for its lease to lapse.
@@ -376,11 +379,23 @@ def record_response_start(captured: CapturedResponse, message: Message) -> None:
         if name == b"content-type":
             captured.content_type = value
         elif name == b"content-length":
-            captured.has_content_length = True
-            if int(value) > MAX_STORED_RESPONSE_BYTES:
-                stop_capturing(captured, UnstoredReason.TOO_LARGE)
+            record_declared_length(captured, value)
         elif name in REPLAYED_RESPONSE_HEADERS:
             captured.headers.append((name.decode("latin-1"), value))
+
+
+def record_declared_length(captured: CapturedResponse, value: str) -> None:
+    """Judge a declared Content-Length; an unparseable one counts as undeclared.
+
+    An unparseable length must not raise here, because this runs inside the send that carries the
+    handler's committed answer to the client. Treated as undeclared, the body's running total
+    still bounds what is buffered.
+    """
+    if not value.strip().isdigit():
+        return
+    captured.has_content_length = True
+    if int(value) > MAX_STORED_RESPONSE_BYTES:
+        stop_capturing(captured, UnstoredReason.TOO_LARGE)
 
 
 def record_response_body(captured: CapturedResponse, message: Message) -> None:
@@ -432,12 +447,18 @@ def build_stored_response(captured: CapturedResponse, status_code: int) -> Store
 
 def parse_json_body(body: bytes, content_type: str | None) -> object:
     """Return a JSON body parsed, or None when it is empty, not JSON, or does not parse."""
-    if not body or content_type is None or not content_type.startswith(JSON_CONTENT_TYPE):
+    if not body or content_type is None or not is_json_media_type(content_type):
         return None
     try:
         return json.loads(body)
     except ValueError:
         return None
+
+
+def is_json_media_type(content_type: str) -> bool:
+    """Return True for `application/json` and any `+json` suffixed type, parameters ignored."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == JSON_CONTENT_TYPE or media_type.endswith(JSON_MEDIA_TYPE_SUFFIX)
 
 
 async def complete_claim_safely(claim: RequestClaim, response: StoredResponse) -> None:
@@ -475,7 +496,9 @@ async def release_claim_safely(claim: RequestClaim) -> None:
 async def send_stored_response(send: Send, stored: Row[Any]) -> None:
     """Answer with the stored status, body, content type, and headers, as raw ASGI messages."""
     body, content_type, stored_headers = read_replay_parts(stored)
-    headers = [(b"content-length", str(len(body)).encode())]
+    headers = []
+    if stored.status_code not in BODILESS_STATUSES:
+        headers.append((b"content-length", str(len(body)).encode()))
     if content_type is not None:
         headers.append((b"content-type", content_type.encode("latin-1")))
     headers.extend(

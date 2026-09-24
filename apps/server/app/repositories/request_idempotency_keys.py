@@ -54,8 +54,9 @@ class StoredResponse:
     """The response a completed claim replays: status, raw body, content type, kept headers.
 
     `json_body` is the same body parsed, or None when it is not JSON. It is still written to the
-    JSONB column revision 0005 created, so a replica running the previous release replays it
-    correctly until the contract migration drops that column.
+    JSONB column revision 0005 created, so a replica running the previous release replays a JSON
+    body correctly until the contract migration drops that column. That replica cannot replay a
+    non-JSON body, which it would send empty, for the few seconds a rolling deploy overlaps.
     """
 
     status_code: int

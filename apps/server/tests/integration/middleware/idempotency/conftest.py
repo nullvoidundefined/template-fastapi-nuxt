@@ -31,6 +31,8 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from starlette.routing import Route
+from starlette.types import Receive, Scope, Send
 
 ECHO_PATH = "/test-only/idempotent/echo"
 OTHER_PATH = "/test-only/idempotent/other"
@@ -40,6 +42,10 @@ TEXT_PATH = "/test-only/idempotent/text"
 HEADERS_PATH = "/test-only/idempotent/headers"
 STREAM_PATH = "/test-only/idempotent/stream"
 OVERSIZED_PATH = "/test-only/idempotent/oversized"
+UNDECLARED_OVERSIZED_PATH = "/test-only/idempotent/undeclared-oversized"
+MALFORMED_LENGTH_PATH = "/test-only/idempotent/malformed-length"
+NO_CONTENT_PATH = "/test-only/idempotent/no-content"
+PROBLEM_PATH = "/test-only/idempotent/problem"
 CREATED_LOCATION = "/v1/things/42"
 CREATED_CACHE_CONTROL = "no-store"
 HANDLER_COOKIE_NAME = "handler_cookie"
@@ -138,6 +144,118 @@ class HandlerProbe:
         return call_number
 
 
+class RawAsgiEndpoint:
+    """A route answering 201 in one raw body message, with exactly the headers it is given.
+
+    Starlette's own responses always compute a Content-Length, so a response that declares none,
+    or declares a malformed one, can only be sent below them. A class rather than a function,
+    because Starlette wraps a plain function endpoint in its request and response handling.
+    """
+
+    def __init__(
+        self,
+        probe: HandlerProbe,
+        headers: list[tuple[bytes, bytes]],
+        build_body: Callable[[int], bytes],
+    ) -> None:
+        """Record the probe to count calls on, the headers to send, and the body builder."""
+        self.probe = probe
+        self.headers = headers
+        self.build_body = build_body
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Count the call, then send the start message and the whole body in one message."""
+        call_number = await self.probe.run_call()
+        await send({"type": "http.response.start", "status": 201, "headers": self.headers})
+        await send({"type": "http.response.body", "body": self.build_body(call_number)})
+
+
+def build_oversized_body(call_number: int) -> bytes:
+    """Return a JSON body carrying the call number, one byte past the stored-response cap."""
+    from app.constants.idempotency import MAX_STORED_RESPONSE_BYTES  # noqa: PLC0415
+
+    prefix = f'{{"data": {{"call": {call_number}, "padding": "'.encode()
+    suffix = b'"}}'
+    return prefix + b"x" * (MAX_STORED_RESPONSE_BYTES + 1 - len(prefix) - len(suffix)) + suffix
+
+
+def add_stored_response_routes(router: APIRouter, probe: HandlerProbe) -> None:
+    """Add the IAN-339 routes: bodies, headers, and lengths the stored response must survive."""
+
+    async def answer_text(request: Request) -> Response:
+        """Answer 201 in plain text, a body the middleware cannot parse as JSON."""
+        call_number = await probe.run_call()
+        return PlainTextResponse(f"created by call {call_number}", status_code=201)
+
+    async def answer_with_headers(request: Request) -> JSONResponse:
+        """Answer 201 with a Location, a Cache-Control, a cookie, and a header nobody listed."""
+        call_number = await probe.run_call()
+        response = JSONResponse({"data": {"call": call_number}}, status_code=201)
+        response.headers["Location"] = CREATED_LOCATION
+        response.headers["Cache-Control"] = CREATED_CACHE_CONTROL
+        response.headers["Content-Encoding"] = "identity"
+        response.headers[UNLISTED_HEADER_NAME] = f"call-{call_number}"
+        response.set_cookie(HANDLER_COOKIE_NAME, f"cookie-from-call-{call_number}")
+        return response
+
+    async def answer_stream(request: Request) -> StreamingResponse:
+        """Answer 201 as a stream of JSON chunks with no Content-Length."""
+        call_number = await probe.run_call()
+
+        async def generate_chunks() -> AsyncIterator[bytes]:
+            yield b'{"data": {"call": '
+            yield str(call_number).encode()
+            yield b"}}"
+
+        return StreamingResponse(generate_chunks(), status_code=201, media_type="application/json")
+
+    async def answer_oversized(request: Request) -> Response:
+        """Answer 201 with a JSON body one byte past the stored-response cap."""
+        call_number = await probe.run_call()
+        return Response(
+            build_oversized_body(call_number), status_code=201, media_type="application/json"
+        )
+
+    async def answer_no_content(request: Request) -> Response:
+        """Answer 204 with no body, which Starlette sends without a Content-Length."""
+        await probe.run_call()
+        return Response(status_code=204)
+
+    async def answer_problem(request: Request) -> JSONResponse:
+        """Answer 422 as `application/problem+json`, a JSON body under a suffixed media type."""
+        call_number = await probe.run_call()
+        return JSONResponse(
+            {"title": "rejected", "call": call_number},
+            status_code=422,
+            media_type="application/problem+json",
+        )
+
+    router.add_api_route(NO_CONTENT_PATH, answer_no_content, methods=["POST"])
+    router.add_api_route(PROBLEM_PATH, answer_problem, methods=["POST"])
+    router.routes.append(
+        Route(
+            UNDECLARED_OVERSIZED_PATH,
+            RawAsgiEndpoint(probe, [], build_oversized_body),
+            methods=["POST"],
+        )
+    )
+    router.routes.append(
+        Route(
+            MALFORMED_LENGTH_PATH,
+            RawAsgiEndpoint(
+                probe,
+                [(b"content-type", b"application/json"), (b"content-length", b"not-a-number")],
+                lambda call_number: f'{{"data": {{"call": {call_number}}}}}'.encode(),
+            ),
+            methods=["POST"],
+        )
+    )
+    router.add_api_route(TEXT_PATH, answer_text, methods=["POST"])
+    router.add_api_route(HEADERS_PATH, answer_with_headers, methods=["POST"])
+    router.add_api_route(STREAM_PATH, answer_stream, methods=["POST"])
+    router.add_api_route(OVERSIZED_PATH, answer_oversized, methods=["POST"])
+
+
 def build_test_only_router(probe: HandlerProbe) -> APIRouter:
     """Return the routes the idempotency criteria are driven through."""
     router = APIRouter()
@@ -162,50 +280,11 @@ def build_test_only_router(probe: HandlerProbe) -> APIRouter:
             return JSONResponse({"code": "TEST_ONLY_UNAVAILABLE", "error": "down"}, 503)
         return JSONResponse({"data": {"call": call_number}}, status_code=201)
 
-    async def answer_text(request: Request) -> Response:
-        """Answer 201 in plain text, a body the middleware cannot parse as JSON."""
-        call_number = await probe.run_call()
-        return PlainTextResponse(f"created by call {call_number}", status_code=201)
-
-    async def answer_with_headers(request: Request) -> JSONResponse:
-        """Answer 201 with a Location, a Cache-Control, a cookie, and a header nobody listed."""
-        call_number = await probe.run_call()
-        response = JSONResponse({"data": {"call": call_number}}, status_code=201)
-        response.headers["Location"] = CREATED_LOCATION
-        response.headers["Cache-Control"] = CREATED_CACHE_CONTROL
-        response.headers[UNLISTED_HEADER_NAME] = f"call-{call_number}"
-        response.set_cookie(HANDLER_COOKIE_NAME, f"cookie-from-call-{call_number}")
-        return response
-
-    async def answer_stream(request: Request) -> StreamingResponse:
-        """Answer 201 as a stream of JSON chunks with no Content-Length."""
-        call_number = await probe.run_call()
-
-        async def generate_chunks() -> AsyncIterator[bytes]:
-            yield b'{"data": {"call": '
-            yield str(call_number).encode()
-            yield b"}}"
-
-        return StreamingResponse(generate_chunks(), status_code=201, media_type="application/json")
-
-    async def answer_oversized(request: Request) -> JSONResponse:
-        """Answer 201 with a JSON body one byte past the stored-response cap."""
-        from app.constants.idempotency import MAX_STORED_RESPONSE_BYTES  # noqa: PLC0415
-
-        call_number = await probe.run_call()
-        prefix = f'{{"data": {{"call": {call_number}, "padding": "'.encode()
-        suffix = b'"}}'
-        padding = b"x" * (MAX_STORED_RESPONSE_BYTES + 1 - len(prefix) - len(suffix))
-        return Response(prefix + padding + suffix, status_code=201, media_type="application/json")
-
     router.add_api_route(ECHO_PATH, echo, methods=["POST", "PUT"])
-    router.add_api_route(TEXT_PATH, answer_text, methods=["POST"])
-    router.add_api_route(HEADERS_PATH, answer_with_headers, methods=["POST"])
-    router.add_api_route(STREAM_PATH, answer_stream, methods=["POST"])
-    router.add_api_route(OVERSIZED_PATH, answer_oversized, methods=["POST"])
     router.add_api_route(OTHER_PATH, echo, methods=["POST"])
     router.add_api_route(FLAKY_PATH, fail_first, methods=["POST"])
     router.add_api_route(UNAVAILABLE_PATH, unavailable_first, methods=["POST"])
+    add_stored_response_routes(router, probe)
     return router
 
 

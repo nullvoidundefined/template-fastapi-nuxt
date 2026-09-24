@@ -30,6 +30,7 @@ REPLAYED_RESPONSE_HEADERS = frozenset(
     {
         b"cache-control",
         b"content-disposition",
+        b"content-encoding",
         b"content-language",
         b"etag",
         b"expires",

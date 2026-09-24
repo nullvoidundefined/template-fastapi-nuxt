@@ -4,9 +4,10 @@ This is the expand half of an expand/contract change. Revision 0005 stored a com
 as a JSONB body alone, which cannot hold a plain-text or binary body and has nowhere to keep the
 handler's headers. The three new columns are nullable, so the statement is a catalog change that
 rewrites no rows, and `response_body` stays: a row completed before the deploy still replays from
-it, and a replica still running the previous release still reads the column it knows. The
+it, and a replica still running the previous release still reads the column it knows for a JSON
+body (a non-JSON body it would replay empty, for as long as a rolling deploy overlaps). The
 contract step, dropping `response_body`, can run once every row written before this revision has
-aged past the twenty-four hour replay window and no replica reads it.
+aged past the twenty-four hour replay window and no replica reads it (IAN-355).
 
 `response_headers` holds the allowlisted headers as a JSON array of `[name, value]` pairs rather
 than an object, because a header may repeat and order is part of what is replayed.
