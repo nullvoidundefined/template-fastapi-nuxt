@@ -11,14 +11,21 @@ and B-33 assert them exactly. Every Stripe variable is removed first, so a devel
 cannot configure billing behind a test's back.
 """
 
+import hashlib
+import hmac
+import json
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import Row, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.conftest import StripeRecorder
 
@@ -133,3 +140,164 @@ async def unconfigured_billing_browser(
 def billing_db(auth_db: Any) -> BillingDatabase:
     """Return the billing seeding and reading helpers."""
     return BillingDatabase(auth_db)
+
+
+# The webhook signing secret, built from parts at run time so no credential-shaped literal
+# appears in this source (R-108). A second value signs deliveries that must fail verification.
+WEBHOOK_SIGNING_VALUE = "_".join(("whsec", "test", "placeholder"))
+WRONG_SIGNING_VALUE = "_".join(("whsec", "test", "impostor"))
+WEBHOOK_PATH = "/v1/billing/webhook"
+AUTH_BASE_URL = "https://testserver"
+WEBHOOK_CLIENT_ADDRESS = "198.51.100.7"
+
+INSERT_USER_WITH_ID_SQL = text(
+    "INSERT INTO users (id, email, password_hash) VALUES (:user_id, :email, :password_hash)"
+)
+READ_LEDGER_SQL = text(
+    "SELECT stripe_event_id, event_type, status::text AS status, attempted_at, processed_at "
+    "FROM billing_webhook_events WHERE stripe_event_id = :event_id"
+)
+SEED_LEDGER_SQL = text(
+    "INSERT INTO billing_webhook_events (stripe_event_id, event_type, status, attempted_at) "
+    "VALUES (:event_id, :event_type, CAST(:status AS billing_webhook_event_status), "
+    "now() - make_interval(mins => :minutes_ago))"
+)
+DELETE_LEDGER_SQL = text("DELETE FROM billing_webhook_events WHERE stripe_event_id = :event_id")
+
+
+def make_stripe_id(prefix: str) -> str:
+    """Return a unique Stripe-shaped identifier with the given prefix."""
+    return f"{prefix}_test_{uuid.uuid4().hex}"
+
+
+def build_stripe_event(
+    event_type: str, data_object: dict[str, Any], event_id: str | None = None
+) -> dict[str, Any]:
+    """Return a Stripe event envelope around one object, as Stripe delivers it."""
+    return {
+        "id": event_id or make_stripe_id("evt"),
+        "object": "event",
+        "api_version": "2025-03-31.basil",
+        "created": int(time.time()),
+        "type": event_type,
+        "livemode": False,
+        "data": {"object": data_object},
+    }
+
+
+def sign_stripe_payload(payload: bytes, signing_value: str, timestamp: int | None = None) -> str:
+    """Return a `Stripe-Signature` header for the payload, computed as Stripe computes it.
+
+    The v1 scheme is an HMAC-SHA256 over `<timestamp>.<payload>` keyed with the endpoint's signing
+    secret, which is exactly what `stripe.WebhookSignature.verify_header` recomputes.
+    """
+    signed_at = int(time.time()) if timestamp is None else timestamp
+    signed_payload = f"{signed_at}.".encode() + payload
+    digest = hmac.new(signing_value.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return f"t={signed_at},v1={digest}"
+
+
+class WebhookSender:
+    """Delivers signed events to the webhook as Stripe would, and reads the ledger back.
+
+    The client carries no `X-Requested-With` header, because Stripe sends none, so every delivery
+    in these tests also proves the webhook's CSRF exemption. Every event id sent or seeded is
+    recorded, and the ledger rows are deleted when the test ends.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, engine: AsyncEngine) -> None:
+        """Record the client that reaches the app and the engine that reads the ledger."""
+        self.client = client
+        self.engine = engine
+        self.event_ids: set[str] = set()
+
+    async def deliver(
+        self,
+        event: dict[str, Any],
+        signing_value: str = WEBHOOK_SIGNING_VALUE,
+        signature: str | None = None,
+        is_signed: bool = True,
+    ) -> httpx.Response:
+        """POST the event as raw JSON with a signature, or with the one given, or with none."""
+        self.event_ids.add(event["id"])
+        payload = json.dumps(event).encode()
+        headers = {"Content-Type": "application/json"}
+        if is_signed:
+            headers["Stripe-Signature"] = signature or sign_stripe_payload(payload, signing_value)
+        return await self.client.post(WEBHOOK_PATH, content=payload, headers=headers)
+
+    async def read_ledger(self, event_id: str) -> list[Row[Any]]:
+        """Return every ledger row for the event id: none, or exactly one."""
+        async with self.engine.connect() as connection:
+            result = await connection.execute(READ_LEDGER_SQL, {"event_id": event_id})
+            return list(result)
+
+    async def seed_ledger(
+        self, event_id: str, event_type: str, status: str, minutes_ago: int
+    ) -> None:
+        """Commit a ledger row in the given state, attempted the given minutes ago."""
+        self.event_ids.add(event_id)
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                SEED_LEDGER_SQL,
+                {
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "status": status,
+                    "minutes_ago": minutes_ago,
+                },
+            )
+
+    async def seed_user_with_id(self, user_id: uuid.UUID, email: str) -> None:
+        """Commit a user with a chosen id, as a user created after an event named it would be."""
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                INSERT_USER_WITH_ID_SQL,
+                {"user_id": user_id, "email": email, "password_hash": VALID_PASSWORD},
+            )
+
+    async def delete_ledger_rows(self) -> None:
+        """Delete every ledger row this sender created or seeded."""
+        async with self.engine.begin() as connection:
+            for event_id in self.event_ids:
+                await connection.execute(DELETE_LEDGER_SQL, {"event_id": event_id})
+
+
+@asynccontextmanager
+async def open_webhook_sender(
+    application: FastAPI, engine: AsyncEngine
+) -> AsyncIterator[WebhookSender]:
+    """Run the app's lifespan and yield a sender whose client has no CSRF header."""
+    transport = httpx.ASGITransport(
+        app=application, client=(WEBHOOK_CLIENT_ADDRESS, 443), raise_app_exceptions=False
+    )
+    async with (
+        application.router.lifespan_context(application),
+        httpx.AsyncClient(transport=transport, base_url=AUTH_BASE_URL) as client,
+    ):
+        sender = WebhookSender(client, engine)
+        try:
+            yield sender
+        finally:
+            await sender.delete_ledger_rows()
+
+
+@pytest_asyncio.fixture
+async def webhook_sender(
+    build_billing_app: BillingAppFactory, auth_db: Any
+) -> AsyncIterator[WebhookSender]:
+    """Yield a sender on an app configured with the webhook signing secret."""
+    application = build_billing_app(
+        environment_values={"STRIPE_WEBHOOK_SECRET": WEBHOOK_SIGNING_VALUE}
+    )
+    async with open_webhook_sender(application, auth_db.engine) as sender:
+        yield sender
+
+
+@pytest_asyncio.fixture
+async def unconfigured_webhook_sender(
+    build_billing_app: BillingAppFactory, auth_db: Any
+) -> AsyncIterator[WebhookSender]:
+    """Yield a sender on an app with no webhook signing secret configured."""
+    async with open_webhook_sender(build_billing_app(), auth_db.engine) as sender:
+        yield sender

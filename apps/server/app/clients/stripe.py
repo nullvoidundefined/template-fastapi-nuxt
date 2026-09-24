@@ -12,11 +12,19 @@ it into a 500 and the idempotency claim is released so the client's retry runs a
 
 No client is built without `STRIPE_SECRET_KEY`: `create_stripe_billing_client` returns None and
 the billing routes answer 503 `BILLING_NOT_CONFIGURED`.
+
+`construct_webhook_event` is the SDK's signature check for webhook deliveries. It makes no network
+call and needs no API key, only the endpoint's signing secret, so it is a function rather than a
+method of the client.
 """
 
+import json
 from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
 import stripe
+import structlog
 from pydantic import SecretStr
 from stripe.params.checkout import SessionCreateParams as CheckoutSessionCreateParams
 
@@ -31,6 +39,10 @@ STRIPE_MAX_NETWORK_RETRIES = 0
 SUBSCRIPTION_MODE = "subscription"
 SUBSCRIPTION_QUANTITY = 1
 MISSING_URL_MESSAGE = "Stripe answered a session without a URL"
+# Stripe's own default: a signature older than five minutes is refused as a possible replay.
+WEBHOOK_TOLERANCE_SECONDS = 300
+
+logger = structlog.get_logger(__name__)
 
 
 class StripeBillingClient:
@@ -124,3 +136,43 @@ def require_session_url(url: str | None) -> str:
     if not url:
         raise ValueError(MISSING_URL_MESSAGE)
     return url
+
+
+@dataclass(slots=True, frozen=True)
+class StripeWebhookEvent:
+    """One verified Stripe event: its id, its type, and the object it is about, as plain JSON."""
+
+    id: str
+    type: str
+    data_object: dict[str, Any]
+
+
+class InvalidWebhookSignatureError(Exception):
+    """The delivery's signature did not verify, or what it signed is not a Stripe event."""
+
+
+def construct_webhook_event(
+    payload: bytes, signature_header: str, signing_secret: SecretStr
+) -> StripeWebhookEvent:
+    """Verify the Stripe-Signature over the raw bytes, then read the event they carry.
+
+    The SDK checks the HMAC-SHA256 of `<timestamp>.<payload>` under the signing secret and that
+    the timestamp is inside its five-minute tolerance, so a captured delivery cannot be replayed
+    later. Only bytes that verified are parsed. Anything that fails either step raises
+    `InvalidWebhookSignatureError`, because a payload that is not a Stripe event was not sent by
+    Stripe whatever its signature says.
+    """
+    try:
+        stripe.WebhookSignature.verify_header(
+            payload.decode("utf-8"),
+            signature_header,
+            signing_secret.get_secret_value(),
+            WEBHOOK_TOLERANCE_SECONDS,
+        )
+        event = json.loads(payload)
+        return StripeWebhookEvent(
+            id=str(event["id"]), type=str(event["type"]), data_object=dict(event["data"]["object"])
+        )
+    except (stripe.SignatureVerificationError, ValueError, LookupError, TypeError) as err:
+        logger.warning("stripe_webhook_signature_rejected", exc_info=err)
+        raise InvalidWebhookSignatureError from err

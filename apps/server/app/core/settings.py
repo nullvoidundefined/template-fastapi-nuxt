@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENVIRONMENT = "production"
@@ -55,6 +55,19 @@ class Settings(BaseSettings):
     stripe_webhook_secret: SecretStr | None = None
     # Replaces https://api.stripe.com, so the end-to-end stack can point the SDK at stripe-mock.
     stripe_api_base: str | None = None
+
+    @field_validator("stripe_secret_key", "stripe_webhook_secret", "stripe_api_base", mode="after")
+    @classmethod
+    def treat_blank_stripe_value_as_unset(
+        cls, value: SecretStr | str | None
+    ) -> SecretStr | str | None:
+        """Read an empty Stripe variable as unset, so billing reports itself unconfigured.
+
+        docker-compose passes `STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}` through as an empty
+        string when the host has none, and an empty key would otherwise build a client whose
+        every call Stripe refuses, answering 500 where 503 `BILLING_NOT_CONFIGURED` is the truth.
+        """
+        return None if is_blank(value) else value
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:
