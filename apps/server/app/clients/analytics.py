@@ -5,7 +5,9 @@ An event is keyed by the user's ID and carries the request ID, and nothing else 
 passed as one by accident (B-24, R-104).
 
 The SDK queues each event and uploads it from its own thread, so a capture is cheap; it still runs
-in a worker thread inside `with_client_telemetry`, which logs it and bounds it with a timeout. A
+in a worker thread inside `with_client_telemetry`, which logs it and bounds it with a timeout. The
+upload itself happens later on the SDK's thread, outside that wrapper, so the SDK's `on_error`
+callback logs a failed upload as a failed `upload` call with the batch size (R-346). A
 PostHog failure is logged and swallowed here, because a lost analytics row must never fail the
 sign-in that produced it (spec, failure modes). Without `POSTHOG_API_KEY` the factory logs one
 warning and returns a client whose every event is a no-op.
@@ -25,8 +27,11 @@ from app.core.settings import Settings
 
 POSTHOG_PROVIDER = "posthog"
 CAPTURE_OPERATION = "capture"
+UPLOAD_OPERATION = "upload"
 # Bounds both the SDK's own upload requests and the enqueue the wrapper times.
 POSTHOG_TIMEOUT_SECONDS = 5.0
+# The SDK's own retries of a failed batch upload, each after an exponential backoff.
+POSTHOG_MAX_RETRIES = 3
 
 # How long shutdown waits for PostHog to flush its queue before giving up on it.
 ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS = 5.0
@@ -108,6 +113,20 @@ def create_analytics_client(settings: Settings) -> AnalyticsClient:
         settings.posthog_api_key.get_secret_value(),
         host=settings.posthog_host,
         timeout=POSTHOG_TIMEOUT_SECONDS,
+        max_retries=POSTHOG_MAX_RETRIES,
         disable_geoip=True,
+        on_error=log_upload_failure,
     )
     return AnalyticsClient(posthog)
+
+
+def log_upload_failure(err: Exception, batch: list[object]) -> None:
+    """Log a batch upload the SDK gave up on, from its consumer thread, as a failed client call."""
+    logger.warning(
+        "client_call_failed",
+        provider=POSTHOG_PROVIDER,
+        operation=UPLOAD_OPERATION,
+        outcome="failure",
+        batch_size=len(batch),
+        exc_info=err,
+    )
