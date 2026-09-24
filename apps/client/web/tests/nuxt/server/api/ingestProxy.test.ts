@@ -212,6 +212,7 @@ describe('the PostHog ingestion proxy at /api/ingest/**', () => {
                 headers: {
                     authorization: ['Bearer', 'visitor-held-value'].join(' '),
                     'content-type': 'application/json',
+                    referer: 'http://web.test/reset-password?token=from-the-email',
                     'x-forwarded-for': '203.0.113.9',
                     'x-request-id': 'req-ingest-0001',
                 },
@@ -223,6 +224,7 @@ describe('the PostHog ingestion proxy at /api/ingest/**', () => {
         const [ingestRequest] = upstreamRequests;
         expect(ingestRequest!.headers.get('authorization')).toBeNull();
         expect(ingestRequest!.headers.get('x-forwarded-for')).toBeNull();
+        expect(ingestRequest!.headers.get('referer')).toBeNull();
         expect(ingestRequest!.headers.get('content-type')).toBe('application/json');
     });
 

@@ -15,15 +15,15 @@
  */
 import { resolveClientAddress } from '#shared/services/resolveClientAddress';
 
+import { isForwardableBackendPath } from '../services/isForwardableBackendPath';
+
 const NOT_FOUND_STATUS = 404;
-// The only backend paths a browser calls. Anything else, including a path that routing collapsed
-// out of `..` segments, is answered here rather than forwarded.
-const BACKEND_PATH_PREFIX = 'v1/';
 
 export default defineEventHandler(async (event) => {
     const { apiBaseUrl } = useRuntimeConfig(event);
     const backendPath = getRouterParam(event, 'path') ?? '';
-    if (!backendPath.startsWith(BACKEND_PATH_PREFIX)) {
+    // Only /v1 paths with no dot segment, encoded or not, are forwarded; see the guard.
+    if (!isForwardableBackendPath(backendPath)) {
         throw createError({ statusCode: NOT_FOUND_STATUS, statusMessage: 'Not Found' });
     }
     const target = `${apiBaseUrl}/${backendPath}${getRequestURL(event).search}`;

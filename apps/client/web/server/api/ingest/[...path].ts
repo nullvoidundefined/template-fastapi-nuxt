@@ -17,11 +17,13 @@ const INGEST_ROUTE_PREFIX = '/api/ingest';
 const NOT_FOUND_STATUS = 404;
 // The endpoints posthog-js calls: events, the batch and flag endpoints, and its static assets.
 const INGEST_PATH_PATTERN =
-    /^\/(?:e|i\/v0\/e|batch|flags|decide|static\/[\w.-]+|array\/[\w-]+\/config(?:\.js)?)\/?$/;
+    /^\/(?:e|i\/v0\/e|batch|flags|decide|static\/\w[\w.-]*|array\/[\w-]+\/config(?:\.js)?)\/?$/;
 const WITHHELD_HEADER_NAMES = [
     'authorization',
     'cookie',
     'forwarded',
+    // The reset page's address, token included, would otherwise ride along as the referrer.
+    'referer',
     'x-forwarded-for',
     'x-forwarded-host',
     'x-forwarded-proto',
