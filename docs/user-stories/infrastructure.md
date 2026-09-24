@@ -247,3 +247,20 @@
 
 **E2E test:** `e2e/accessibility.spec.ts`
 **Ticket:** IAN-341
+
+## US-INFRA-012: Expired rows are cleaned up without anyone scheduling it
+
+**As** the owner of a fork running it in production
+**I want to** have expired sessions, spent idempotency keys, and old webhook ledger rows deleted on a schedule the worker already runs
+**So that** those tables stay the size of their live data, with no pg_cron extension to install and no second code path to keep in step
+
+**Acceptance criteria:**
+
+- [x] The worker registers `delete_expired_rows` as an arq cron job that runs at minute 0 of every hour and not at startup.
+- [x] One run deletes every `user_sessions` row whose `expires_at` has passed, every `request_idempotency_keys` row older than 24 hours, and every `billing_webhook_events` row last attempted more than 30 days ago, and leaves every unexpired row in place (spec B-26).
+- [x] Each table is cleared in batches of 1000, each batch in its own short transaction, until a batch deletes fewer than 1000, so a backlog larger than one batch is cleared in one run; each batch finds its rows through the index the table's migration already created.
+- [x] A second run straight after the first deletes nothing.
+- [x] The run logs one `expired_rows_deleted` line per table with its `deleted_count`, carrying the arq `job_id` (R-341).
+
+**E2E test:** none, because a cron job has no page or route; covered by `apps/server/tests/integration/workers/test_delete_expired_rows.py` against real Postgres and the registration test in `apps/server/tests/unit/workers/test_worker_settings.py`
+**Ticket:** IAN-341

@@ -6,3 +6,4 @@ name from here rather than importing each other.
 """
 
 RESET_EMAIL_JOB_NAME = "send_password_reset_email"
+CLEANUP_JOB_NAME = "delete_expired_rows"

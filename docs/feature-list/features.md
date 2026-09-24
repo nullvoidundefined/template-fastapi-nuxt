@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned** | **Excluded**
 
-Last updated: 2026-09-24 (slices 05 and 07: idempotency, roles, admin, observability, and theme)
+Last updated: 2026-09-24 (slice 08: the hourly `delete_expired_rows` cleanup job is Complete)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -50,7 +50,7 @@ the date and what changed. Section shape:
 | Smoke suite (`pnpm smoke`), run by CI against the compose stack built from the production images        | **Complete** | US-INFRA-010; spec B-28 as amended on 2026-09-24; `e2e/smoke/services.smoke.ts`                                                                                               |
 | Railway configuration, one file per service, with the API's `alembic upgrade head` pre-deploy command   | **Complete** | US-INFRA-010; configuration only, because the template is never deployed and the first real deploy happens in the first fork                                                  |
 | Accessibility: Lighthouse 100 on all seven pages, keyboard operability, and reduced motion              | **Complete** | US-INFRA-011; spec B-27, B-48; `e2e/accessibility.spec.ts`                                                                                                                    |
-| Hourly cleanup job `delete_expired_rows` (sessions, idempotency keys, webhook ledger)                   | **Planned**  | spec B-26; waits for slice 06's webhook ledger table; replaces the Express template's in-process timer and pg_cron schedule                                                   |
+| Hourly cleanup job `delete_expired_rows` (sessions, idempotency keys, webhook ledger)                   | **Complete** | US-INFRA-012; spec B-26; arq cron at minute 0, batches of 1000; replaces the Express template's in-process timer and pg_cron schedule                                         |
 
 ## Billing
 

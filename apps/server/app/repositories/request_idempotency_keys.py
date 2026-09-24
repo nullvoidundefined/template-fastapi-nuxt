@@ -9,6 +9,11 @@ stops a holder that was taken over from overwriting or deleting the claim that s
 
 The caller runs each function in its own short transaction, outside the request's transaction,
 so other requests see a claim the moment it is taken.
+
+`delete_stale_idempotency_keys_batch` is the hourly cleanup job's statement for this table: it
+deletes at most one batch of keys older than the replay window, found through the `created_at`
+index, and skips any row a live request holds locked. The batch is a materialized CTE, for the
+reason `delete_expired_sessions_batch` gives: a LIMIT subquery may run more than once per DELETE.
 """
 
 import uuid
@@ -21,6 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import func
 
+from app.constants.cleanup import IDEMPOTENCY_KEY_RETENTION
 from app.constants.idempotency import LEASE_SECONDS, REPLAY_WINDOW_HOURS, IdempotencyKeyState
 from app.db.tables import request_idempotency_keys
 
@@ -152,3 +158,19 @@ async def release_idempotency_key(
         keys.c.claim_token == claim_token,
     )
     await connection.execute(statement)
+
+
+async def delete_stale_idempotency_keys_batch(connection: AsyncConnection, batch_size: int) -> int:
+    """Delete up to `batch_size` keys past their retention and return how many went."""
+    stale_batch = (
+        select(keys.c.key, keys.c.user_id)
+        .where(keys.c.created_at < func.now() - IDEMPOTENCY_KEY_RETENTION)
+        .limit(batch_size)
+        .with_for_update(skip_locked=True)
+        .cte("stale_batch")
+        .prefix_with("MATERIALIZED")
+    )
+    result = await connection.execute(
+        delete(keys).where(keys.c.key == stale_batch.c.key, keys.c.user_id == stale_batch.c.user_id)
+    )
+    return result.rowcount
