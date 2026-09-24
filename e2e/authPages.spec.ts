@@ -5,7 +5,7 @@
  * Accounts are created through the Nitro proxy with the browser context's own request client, so
  * the session cookie lands in that context's jar exactly as a form submission would put it there.
  * The auth rate-limit bucket allows ten requests per fifteen minutes per client; this file spends
- * two on its shared address and one on each of B-52's own addresses, and clears the counters
+ * three on its shared address and one on each of B-52's own addresses, and clears the counters
  * before it runs.
  */
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
@@ -19,6 +19,11 @@ const NITRO_ADDRESS = '172.28.0.10';
 const CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
 const SESSION_COOKIE_NAME = 'sid';
 const GLOBAL_BUCKET_PREFIX = 'ratelimit:global';
+const SESSION_REQUEST_PATH = '/api/v1/auth/me';
+// The backend requests one full load of /dashboard makes: the server render's session read.
+const REQUESTS_PER_DASHBOARD_RENDER = 1;
+// How long a page is watched for a request that should not come, after it has rendered.
+const QUIET_PERIOD_MILLISECONDS = 750;
 const passphrase = ['e2e', 'pages', 'passphrase', '6190'].join('-');
 const replacementPassphrase = ['e2e', 'pages', 'replacement', '2754'].join('-');
 
@@ -137,6 +142,35 @@ test.describe('the auth gate', () => {
         await navigateClientSide(page, '/dashboard');
         await expect(page).toHaveURL(/\/login$/);
     });
+
+    test('B-12, IAN-335: the browser asks for the session never on a full load of /dashboard and once per client-side navigation', async ({
+        context,
+        page,
+    }) => {
+        await registerThroughProxy(context, buildUniqueEmailAddress('count'));
+        const sessionRequestUrls: string[] = [];
+        page.on('request', (request) => {
+            if (new URL(request.url()).pathname === SESSION_REQUEST_PATH) {
+                sessionRequestUrls.push(request.url());
+            }
+        });
+
+        const documentResponse = await page.goto('/dashboard');
+        await expect(page.getByTestId('dashboard-email')).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(QUIET_PERIOD_MILLISECONDS);
+
+        expect(documentResponse?.headers()['cache-control']).toBe('no-store');
+        expect(sessionRequestUrls).toEqual([]);
+
+        await navigateClientSide(page, '/');
+        sessionRequestUrls.length = 0;
+        await navigateClientSide(page, '/dashboard');
+        await expect(page.getByTestId('dashboard-email')).toBeVisible();
+        await page.waitForTimeout(QUIET_PERIOD_MILLISECONDS);
+
+        expect(sessionRequestUrls).toHaveLength(1);
+    });
 });
 
 test.describe('the auth forms', () => {
@@ -194,12 +228,16 @@ test('B-52: two overlapping server renders each reach FastAPI as their own user 
 
     for (const [index, page] of pages.entries()) {
         await expect(page.getByTestId('dashboard-email')).toContainText(users[index]!.email);
+        await page.waitForLoadState('networkidle');
     }
+    // Exactly one each: the server render's own session read. The browser hydrates from that
+    // render and sends no API request of its own, so a larger count is a request the dedupe
+    // should have spared, and a smaller one is a render counted somewhere else.
     for (const [index, { clientAddress }] of users.entries()) {
         expect(
             readBucketCount(`${GLOBAL_BUCKET_PREFIX}:${clientAddress}`),
-            `the render for ${clientAddress} is counted in its own bucket`,
-        ).toBeGreaterThan(countsBeforeRender[index]!);
+            `the render for ${clientAddress} is counted once in its own bucket`,
+        ).toBe(countsBeforeRender[index]! + REQUESTS_PER_DASHBOARD_RENDER);
     }
     expect(hasRedisKey(`${GLOBAL_BUCKET_PREFIX}:${NITRO_ADDRESS}`)).toBe(false);
     await Promise.all(contexts.map((context) => context.close()));
