@@ -17,18 +17,21 @@ const config: StorybookConfig = {
     // The vue3-vite framework expects the project to supply the Vue plugin; without it no `.vue`
     // file compiles and every story renders Storybook's error page instead of the component.
     // `#app` and `~` are Nuxt's; outside a Nuxt build they resolve to a shim and the app folder.
-    viteFinal: (viteConfig) => ({
-        ...viteConfig,
-        plugins: [...(viteConfig.plugins ?? []), vue()],
-        resolve: {
-            ...viteConfig.resolve,
-            alias: {
-                ...viteConfig.resolve?.alias,
-                '#app': fileURLToPath(new URL('./nuxtAppShim.ts', import.meta.url)),
-                '~': fileURLToPath(new URL('../app', import.meta.url)),
+    viteFinal: (viteConfig) => {
+        const { plugins, resolve } = viteConfig;
+        return {
+            ...viteConfig,
+            plugins: [...(plugins ?? []), vue()],
+            resolve: {
+                ...resolve,
+                alias: {
+                    ...resolve?.alias,
+                    '#app': fileURLToPath(new URL('./nuxtAppShim.ts', import.meta.url)),
+                    '~': fileURLToPath(new URL('../app', import.meta.url)),
+                },
             },
-        },
-    }),
+        };
+    },
 };
 
 export default config;
