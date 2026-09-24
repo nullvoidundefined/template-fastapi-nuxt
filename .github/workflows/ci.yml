@@ -194,6 +194,12 @@ jobs:
         env:
           CI: 'true'
         run: pnpm exec playwright test
+      # B-28 (amended 2026-09-24): the template is never deployed, so the smoke suite proves the
+      # production images instead, against this job's compose stack on its default ports.
+      - name: Smoke suite
+        env:
+          CI: 'true'
+        run: pnpm smoke
       - name: Upload the Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7
