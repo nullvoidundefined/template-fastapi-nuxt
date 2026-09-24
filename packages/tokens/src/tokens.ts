@@ -18,7 +18,9 @@ export const tokens = {
         background: '#ffffff',
         backgroundTranslucent: 'rgba(255, 255, 255, 0.92)',
         border: '#ebebeb',
-        error: '#ef4444',
+        // 6.47:1 on white and at least 4.9:1 on every light surface, including surfaceActive, for the 4.5:1 WCAG AA text contrast;
+        // the earlier #ef4444 measured 3.76:1 and failed Lighthouse on the alert text (spec B-27).
+        error: '#b91c1c',
         foreground: '#222222',
         foregroundMuted: '#717171',
         surface: '#f7f7f7',

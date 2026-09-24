@@ -215,3 +215,35 @@
 
 **E2E test:** exercised through the test-only router in `apps/server/tests/integration/middleware/idempotency/`; the first real replayable route is slice 06's checkout.
 **Ticket:** IAN-336
+
+## US-INFRA-010: Prove every service starts and answers, and deploy it from committed configuration
+
+**As** the owner of a fork about to deploy it
+**I want to** run one command that proves every service started and answers, and to find each service's Railway configuration already in the repository
+**So that** the first deploy is configuration rather than discovery, and CI has already proved the production images serve
+
+**Acceptance criteria:**
+
+- [x] `pnpm smoke` checks the web server's `/api/health`, the API's `/health` and `/health/ready`, the worker's `/health/ready`, and the landing page, against the compose ports by default and against any deployment through `SMOKE_WEB_URL`, `SMOKE_API_URL`, and `SMOKE_WORKER_URL`.
+- [x] CI's `e2e` job runs the smoke suite against the compose stack built from the production images (spec B-28, amended 2026-09-24: the template itself is never deployed).
+- [x] Each of the three services has a committed Railway config naming its Dockerfile and a healthcheck path the code actually serves, and only the API's config runs `alembic upgrade head` before deploying; a unit test holds each of these against the code.
+- [x] The README's deploy section lists every variable each service needs, and no config file holds a variable or a secret.
+
+**E2E test:** `e2e/smoke/services.smoke.ts` (the smoke suite); `apps/server/tests/unit/deploy/test_railway_config.py` for the configuration
+**Ticket:** IAN-341
+
+## US-INFRA-011: Every page is usable with a screen reader, a keyboard, and reduced motion
+
+**As** a visitor who uses a screen reader, navigates by keyboard, or has asked the system to reduce motion
+**I want to** use every page of the application in the way I browse
+**So that** no page shuts me out or makes me unwell
+
+**Acceptance criteria:**
+
+- [x] Lighthouse's accessibility category scores 100 on the landing, log-in, register, forgot-password, reset-password, dashboard, and admin pages, the last two signed in as an admin (spec B-27).
+- [x] Tab reaches every focusable control on each of those pages, each control paints a visible focus indicator, and a form submits from the keyboard alone (spec B-48).
+- [x] With `prefers-reduced-motion: reduce`, nothing animates on any of those pages while each control is hovered and focused (spec B-48).
+- [x] The error color meets 4.5:1 contrast on every surface, and a link standing on its own line on the auth pages has a 24-pixel target (the two failures the first Lighthouse run found).
+
+**E2E test:** `e2e/accessibility.spec.ts`
+**Ticket:** IAN-341
