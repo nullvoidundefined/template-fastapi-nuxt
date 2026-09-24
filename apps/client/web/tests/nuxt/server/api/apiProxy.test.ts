@@ -269,4 +269,20 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         await expect(healthResponse.json()).resolves.toEqual({ status: 'ok' });
         expect(backendRequests).toEqual([]);
     });
+
+    it.each([
+        '/api/v1/%2e%2e/openapi.json',
+        '/api/v1/%2E%2e/%2e%2E/docs',
+        '/api/v1/./../health/ready',
+    ])(
+        'refuses %s, whose dot segments would climb out of /v1 once fetch resolves them',
+        async (climbingPath) => {
+            const handleRequest = await createNitroRouteTable();
+
+            const response = await handleRequest(new Request(`http://web.test${climbingPath}`));
+
+            expect(backendRequests).toEqual([]);
+            expect(response.status).toBe(404);
+        },
+    );
 });

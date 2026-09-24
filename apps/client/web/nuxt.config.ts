@@ -9,11 +9,22 @@ export default defineNuxtConfig({
             title: 'template-fastapi-nuxt',
         },
     },
-    modules: ['@nuxt/eslint', '@nuxt/test-utils/module'],
+    modules: ['@nuxt/eslint', '@nuxt/test-utils/module', '@sentry/nuxt/module'],
     css: ['~/assets/css/main.scss'],
     runtimeConfig: {
         apiBaseUrl: '',
-        public: {},
+        // Where `/api/ingest` forwards PostHog traffic (NUXT_POSTHOG_HOST).
+        posthogHost: 'https://us.i.posthog.com',
+        public: {
+            // Both empty by default, which leaves PostHog and Sentry off (NUXT_PUBLIC_*).
+            posthogKey: '',
+            sentryDsn: '',
+        },
+    },
+    // Source maps upload from CI only, never from a developer machine (the Nuxt track's Sentry
+    // section); without an auth token the module skips the upload.
+    sentry: {
+        telemetry: false,
     },
     typescript: { strict: true },
 });

@@ -15,9 +15,17 @@
  */
 import { resolveClientAddress } from '#shared/services/resolveClientAddress';
 
+import { isForwardableBackendPath } from '../services/isForwardableBackendPath';
+
+const NOT_FOUND_STATUS = 404;
+
 export default defineEventHandler(async (event) => {
     const { apiBaseUrl } = useRuntimeConfig(event);
     const backendPath = getRouterParam(event, 'path') ?? '';
+    // Only /v1 paths with no dot segment, encoded or not, are forwarded; see the guard.
+    if (!isForwardableBackendPath(backendPath)) {
+        throw createError({ statusCode: NOT_FOUND_STATUS, statusMessage: 'Not Found' });
+    }
     const target = `${apiBaseUrl}/${backendPath}${getRequestURL(event).search}`;
     return proxyRequest(event, target, {
         headers: buildForwardedAddressHeader(event),

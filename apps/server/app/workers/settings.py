@@ -16,6 +16,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func
 
+from app.clients.analytics import create_analytics_client
 from app.clients.disabled_email import DisabledEmailClient
 from app.clients.resend import ResendEmailClient
 from app.constants.job_names import RESET_EMAIL_JOB_NAME
@@ -41,6 +42,7 @@ async def start_worker_resources(ctx: WorkerContext) -> None:
     configure_logging(settings)
     ctx["engine"] = create_database_engine(settings)
     ctx["email_client"] = create_email_client(settings)
+    ctx["analytics_client"] = create_analytics_client(settings)
     health_app = create_worker_health_app(ctx["engine"], ctx["redis"])
     server = uvicorn.Server(
         uvicorn.Config(
@@ -76,8 +78,11 @@ async def stop_worker_resources(ctx: WorkerContext) -> None:
     """Stop the probe server, wait until its port is released, and close the clients."""
     ctx["health_server"].should_exit = True
     await ctx["health_server_task"]
-    await ctx["email_client"].close()
-    await ctx["engine"].dispose()
+    try:
+        await ctx["email_client"].close()
+        await ctx["analytics_client"].close()
+    finally:
+        await ctx["engine"].dispose()
     structlog.get_logger().info("worker_stopped")
 
 

@@ -48,3 +48,22 @@ a {
         transition: none !important;
     }
 }
+
+// Dark theme (B-37): the boot script and the theme plugin set `data-theme` on <html>. Only the
+// surface and text color tokens change; every component reads them, so none needs a dark rule of
+// its own. The accent stays as it is, because white button text on it already meets WCAG AA and
+// it still clears 3:1 as a focus outline on the dark background.
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --accent-light: #3a2413;
+    --background: #121212;
+    --background-translucent: rgba(18, 18, 18, 0.92);
+    --border: #333333;
+    --error: #f87171;
+    --foreground: #ededed;
+    --foreground-muted: #a3a3a3;
+    --surface: #1c1c1c;
+    --surface-active: #333333;
+    --surface-alt: #242424;
+    --surface-hover: #242424;
+}

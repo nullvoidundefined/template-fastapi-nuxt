@@ -5,6 +5,7 @@
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 
 import { registerUser } from '~/api/registerUser';
+import { analyticsClient } from '~/clients/analytics';
 import { useApiClient } from '~/composables/useApiClient';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 import type { CredentialsInput } from '~/types/credentialsInput';
@@ -20,6 +21,7 @@ export function useRegisterMutation(): ReturnType<
         mutationFn: (credentials) => registerUser(apiClient, credentials),
         onSuccess: (registeredUser) => {
             queryClient.setQueryData(sessionQueryKey, registeredUser);
+            analyticsClient.identifyUser(registeredUser.id);
         },
     });
 }

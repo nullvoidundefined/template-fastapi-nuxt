@@ -17,10 +17,12 @@ where no response or timing can reveal it.
 import structlog
 from fastapi import APIRouter, Response, status
 
+from app.analytics.events import AnalyticsEvent
 from app.constants.job_names import RESET_EMAIL_JOB_NAME
 from app.constants.user_roles import UserRole
 from app.core.session_cookie import clear_session_cookie, set_session_cookie
 from app.dependencies.current_user import CurrentUser, OptionalCurrentUser, RequestConnection
+from app.dependencies.integrations import RequestAnalytics
 from app.dependencies.job_queue import RequestJobQueue
 from app.dependencies.settings import RequestSettings
 from app.repositories.user_sessions import delete_session
@@ -61,11 +63,13 @@ async def register(
     response: Response,
     connection: RequestConnection,
     settings: RequestSettings,
+    analytics: RequestAnalytics,
 ) -> AuthenticatedUserResponse:
     """Create an account, sign it in, and set the session cookie."""
     registered = await register_user(connection, body.email, body.password)
     set_session_cookie(response, registered.raw_token, settings.environment)
     logger.info("user_registered", user_id=str(registered.id))
+    await analytics.track_event(registered.id, AnalyticsEvent.USER_REGISTERED)
     return build_user_response(registered.id, registered.email, registered.role)
 
 
@@ -75,11 +79,13 @@ async def login(
     response: Response,
     connection: RequestConnection,
     settings: RequestSettings,
+    analytics: RequestAnalytics,
 ) -> AuthenticatedUserResponse:
     """Open a session for an existing account and set the session cookie."""
     signed_in = await sign_in_user(connection, body.email, body.password)
     set_session_cookie(response, signed_in.raw_token, settings.environment)
     logger.info("user_signed_in", user_id=str(signed_in.id))
+    await analytics.track_event(signed_in.id, AnalyticsEvent.USER_SIGNED_IN)
     return build_user_response(signed_in.id, signed_in.email, signed_in.role)
 
 
@@ -88,6 +94,7 @@ async def logout(
     connection: RequestConnection,
     settings: RequestSettings,
     current: OptionalCurrentUser,
+    analytics: RequestAnalytics,
 ) -> Response:
     """End the session if there is one, and clear the cookie either way.
 
@@ -98,6 +105,7 @@ async def logout(
     if current is not None:
         await delete_session(connection, current.session_id)
         logger.info("user_signed_out", user_id=str(current.user.id))
+        await analytics.track_event(current.user.id, AnalyticsEvent.USER_SIGNED_OUT)
     empty = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session_cookie(empty, settings.environment)
     return empty
@@ -114,6 +122,7 @@ async def change_my_password(
     body: ChangePasswordRequest,
     connection: RequestConnection,
     current: CurrentUser,
+    analytics: RequestAnalytics,
 ) -> AuthenticatedUserResponse:
     """Replace the password after proving the current one, signing out every other session."""
     await change_password(
@@ -124,6 +133,7 @@ async def change_my_password(
         body.new_password,
     )
     logger.info("user_password_changed", user_id=str(current.user.id))
+    await analytics.track_event(current.user.id, AnalyticsEvent.USER_PASSWORD_CHANGED)
     return build_user_response(current.user.id, current.user.email, current.user.role)
 
 
@@ -145,9 +155,10 @@ async def request_password_reset(
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_password_with_token(
-    body: ResetPasswordRequest, connection: RequestConnection
+    body: ResetPasswordRequest, connection: RequestConnection, analytics: RequestAnalytics
 ) -> Response:
     """Set a new password from an emailed token and sign the account out everywhere."""
     user_id = await reset_password(connection, body.token, body.password)
     logger.info("user_password_reset", user_id=str(user_id))
+    await analytics.track_event(user_id, AnalyticsEvent.USER_PASSWORD_RESET_COMPLETED)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

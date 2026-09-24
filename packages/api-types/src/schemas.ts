@@ -195,6 +195,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Presigned Upload
+         * @description Answer a URL the browser can PUT the file to within fifteen minutes.
+         */
+        post: operations["create_presigned_upload_v1_uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -263,7 +283,7 @@ export interface components {
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -390,6 +410,42 @@ export interface components {
             total: number;
         };
         /**
+         * PresignUploadRequest
+         * @description What the client wants to upload: its purpose and its file extension.
+         */
+        PresignUploadRequest: {
+            /** Extension */
+            extension: string;
+            purpose: components["schemas"]["UploadPurpose"];
+        };
+        /**
+         * PresignedUploadData
+         * @description Everything the browser needs to PUT the file straight to R2.
+         */
+        PresignedUploadData: {
+            /** Content Type */
+            content_type: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Key */
+            key: string;
+            /**
+             * Method
+             * @default PUT
+             * @constant
+             */
+            method: "PUT";
+            /** Upload Url */
+            upload_url: string;
+        };
+        /**
+         * PresignedUploadResponse
+         * @description The success envelope for a presigned upload.
+         */
+        PresignedUploadResponse: {
+            data: components["schemas"]["PresignedUploadData"];
+        };
+        /**
          * RegisterRequest
          * @description The body of a registration.
          */
@@ -413,6 +469,12 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * UploadPurpose
+         * @description What the uploaded file is for; each purpose has its own extension allowlist.
+         * @enum {string}
+         */
+        UploadPurpose: "avatar";
         /**
          * UserRole
          * @description Every role the `user_role` enum holds, in its declared order.
@@ -873,6 +935,57 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_presigned_upload_v1_uploads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUploadResponse"];
+                };
             };
             /** @description The request failed validation */
             400: {

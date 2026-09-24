@@ -14,7 +14,10 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
+from app.clients.analytics import create_analytics_client
 from app.clients.job_queue import create_job_queue
+from app.clients.r2 import create_r2_client
+from app.clients.sentry import initialize_sentry
 from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
@@ -26,7 +29,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
-from app.routers import admin, auth, health
+from app.routers import admin, auth, health, uploads
 from app.schemas.errors import ErrorResponse, FieldError
 
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -75,9 +78,10 @@ VALIDATION_ERROR_MESSAGE = "The request body failed validation"
 
 
 def create_app() -> FastAPI:
-    """Assemble settings, logging, the lifespan, middleware, and routers, in that order."""
+    """Assemble settings, logging, error reporting, the lifespan, clients, middleware, routers."""
     settings = get_settings()
     configure_logging(settings)
+    initialize_sentry(settings)
     app = FastAPI(
         title=settings.app_name,
         lifespan=build_lifespan(settings),
@@ -90,12 +94,20 @@ def create_app() -> FastAPI:
             500: {"model": ErrorResponse, "description": "An unexpected error occurred"},
         },
     )
+    register_integrations(app, settings)
     register_middleware(app, settings)
     register_exception_handlers(app, settings)
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(uploads.router)
     return app
+
+
+def register_integrations(app: FastAPI, settings: Settings) -> None:
+    """Build the provider clients once per application; each is a no-op when unconfigured."""
+    app.state.analytics_client = create_analytics_client(settings)
+    app.state.storage_client = create_r2_client(settings)
 
 
 def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -112,7 +124,11 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
             try:
                 await app.state.job_queue.aclose()
             finally:
-                await app.state.engine.dispose()
+                try:
+                    # Flushes PostHog's queue, so events from the last requests are not dropped.
+                    await app.state.analytics_client.close()
+                finally:
+                    await app.state.engine.dispose()
 
     return lifespan
 

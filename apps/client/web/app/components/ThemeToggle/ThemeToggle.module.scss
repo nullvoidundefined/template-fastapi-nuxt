@@ -1,0 +1,16 @@
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-small);
+    color: var(--foreground-muted);
+}
+
+.select {
+    padding: var(--spacing-1) var(--spacing-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    background: var(--background);
+    font-size: var(--font-size-small);
+    color: var(--foreground);
+}

@@ -7,6 +7,7 @@ import uvicorn
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.clients.analytics import AnalyticsClient
 from app.clients.email_sender import EmailSender
 
 
@@ -26,5 +27,6 @@ class WorkerContext(TypedDict, total=False):
     job_try: int
     engine: AsyncEngine
     email_client: WorkerEmailClient
+    analytics_client: AnalyticsClient
     health_server: uvicorn.Server
     health_server_task: asyncio.Task[None]

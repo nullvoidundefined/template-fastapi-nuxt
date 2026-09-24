@@ -24,6 +24,16 @@ class Settings(BaseSettings):
 
     app_name: str = "template-fastapi-nuxt"
     environment: Literal["development", "test", "staging", "production"] = "development"
+    # Each integration below is optional: without its values the client logs one warning at
+    # startup and does nothing, so development and tests run without the provider.
+    sentry_dsn: SecretStr | None = None
+    sentry_traces_sample_rate: float = 0.0
+    posthog_api_key: SecretStr | None = None
+    posthog_host: str = "https://us.i.posthog.com"
+    r2_account_id: str | None = None
+    r2_bucket: str | None = None
+    r2_access_key_id: SecretStr | None = None
+    r2_secret_access_key: SecretStr | None = None
     database_url: SecretStr
     database_ca_cert: str | None = None
     redis_url: SecretStr | None = None

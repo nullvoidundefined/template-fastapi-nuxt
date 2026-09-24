@@ -10,7 +10,12 @@
  * An inbound ID is honored only when it is safe, by the same rule the backend applies: 1 to 64
  * characters of `[A-Za-z0-9._-]`. Echoing an arbitrary inbound value would let a client write
  * newlines or megabytes into every log line and response header.
+ *
+ * The ID is also set as the `request_id` tag on the request's Sentry isolation scope, so an error
+ * Nitro reports while rendering the page joins the same logs (R-341).
  */
+import { getIsolationScope } from '@sentry/nuxt';
+
 const REQUEST_ID_HEADER = 'x-request-id';
 const SAFE_REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
@@ -18,6 +23,7 @@ export default defineEventHandler((event) => {
     const requestId = resolveRequestId(getRequestHeader(event, REQUEST_ID_HEADER));
     event.node.req.headers[REQUEST_ID_HEADER] = requestId;
     setResponseHeader(event, REQUEST_ID_HEADER, requestId);
+    getIsolationScope().setTag('request_id', requestId);
 });
 
 /** Return the inbound ID when it is safe to repeat, else a fresh one. */
