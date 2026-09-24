@@ -1,7 +1,45 @@
 components:
   schemas:
+    AdminUserData:
+      description: 'One user as an administrator sees it: never the password hash.'
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        email:
+          title: Email
+          type: string
+        id:
+          format: uuid4
+          title: Id
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+      required:
+      - id
+      - email
+      - role
+      - created_at
+      title: AdminUserData
+      type: object
+    AdminUserListResponse:
+      description: The `{ data, meta }` envelope around one page of users.
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AdminUserData'
+          title: Data
+          type: array
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required:
+      - data
+      - meta
+      title: AdminUserListResponse
+      type: object
     AuthenticatedUserData:
-      description: The signed-in user, carrying only what a client may see.
+      description: 'The signed-in user, carrying only what a client may see: the id, address, and role.'
       properties:
         email:
           title: Email
@@ -10,9 +48,12 @@ components:
           format: uuid4
           title: Id
           type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
       required:
       - id
       - email
+      - role
       title: AuthenticatedUserData
       type: object
     AuthenticatedUserResponse:
@@ -52,6 +93,7 @@ components:
       - AUTH_EMAIL_ALREADY_REGISTERED
       - AUTH_RESET_TOKEN_INVALID
       - CSRF_HEADER_MISSING
+      - IDEMPOTENCY_KEY_IN_PROGRESS
       - IDEMPOTENCY_KEY_REUSED
       - INPUT_PAYLOAD_TOO_LARGE
       - INPUT_VALIDATION_ERROR
@@ -217,6 +259,25 @@ components:
       - password
       title: LoginRequest
       type: object
+    PageMeta:
+      description: 'Where a page sits in the whole list: the total, and the bounds that produced this
+        page.'
+      properties:
+        limit:
+          title: Limit
+          type: integer
+        offset:
+          title: Offset
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - total
+      - limit
+      - offset
+      title: PageMeta
+      type: object
     RegisterRequest:
       additionalProperties: false
       description: The body of a registration.
@@ -262,6 +323,13 @@ components:
       - password
       title: ResetPasswordRequest
       type: object
+    UserRole:
+      description: Every role the `user_role` enum holds, in its declared order.
+      enum:
+      - member
+      - admin
+      title: UserRole
+      type: string
     ValidationError:
       properties:
         ctx:
@@ -351,6 +419,56 @@ paths:
       summary: Read Readiness
       tags:
       - health
+  /v1/admin/users:
+    get:
+      description: Answer one page of users, oldest first, with the total and the bounds applied.
+      operationId: read_users_v1_admin_users_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+          description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: An unexpected error occurred
+      summary: Read Users
+      tags:
+      - admin
   /v1/auth/forgot-password:
     post:
       description: 'Enqueue the reset email and answer 200, whether or not an account uses the address.
@@ -463,7 +581,7 @@ paths:
       - auth
   /v1/auth/me:
     get:
-      description: Answer the signed-in user's identity, and 401 without a usable session.
+      description: Answer the signed-in user's identity and role, and 401 without a usable session.
       operationId: read_me_v1_auth_me_get
       responses:
         '200':
