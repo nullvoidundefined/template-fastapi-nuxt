@@ -97,11 +97,21 @@ The integrations are optional everywhere. Without `SENTRY_DSN` the API reports n
 
 | Command                           | What it runs                                                                                                                                                                                                                                                                                                          |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cd apps/server && uv run pytest` | Server unit and integration tests; integration needs `TEST_DATABASE_URL` and `TEST_REDIS_URL` (the compose URLs above) and skips without them                                                                                                                                                                         |
+| `cd apps/server && uv run pytest` | Server unit and integration tests; integration needs `TEST_DATABASE_URL` and `TEST_REDIS_URL`, pointed at stores of their own (below), and skips without them                                                                                                                                                         |
 | `pnpm exec vitest run --coverage` | Web and tokens tests, with the web app's 60 percent coverage floor                                                                                                                                                                                                                                                    |
 | `pnpm test:e2e`                   | Playwright against the running compose stack (run `pnpm exec playwright install chromium` once first), including `e2e/accessibility.spec.ts`: Lighthouse scores 100 for accessibility on all seven pages, Tab reaches every control with a visible focus, and nothing animates under `prefers-reduced-motion: reduce` |
 | `pnpm smoke`                      | The smoke suite: every service's health probe and the landing page, against the compose ports by default (`SMOKE_WEB_URL`, `SMOKE_API_URL`, `SMOKE_WORKER_URL` override them)                                                                                                                                         |
 | `pnpm check:contract`             | Fails when `openapi.yaml` or `@repo/api-types` no longer match the code                                                                                                                                                                                                                                               |
+
+The integration suite needs a Postgres database and a Redis database that nothing else uses, not the compose stack's own `app` database and Redis database 0. Its revision tests downgrade and re-upgrade the schema, which invalidates the prepared statements a running API holds, so the stack's next request on each pooled connection answers 500; and its Redis fixtures flush their database, which would empty the stack's rate-limit counters and job queue. Create the test database once and point the suite at it and at Redis database 1:
+
+```bash
+docker compose exec postgres createdb -U app app_test
+export TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app_test
+export TEST_REDIS_URL=redis://localhost:6380/1
+```
+
+The suite refuses to start when another client is connected to the `TEST_DATABASE_URL` database (IAN-340), because that client is usually the running stack.
 
 After changing a response schema, regenerate and commit the contract:
 
