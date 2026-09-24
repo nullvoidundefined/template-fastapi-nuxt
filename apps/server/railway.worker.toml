@@ -1,7 +1,7 @@
 # Railway configuration for the arq worker service (spec: Deployment). Set the service's Root
 # Directory to `apps/server` and its Config File to `/apps/server/railway.worker.toml`. Railway
-# probes the healthcheck on PORT, while the worker serves its probes on WORKER_PORT, so the
-# service sets both to the same value (the README's deploy section lists every variable).
+# probes the healthcheck on the PORT it injects, and the worker serves its probes there whenever
+# WORKER_PORT is unset, so leave WORKER_PORT unset on Railway (the README lists every variable).
 # The worker never migrates: the API's pre-deploy command owns the schema.
 
 [build]

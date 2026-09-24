@@ -136,20 +136,20 @@ Railway builds a service from its Root Directory but reads a config file only fr
 
 Set these variables on each service before its first deploy. Railway variables are per service, so a value the API and the worker both need is set on both. Mark every secret as sealed.
 
-| Variable              | Service     | Value                                                                                                    |
-| --------------------- | ----------- | -------------------------------------------------------------------------------------------------------- |
-| `ENVIRONMENT`         | api, worker | `production`, or `staging` for a staging environment; never left unset                                   |
-| `DATABASE_URL`        | api, worker | Secret. The Postgres URL with the `postgresql+asyncpg://` scheme                                         |
-| `DATABASE_CA_CERT`    | api, worker | The path of a CA bundle when the database's certificate needs one; unset otherwise                       |
-| `REDIS_URL`           | api, worker | Secret. The Railway Redis URL; the API refuses to start in production without it                         |
-| `CORS_ORIGIN`         | api         | The web service's public origin; the API refuses to start in production without it                       |
-| `FORWARDED_ALLOW_IPS` | api         | The web service's private-network address; the API refuses to start in production without it             |
-| `PORT`                | api, web    | Injected by Railway                                                                                      |
-| `PORT`, `WORKER_PORT` | worker      | The same value, such as `3002`: Railway probes `PORT`, and the worker serves its probes on `WORKER_PORT` |
-| `CLIENT_URL`          | worker      | The web service's public origin, from which the reset-email link is built                                |
-| `RESEND_API_KEY`      | worker      | Secret. Without it, reset emails are logged rather than sent                                             |
-| `EMAIL_FROM`          | worker      | A sender address on a domain verified with Resend                                                        |
-| `NUXT_API_BASE_URL`   | web         | The API's private-network URL, such as `http://api.railway.internal:<port>`                              |
+| Variable              | Service     | Value                                                                                                                     |
+| --------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ENVIRONMENT`         | api, worker | `production`, or `staging` for a staging environment; never left unset                                                    |
+| `DATABASE_URL`        | api, worker | Secret. The Postgres URL with the `postgresql+asyncpg://` scheme                                                          |
+| `DATABASE_CA_CERT`    | api, worker | The path of a CA bundle when the database's certificate needs one; unset otherwise                                        |
+| `REDIS_URL`           | api, worker | Secret. The Railway Redis URL; the API refuses to start in production without it                                          |
+| `CORS_ORIGIN`         | api         | The web service's public origin; the API refuses to start in production without it                                        |
+| `FORWARDED_ALLOW_IPS` | api         | The web service's private-network address; the API refuses to start in production without it                              |
+| `PORT`                | api, web    | Injected by Railway                                                                                                       |
+| `WORKER_PORT`         | worker      | Leave unset: Railway injects `PORT` and probes it, and the worker serves its probes on `PORT` when `WORKER_PORT` is unset |
+| `CLIENT_URL`          | worker      | The web service's public origin, from which the reset-email link is built                                                 |
+| `RESEND_API_KEY`      | worker      | Secret. Without it, reset emails are logged rather than sent                                                              |
+| `EMAIL_FROM`          | worker      | A sender address on a domain verified with Resend                                                                         |
+| `NUXT_API_BASE_URL`   | web         | The API's private-network URL, such as `http://api.railway.internal:<port>`                                               |
 
 Billing adds the Stripe variables and the webhook endpoint (`/v1/billing/webhook`) with slice 06, and slice 07 adds the PostHog, Sentry, and R2 variables; each slice extends this table.
 

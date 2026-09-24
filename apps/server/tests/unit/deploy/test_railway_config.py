@@ -55,6 +55,22 @@ def test_the_api_healthcheck_is_a_route_the_app_serves(server_app: FastAPI) -> N
     assert deploy["healthcheckPath"] in served_paths
 
 
+def test_the_api_healthcheck_is_liveness_so_a_database_outage_cannot_fail_a_deploy() -> None:
+    """Readiness checks Postgres, and a Neon cold start would fail a deploy that changed code."""
+    deploy = read_railway_config(API_CONFIG_PATH)["deploy"]
+
+    assert deploy["healthcheckPath"] == "/health"
+
+
+def test_the_worker_image_leaves_its_port_to_the_platform() -> None:
+    """A baked WORKER_PORT would shadow the PORT Railway injects and health-checks."""
+    dockerfile = (SERVER_DIRECTORY / "Dockerfile.worker").read_text()
+    env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
+
+    assert not any("WORKER_PORT=" in line for line in env_lines)
+    assert "PORT" in dockerfile.split("HEALTHCHECK", 1)[1], "the healthcheck must follow PORT"
+
+
 def test_the_worker_builds_from_its_own_dockerfile_and_never_migrates() -> None:
     config = read_railway_config(WORKER_CONFIG_PATH)
     build, deploy = config["build"], config["deploy"]
