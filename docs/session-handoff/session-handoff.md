@@ -7,7 +7,7 @@
 ## Production state
 
 - Nothing is deployed. The template runs locally with `docker compose up --detach --wait`, which now brings the schema to head through a one-shot `migrate` service before `api` or `worker` start. The full CI graph, ten checks, is green on `main`.
-- Postgres and Redis publish on host ports 5433 and 6380. Integration tests need `TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app` and `TEST_REDIS_URL=redis://localhost:6380/0`.
+- Postgres and Redis publish on host ports 5433 and 6380. Integration tests need `TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app_test` and `TEST_REDIS_URL=redis://localhost:6380/1`, a database and a Redis database the running stack does not use (create the database once with `docker compose exec postgres createdb -U app app_test`); the suite refuses a database another client is connected to (IAN-340).
 - Compose now fixes a subnet (`172.28.0.0/16`) and gives `web` the static address `172.28.0.10`, because `FORWARDED_ALLOW_IPS` on the API must name one address and uvicorn's allowlist takes addresses rather than service names.
 
 ## Session metrics
