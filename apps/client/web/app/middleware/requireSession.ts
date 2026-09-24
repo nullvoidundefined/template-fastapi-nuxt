@@ -18,6 +18,7 @@ import {
 import { useQueryClient } from '@tanstack/vue-query';
 
 import { useApiClient } from '~/composables/useApiClient';
+import { hasRecentServerSession } from '~/services/session/hasRecentServerSession';
 import { isHydratingServerRender } from '~/services/session/isHydratingServerRender';
 import { readSessionOutcome } from '~/services/session/readSessionOutcome';
 
@@ -25,11 +26,13 @@ const LOGIN_PATH = '/login';
 const SESSION_UNAVAILABLE_MESSAGE = 'The session could not be confirmed';
 
 export default defineNuxtRouteMiddleware(async () => {
-    // The server already ran this gate for the page being hydrated; asking again spends a request.
-    if (isHydratingServerRender(useNuxtApp())) {
+    const queryClient = useQueryClient();
+    // The server already ran this gate for the page being hydrated, so asking again spends a
+    // request; but only a session the server fetched just now proves that, since a render
+    // replayed from the HTTP cache carries an old one that may have been revoked (IAN-335).
+    if (isHydratingServerRender(useNuxtApp()) && hasRecentServerSession(queryClient)) {
         return undefined;
     }
-    const queryClient = useQueryClient();
     const apiClient = useApiClient();
     const outcome = await readSessionOutcome(queryClient, apiClient);
     if (outcome.state === 'signedIn') {
