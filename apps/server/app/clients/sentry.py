@@ -20,7 +20,10 @@ from sentry_sdk.types import Event, Hint
 from app.core.settings import Settings
 
 REQUEST_ID_TAG = "request_id"
-SCRUBBED_HEADER_NAMES = frozenset({"authorization", "cookie", "set-cookie", "proxy-authorization"})
+# The Referer is withheld because Nitro forwards the reset page's address, token included.
+SCRUBBED_HEADER_NAMES = frozenset(
+    {"authorization", "cookie", "set-cookie", "proxy-authorization", "referer"}
+)
 KEPT_USER_FIELDS = frozenset({"id"})
 
 logger = structlog.get_logger(__name__)

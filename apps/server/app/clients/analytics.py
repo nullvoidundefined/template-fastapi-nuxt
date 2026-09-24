@@ -28,6 +28,9 @@ CAPTURE_OPERATION = "capture"
 # Bounds both the SDK's own upload requests and the enqueue the wrapper times.
 POSTHOG_TIMEOUT_SECONDS = 5.0
 
+# How long shutdown waits for PostHog to flush its queue before giving up on it.
+ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
 logger = structlog.get_logger(__name__)
 
 
@@ -72,10 +75,22 @@ class AnalyticsClient:
             logger.warning("analytics_capture_failed", analytics_event=event.value, exc_info=err)
 
     async def close(self) -> None:
-        """Flush queued events and stop the SDK, so a shutdown does not drop them."""
+        """Flush queued events and stop the SDK, giving up after a bounded wait.
+
+        A PostHog outage makes the SDK's flush retry for a long time, and shutdown must not wait
+        for it: the process is being replaced, and a few lost events cost less than a stuck deploy.
+        """
         shutdown = getattr(self.posthog, "shutdown", None)
-        if shutdown is not None:
-            await asyncio.to_thread(shutdown)
+        if shutdown is None:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(shutdown), timeout=ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            logger.warning(
+                "analytics_shutdown_timed_out", timeout_seconds=ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS
+            )
 
 
 def build_event_properties(forwarded_headers: Mapping[str, str]) -> dict[str, object]:

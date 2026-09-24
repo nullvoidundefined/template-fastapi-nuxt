@@ -86,6 +86,36 @@ async def test_b24_closing_the_client_flushes_and_stops_the_sdk() -> None:
     assert posthog.is_shut_down
 
 
+class HangingPosthog:
+    """Stands in for an SDK whose flush never returns, as it does against a dead endpoint."""
+
+    def capture(self, event: str, **kwargs: object) -> None:
+        """Accept the event."""
+
+    def shutdown(self) -> None:
+        """Block well past any shutdown budget."""
+        import time  # noqa: PLC0415
+
+        time.sleep(30)
+
+
+async def test_b24_closing_a_hung_client_gives_up_within_its_budget(monkeypatch) -> None:
+    """A PostHog outage cannot hold the process open at shutdown."""
+    import time  # noqa: PLC0415
+
+    from app.clients import analytics as analytics_module  # noqa: PLC0415
+    from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
+
+    monkeypatch.setattr(analytics_module, "ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS", 0.2, raising=False)
+    started_at = time.perf_counter()
+
+    with structlog.testing.capture_logs() as logs:
+        await AnalyticsClient(HangingPosthog()).close()
+
+    assert time.perf_counter() - started_at < 2
+    assert "analytics_shutdown_timed_out" in [log["event"] for log in logs]
+
+
 async def test_b24_the_api_lifespan_closes_the_analytics_client_on_shutdown(monkeypatch) -> None:
     """Shutting the API down flushes PostHog's queue."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415

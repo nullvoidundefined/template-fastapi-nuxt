@@ -141,6 +141,25 @@ def test_b30_before_send_drops_the_request_body_and_every_query_string() -> None
     assert "from-the-email" not in repr(scrubbed)
 
 
+def test_b30_before_send_withholds_the_referer_which_carries_the_reset_token() -> None:
+    """Nitro forwards the reset page's address as the Referer, token and all."""
+    from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
+
+    event = {
+        "request": {
+            "headers": {
+                "Referer": "https://app.example.test/reset-password?token=from-the-email",
+                "user-agent": "pytest",
+            }
+        }
+    }
+
+    scrubbed = scrub_sentry_event(event, {})
+
+    assert scrubbed is not None
+    assert scrubbed["request"]["headers"] == {"user-agent": "pytest"}
+
+
 def test_b30_before_send_accepts_an_event_with_no_request() -> None:
     """An event raised outside a request, such as in a job, passes through unchanged."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
