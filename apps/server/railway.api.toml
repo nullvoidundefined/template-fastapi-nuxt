@@ -1,0 +1,20 @@
+# Railway configuration for the API service (spec: Deployment). Set the service's Root Directory
+# to `apps/server` and its Config File to `/apps/server/railway.api.toml`: Railway builds from the
+# root directory, but it reads a config file only from an absolute path in the repository.
+# No variable or secret belongs here; the README's deploy section lists what to set per service.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+# Watch paths are matched from the repository root, not from the root directory.
+watchPatterns = ["/apps/server/**"]
+
+[deploy]
+# Runs once per deploy on the new image, before any replica takes traffic, so replicas never
+# race each other to migrate and no replica serves against an unmigrated schema.
+preDeployCommand = ["alembic upgrade head"]
+# Readiness, not liveness: a new deploy takes traffic only once it reaches Postgres.
+healthcheckPath = "/health/ready"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
