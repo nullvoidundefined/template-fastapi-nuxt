@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-24 (slice 05: idempotency keys, roles, and the admin page)
+Last updated: 2026-09-24 (slices 05 and 07: idempotency, roles, admin, observability, and theme)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -59,3 +59,18 @@ the date and what changed. Section shape:
 | Feature                                                              | Status       | Notes                   |
 | -------------------------------------------------------------------- | ------------ | ----------------------- |
 | Roles, `require_admin`, `GET /v1/admin/users`, and the `/admin` page | **Complete** | US-ADMIN-001; spec B-19 |
+
+## Observability
+
+| Feature                                                                                                  | Status       | Notes                                                                                                     |
+| -------------------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
+| Provider call telemetry: provider, operation, duration, outcome, request ID, and a timeout on every call | **Complete** | US-OBS-001; spec B-23; `with_client_telemetry` wraps PostHog and R2                                       |
+| PostHog server events and browser pageviews, identify, and reset, keyed by user ID only                  | **Partial**  | US-OBS-002; spec B-24; the four auth events on this base; the two reset events join with the reset routes |
+| Sentry on the API, the browser, and Nitro, tagged with the request ID and scrubbed of credentials        | **Complete** | US-OBS-002; spec B-30                                                                                     |
+| Presigned R2 uploads under server-generated keys (`POST /v1/uploads`)                                    | **Complete** | US-OBS-003; spec B-29; no page calls it yet                                                               |
+
+## Theme
+
+| Feature                                                                                 | Status       | Notes                                        |
+| --------------------------------------------------------------------------------------- | ------------ | -------------------------------------------- |
+| Light, dark, and system theme with a toggle in both layouts, applied before first paint | **Complete** | US-THEME-001; spec B-37; `e2e/theme.spec.ts` |
