@@ -22,3 +22,12 @@
     margin: 0 auto;
     padding: var(--spacing-10) var(--spacing-6);
 }
+
+// A link standing on its own line, such as "Forgot your password?", sat 17px tall with its
+// neighbor closer than 24px, which fails WCAG 2.5.8 target size and Lighthouse's accessibility
+// score (spec B-27). A 24px line box gives every link in these pages the minimum target.
+.main a {
+    display: inline-block;
+    min-height: var(--spacing-6);
+    line-height: var(--spacing-6);
+}
