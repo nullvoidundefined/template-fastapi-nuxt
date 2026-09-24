@@ -8,6 +8,12 @@ afresh; the slice 08 cleanup job deletes older rows.
 
 A key is at most 255 printable ASCII characters. Anything else is refused as a validation error
 before a claim is taken, so an oversized header can never become a row.
+
+A stored response is at most 256 KiB, which bounds the memory each keyed request can hold while
+its response passes through. A larger response, or a streamed one, is not stored and its key is
+released. Of the handler's headers only the allowlist below is stored and replayed; Set-Cookie
+is left off on purpose, because a replayed session cookie would outlive a sign-out and a stored
+one would keep a live token in clear text, where the sessions table keeps only its hash.
 """
 
 import re
@@ -19,6 +25,19 @@ IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[\x21-\x7e]{1,255}$")
 LEASE_SECONDS = 60
 REPLAY_WINDOW_HOURS = 24
 IDEMPOTENCY_KEY_STATE_ENUM_NAME = "request_idempotency_key_state"
+MAX_STORED_RESPONSE_BYTES = 256 * 1024
+REPLAYED_RESPONSE_HEADERS = frozenset(
+    {
+        b"cache-control",
+        b"content-disposition",
+        b"content-encoding",
+        b"content-language",
+        b"etag",
+        b"expires",
+        b"last-modified",
+        b"location",
+    }
+)
 
 
 class IdempotencyKeyState(StrEnum):

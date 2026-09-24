@@ -19,16 +19,24 @@ requests see a claim the moment it is taken and every lease is judged by the dat
    re-reads the row and answers as in step 2. A row that has vanished was released by its holder
    between the read and the takeover, and the claim insert is retried once (B-53).
 
-After the handler: a 2xx to 4xx response is stored and the claim completed; an exception, a 5xx,
-or a body that is not JSON releases the claim, so the client's retry runs again (B-18). Both
-statements carry this request's claim token, so a holder that was taken over changes nothing.
+After the handler: a 2xx to 4xx response is stored and the claim completed; an exception or a 5xx
+releases the claim, so the client's retry runs again (B-18). Both statements carry this request's
+claim token, so a holder that was taken over changes nothing.
+
+What is stored is the raw body bytes, the content type, and the allowlisted headers, so a
+plain-text or binary response replays exactly as a JSON one does (IAN-339). The capture is
+bounded: a response that streams, sending its body in several messages without declaring a
+Content-Length, or one past `MAX_STORED_RESPONSE_BYTES`, stops being buffered the moment it is
+recognized, still reaches the client whole, and releases its claim rather than being stored. That
+trades the retry's protection for bounded memory, and no route streams or answers that much today.
 """
 
 import asyncio
 import hashlib
 import json
+import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
@@ -44,6 +52,8 @@ from app.constants.idempotency import (
     IDEMPOTENCY_KEY_HEADER,
     IDEMPOTENCY_KEY_PATTERN,
     IDEMPOTENT_METHODS,
+    MAX_STORED_RESPONSE_BYTES,
+    REPLAYED_RESPONSE_HEADERS,
     IdempotencyKeyState,
 )
 from app.constants.session import SESSION_COOKIE_NAME
@@ -52,6 +62,7 @@ from app.db.session import CONNECT_FAILURE_TYPES
 from app.errors import DATABASE_UNAVAILABLE_MESSAGE, send_error_envelope
 from app.repositories.request_idempotency_keys import (
     IdempotentRequest,
+    StoredResponse,
     claim_idempotency_key,
     complete_idempotency_key,
     read_idempotency_key,
@@ -65,6 +76,12 @@ KEY_REUSED_MESSAGE = "That Idempotency-Key was already used for a different requ
 KEY_IN_PROGRESS_MESSAGE = "A request with that Idempotency-Key is still in progress"
 CLAIM_INSERT_ATTEMPTS = 2
 SERVER_ERROR_STATUS = 500
+JSON_CONTENT_TYPE = "application/json"
+JSON_MEDIA_TYPE_SUFFIX = "+json"
+# RFC 9110 forbids a Content-Length on these, so a replay of one sends none, as the handler did.
+BODILESS_STATUSES = frozenset({204, 304})
+# ASCII digits only: `str.isdigit()` also accepts latin-1 superscripts, which `int()` refuses.
+CONTENT_LENGTH_PATTERN = re.compile(r"[0-9]+")
 
 # Storing the response is retried this many times, with a short growing pause, before the
 # claim is left for its lease to lapse.
@@ -105,12 +122,27 @@ class RequestClaim:
     outcome: ClaimOutcome
 
 
+class UnstoredReason(Enum):
+    """Why a response passed through without being stored for replay."""
+
+    STREAMING = "streaming"
+    TOO_LARGE = "too_large"
+
+
 @dataclass(slots=True)
 class CapturedResponse:
-    """The status and body the handler sent, recorded as it passes through to the client."""
+    """What the handler sent, recorded as it passes through to the client, up to the cap.
+
+    Once `unstored_reason` is set the body chunks are dropped and nothing more is buffered.
+    """
 
     status: int | None = None
-    body: bytes = b""
+    content_type: str | None = None
+    headers: list[tuple[str, str]] = field(default_factory=list)
+    has_content_length: bool = False
+    body_chunks: list[bytes] = field(default_factory=list)
+    body_size: int = 0
+    unstored_reason: UnstoredReason | None = None
 
 
 class IdempotencyMiddleware:
@@ -334,11 +366,58 @@ def is_same_request(stored: Row[Any], request: IdempotentRequest) -> bool:
 
 
 def record_response_message(captured: CapturedResponse, message: Message) -> None:
-    """Keep the status line and the body chunks of the response on their way to the client."""
+    """Keep the status, the storable headers, and the body chunks, until the cap is passed."""
     if message["type"] == "http.response.start":
-        captured.status = message["status"]
-    elif message["type"] == "http.response.body":
-        captured.body += message.get("body", b"")
+        record_response_start(captured, message)
+    elif message["type"] == "http.response.body" and captured.unstored_reason is None:
+        record_response_body(captured, message)
+
+
+def record_response_start(captured: CapturedResponse, message: Message) -> None:
+    """Keep the status, the content type, and the allowlisted headers; judge the declared size."""
+    captured.status = message["status"]
+    for raw_name, raw_value in message.get("headers", []):
+        name = bytes(raw_name).lower()
+        value = bytes(raw_value).decode("latin-1")
+        if name == b"content-type":
+            captured.content_type = value
+        elif name == b"content-length":
+            record_declared_length(captured, value)
+        elif name in REPLAYED_RESPONSE_HEADERS:
+            captured.headers.append((name.decode("latin-1"), value))
+
+
+def record_declared_length(captured: CapturedResponse, value: str) -> None:
+    """Judge a declared Content-Length; an unparseable one counts as undeclared.
+
+    An unparseable length must not raise here, because this runs inside the send that carries the
+    handler's committed answer to the client. Treated as undeclared, the body's running total
+    still bounds what is buffered.
+    """
+    if CONTENT_LENGTH_PATTERN.fullmatch(value.strip()) is None:
+        return
+    captured.has_content_length = True
+    if int(value) > MAX_STORED_RESPONSE_BYTES:
+        stop_capturing(captured, UnstoredReason.TOO_LARGE)
+
+
+def record_response_body(captured: CapturedResponse, message: Message) -> None:
+    """Buffer one body chunk, or stop buffering for a stream or a body past the cap."""
+    if message.get("more_body", False) and not captured.has_content_length:
+        stop_capturing(captured, UnstoredReason.STREAMING)
+        return
+    chunk = message.get("body", b"")
+    captured.body_size += len(chunk)
+    if captured.body_size > MAX_STORED_RESPONSE_BYTES:
+        stop_capturing(captured, UnstoredReason.TOO_LARGE)
+        return
+    captured.body_chunks.append(chunk)
+
+
+def stop_capturing(captured: CapturedResponse, reason: UnstoredReason) -> None:
+    """Drop what was buffered and record why this response will not be stored."""
+    captured.unstored_reason = reason
+    captured.body_chunks.clear()
 
 
 async def settle_claim(claim: RequestClaim, captured: CapturedResponse) -> None:
@@ -346,18 +425,46 @@ async def settle_claim(claim: RequestClaim, captured: CapturedResponse) -> None:
     if captured.status is None or captured.status >= SERVER_ERROR_STATUS:
         await release_claim_safely(claim)
         return
-    try:
-        response_body = json.loads(captured.body) if captured.body else None
-    except ValueError:
-        logger.warning("idempotency_response_not_json", path=claim.request.path)
+    if captured.unstored_reason is not None:
+        logger.warning(
+            "idempotency_response_not_stored",
+            path=claim.request.path,
+            reason=captured.unstored_reason.value,
+        )
         await release_claim_safely(claim)
         return
-    await complete_claim_safely(claim, captured.status, response_body)
+    await complete_claim_safely(claim, build_stored_response(captured, captured.status))
 
 
-async def complete_claim_safely(
-    claim: RequestClaim, status_code: int, response_body: object
-) -> None:
+def build_stored_response(captured: CapturedResponse, status_code: int) -> StoredResponse:
+    """Assemble what is stored, parsing a JSON body for the column older replicas read."""
+    body = b"".join(captured.body_chunks)
+    return StoredResponse(
+        status_code=status_code,
+        body=body,
+        content_type=captured.content_type,
+        headers=captured.headers,
+        json_body=parse_json_body(body, captured.content_type),
+    )
+
+
+def parse_json_body(body: bytes, content_type: str | None) -> object:
+    """Return a JSON body parsed, or None when it is empty, not JSON, or does not parse."""
+    if not body or content_type is None or not is_json_media_type(content_type):
+        return None
+    try:
+        return json.loads(body)
+    except ValueError:
+        return None
+
+
+def is_json_media_type(content_type: str) -> bool:
+    """Return True for `application/json` and any `+json` suffixed type, parameters ignored."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == JSON_CONTENT_TYPE or media_type.endswith(JSON_MEDIA_TYPE_SUFFIX)
+
+
+async def complete_claim_safely(claim: RequestClaim, response: StoredResponse) -> None:
     """Store the response, retrying a transient failure, because an open claim can run twice.
 
     The client already has its answer, so a failure is logged rather than raised. Retrying matters
@@ -368,7 +475,7 @@ async def complete_claim_safely(
         try:
             async with claim.engine.begin() as connection:
                 is_completed = await complete_idempotency_key(
-                    connection, claim.request, claim.claim_token, status_code, response_body
+                    connection, claim.request, claim.claim_token, response
                 )
             break
         except CONNECT_FAILURE_TYPES as err:
@@ -390,10 +497,32 @@ async def release_claim_safely(claim: RequestClaim) -> None:
 
 
 async def send_stored_response(send: Send, stored: Row[Any]) -> None:
-    """Answer with the stored status and JSON body, as raw ASGI messages."""
-    body = b"" if stored.response_body is None else json.dumps(stored.response_body).encode()
-    headers = [(b"content-length", str(len(body)).encode())]
-    if body:
-        headers.append((b"content-type", b"application/json"))
+    """Answer with the stored status, body, content type, and headers, as raw ASGI messages."""
+    body, content_type, stored_headers = read_replay_parts(stored)
+    headers = []
+    if stored.status_code not in BODILESS_STATUSES:
+        headers.append((b"content-length", str(len(body)).encode()))
+    if content_type is not None:
+        headers.append((b"content-type", content_type.encode("latin-1")))
+    headers.extend(
+        (name.encode("latin-1"), value.encode("latin-1")) for name, value in stored_headers
+    )
     await send({"type": "http.response.start", "status": stored.status_code, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+def read_replay_parts(stored: Row[Any]) -> tuple[bytes, str | None, list[list[str]]]:
+    """Return the body, content type, and headers to replay, from a raw row or a JSONB-only one.
+
+    A row completed before revision 0008 has no raw body, so its JSONB body is serialized as it
+    always was, with no headers, until the replay window has aged every such row out.
+    """
+    if stored.response_body_bytes is not None:
+        return (
+            bytes(stored.response_body_bytes),
+            stored.response_content_type,
+            (stored.response_headers or []),
+        )
+    if stored.response_body is None:
+        return b"", None, []
+    return json.dumps(stored.response_body).encode(), JSON_CONTENT_TYPE, []

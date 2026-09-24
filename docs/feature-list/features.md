@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned** | **Excluded**
 
-Last updated: 2026-09-24 (slice 08: the hourly `delete_expired_rows` cleanup job is Complete)
+Last updated: 2026-09-24 (IAN-339: idempotency replays raw bodies and allowlisted headers)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -46,7 +46,7 @@ the date and what changed. Section shape:
 | UI kit: Button, Modal, Toast, TextField with Storybook stories and a visual-regression CI job           | **Complete** | US-AUTH-004; spec B-39, B-48                                                                                                                                                  |
 | Register, log-in and dashboard password-change forms with field-level errors                            | **Complete** | US-AUTH-004; spec B-38, B-50                                                                                                                                                  |
 | Password reset: `user_password_resets`, the forgot and reset endpoints, and the arq email job           | **Complete** | US-AUTH-005; spec B-14, B-15, B-36, B-47; the pages ship with it (Resend client, `with_client_telemetry`, retries); the two pages (B-36) arrive in the slice 04 frontend half |
-| Idempotency keys: replay, release on failure, reuse refusal, lease takeover                             | **Complete** | US-INFRA-009; spec B-17, B-18, B-40, B-44, B-53                                                                                                                               |
+| Idempotency keys: replay, release on failure, reuse refusal, lease takeover                             | **Complete** | US-INFRA-009; spec B-17, B-18, B-40, B-44, B-53; raw bodies and allowlisted headers replayed, streams and bodies over 256 KiB unkeyed (IAN-339)                               |
 | Smoke suite (`pnpm smoke`), run by CI against the compose stack built from the production images        | **Complete** | US-INFRA-010; spec B-28 as amended on 2026-09-24; `e2e/smoke/services.smoke.ts`                                                                                               |
 | Railway configuration, one file per service, with the API's `alembic upgrade head` pre-deploy command   | **Complete** | US-INFRA-010; configuration only, because the template is never deployed and the first real deploy happens in the first fork                                                  |
 | Accessibility: Lighthouse 100 on all seven pages, keyboard operability, and reduced motion              | **Complete** | US-INFRA-011; spec B-27, B-48; `e2e/accessibility.spec.ts`                                                                                                                    |

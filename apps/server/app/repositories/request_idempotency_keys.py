@@ -49,6 +49,23 @@ class IdempotentRequest:
     body_hash: str
 
 
+@dataclass(slots=True, frozen=True)
+class StoredResponse:
+    """The response a completed claim replays: status, raw body, content type, kept headers.
+
+    `json_body` is the same body parsed, or None when it is not JSON. It is still written to the
+    JSONB column revision 0005 created, so a replica running the previous release replays a JSON
+    body correctly until the contract migration drops that column. That replica cannot replay a
+    non-JSON body, which it would send empty, for the few seconds a rolling deploy overlaps.
+    """
+
+    status_code: int
+    body: bytes
+    content_type: str | None
+    headers: list[tuple[str, str]]
+    json_body: object
+
+
 async def claim_idempotency_key(
     connection: AsyncConnection, request: IdempotentRequest, claim_token: uuid.UUID
 ) -> bool:
@@ -76,6 +93,9 @@ async def claim_idempotency_key(
             **{name: excluded[name] for name in values if name not in ("key", "user_id")},
             "status_code": None,
             "response_body": None,
+            "response_body_bytes": None,
+            "response_content_type": None,
+            "response_headers": None,
             "created_at": func.now(),
         },
         where=keys.c.created_at < func.now() - REPLAY_WINDOW,
@@ -94,6 +114,9 @@ async def read_idempotency_key(
         keys.c.state,
         keys.c.status_code,
         keys.c.response_body,
+        keys.c.response_body_bytes,
+        keys.c.response_content_type,
+        keys.c.response_headers,
         (keys.c.locked_until > func.now()).label("is_lease_live"),
         (keys.c.created_at > func.now() - REPLAY_WINDOW).label("is_within_replay_window"),
     ).where(keys.c.key == key, keys.c.user_id == user_id)
@@ -130,8 +153,7 @@ async def complete_idempotency_key(
     connection: AsyncConnection,
     request: IdempotentRequest,
     claim_token: uuid.UUID,
-    status_code: int,
-    response_body: object,
+    response: StoredResponse,
 ) -> bool:
     """Store the response on the claim this request still holds; False if it was taken over."""
     statement = (
@@ -143,8 +165,11 @@ async def complete_idempotency_key(
         )
         .values(
             state=IdempotencyKeyState.COMPLETED.value,
-            status_code=status_code,
-            response_body=response_body,
+            status_code=response.status_code,
+            response_body=response.json_body,
+            response_body_bytes=response.body,
+            response_content_type=response.content_type,
+            response_headers=[list(header) for header in response.headers],
         )
         .returning(keys.c.key)
     )
