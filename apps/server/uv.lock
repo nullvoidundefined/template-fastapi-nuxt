@@ -59,11 +59,8 @@ dependencies = [
     { name = "bcrypt" },
     { name = "boto3" },
     { name = "fastapi" },
-<<<<<<< HEAD
     { name = "httpx" },
-=======
     { name = "posthog" },
->>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "redis" },
@@ -93,11 +90,8 @@ requires-dist = [
     { name = "bcrypt", specifier = ">=4.2" },
     { name = "boto3", specifier = ">=1.43.101" },
     { name = "fastapi", specifier = ">=0.141.1" },
-<<<<<<< HEAD
     { name = "httpx", specifier = ">=0.28.1" },
-=======
     { name = "posthog", specifier = ">=7.60.0" },
->>>>>>> aae7994 (feat(server): PostHog auth events, Sentry reporting, and R2 presigned uploads behind client telemetry)
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "redis", specifier = ">=5.3" },
