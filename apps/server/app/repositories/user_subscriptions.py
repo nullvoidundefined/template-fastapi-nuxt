@@ -4,7 +4,9 @@ A user's row is found by the user id for a request and by the Stripe subscriptio
 webhook, because a subscription event names the subscription rather than our user. Every write is
 one statement, so a webhook's changes to a row land together or not at all. The upserts conflict
 on `user_id`, the one-row-per-user constraint, so a user who subscribes again after cancelling has
-the same row pointed at the new customer and subscription.
+the same row pointed at the new customer and subscription by that checkout. A subscription event's
+own upsert is narrower: it takes over a row only when the row names no subscription yet or names
+this one, so a late event for a subscription the user has since replaced cannot repoint the row.
 """
 
 import uuid
@@ -12,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, select, update
+from sqlalchemy import Row, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -75,8 +77,8 @@ async def upsert_subscription_for_user(
     customer_id: str,
     subscription_id: str,
     state: SubscriptionState,
-) -> None:
-    """Create or overwrite the user's row with the subscription, its customer, and its state."""
+) -> bool:
+    """Create the user's row, or fill one naming no other subscription; False when it names one."""
     values = {
         "stripe_customer_id": customer_id,
         "stripe_subscription_id": subscription_id,
@@ -85,9 +87,17 @@ async def upsert_subscription_for_user(
     statement = (
         insert(user_subscriptions)
         .values(user_id=user_id, **values)
-        .on_conflict_do_update(index_elements=[user_subscriptions.c.user_id], set_=values)
+        .on_conflict_do_update(
+            index_elements=[user_subscriptions.c.user_id],
+            set_=values,
+            where=or_(
+                user_subscriptions.c.stripe_subscription_id.is_(None),
+                user_subscriptions.c.stripe_subscription_id == subscription_id,
+            ),
+        )
+        .returning(user_subscriptions.c.id)
     )
-    await connection.execute(statement)
+    return (await connection.execute(statement)).first() is not None
 
 
 async def set_subscription_status(

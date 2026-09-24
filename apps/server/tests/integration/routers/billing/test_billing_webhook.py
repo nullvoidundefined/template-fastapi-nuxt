@@ -315,6 +315,55 @@ async def test_b51_a_subscription_event_for_an_unknown_subscription_changes_noth
 
 
 @pytest.mark.integration
+async def test_b51_a_late_event_for_a_replaced_subscription_leaves_the_newer_one_alone(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """The user moved from S1 to S2; S1's late event, metadata and all, must not repoint the row.
+
+    No row names S1 any more, so the handler reaches the `metadata.user_id` fallback, and the
+    user's row names a different subscription, which the fallback may never overwrite.
+    """
+    user_id, customer_id, _current_subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "replaced-subscription"
+    )
+    before = await billing_db.read_subscription(user_id)
+    replaced_subscription = build_subscription(
+        make_stripe_id("sub"), customer_id, "canceled", metadata={"user_id": str(user_id)}
+    )
+    event = build_stripe_event("customer.subscription.updated", replaced_subscription)
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    assert await billing_db.read_subscription(user_id) == before
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+
+
+@pytest.mark.integration
+async def test_b51_a_subscription_event_fills_a_row_that_names_no_subscription_yet(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """A row holding only the customer takes the subscription its metadata links to the user."""
+    user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails("customer-only"))
+    customer_id = make_stripe_id("cus")
+    await billing_db.seed_subscription(user_id, customer_id)
+    subscription_id = make_stripe_id("sub")
+    subscription = build_subscription(
+        subscription_id, customer_id, "active", metadata={"user_id": str(user_id)}
+    )
+
+    response = await webhook_sender.deliver(
+        build_stripe_event("customer.subscription.created", subscription)
+    )
+
+    assert response.status_code == 200, response.text
+    stored = await billing_db.read_subscription(user_id)
+    assert stored.stripe_subscription_id == subscription_id
+    assert stored.status == "active"
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("is_parent_shape", [True, False])
 async def test_b51_invoice_payment_failed_sets_past_due(
     webhook_sender, billing_db, auth_emails, is_parent_shape

@@ -4,7 +4,10 @@ Five events, three handlers. `checkout.session.completed` links the customer and
 the user named in the session's `metadata.user_id`, the only link Stripe carries back to our user.
 The three subscription events write the status, the plan, the period, and the cancel flag onto the
 row naming the subscription; when no row names it yet, because Stripe delivered the subscription
-before the checkout, the subscription's own `metadata.user_id` (set at checkout) creates the row.
+before the checkout, the subscription's own `metadata.user_id` (set at checkout) creates the row,
+or fills the user's row when it names no subscription yet. A user's row that already names a
+different subscription is left alone: the event is a late one for a subscription the user has
+since replaced, and it is logged as `billing_subscription_event_ignored`.
 `invoice.payment_failed` sets `past_due` on the row naming the invoice's subscription.
 
 A payload whose fields do not validate raises, which fails the event so Stripe retries it. An event
@@ -73,9 +76,14 @@ async def apply_subscription_change(
     if user_id is None:
         logger.info("billing_subscription_unmatched", stripe_subscription_id=subscription.id)
         return
-    await upsert_subscription_for_user(
+    if not await upsert_subscription_for_user(
         connection, user_id, subscription.customer, subscription.id, state
-    )
+    ):
+        logger.info(
+            "billing_subscription_event_ignored",
+            stripe_subscription_id=subscription.id,
+            user_id=str(user_id),
+        )
 
 
 async def apply_payment_failed(connection: AsyncConnection, data_object: dict[str, Any]) -> None:
