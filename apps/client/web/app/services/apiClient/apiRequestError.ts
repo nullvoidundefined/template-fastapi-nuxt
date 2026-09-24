@@ -9,18 +9,14 @@
  * that answers an HTML page rather than the `{ code, error }` envelope.
  */
 
+import type { FieldError } from '~/types/fieldError';
+
 const UNKNOWN_FAILURE_MESSAGE = 'The request failed';
 
 type ErrorEnvelope = {
     code?: unknown;
     error?: unknown;
     field_errors?: unknown;
-};
-
-/** One rejected field, as `INPUT_VALIDATION_ERROR` names it (spec: B-38). */
-export type FieldError = {
-    field: string;
-    message: string;
 };
 
 export class ApiRequestError extends Error {
@@ -43,10 +39,10 @@ function readEnvelopeFieldErrors(body: unknown): FieldError[] {
     if (!Array.isArray(declared)) {
         return [];
     }
-    return declared.filter(
-        (entry): entry is FieldError =>
-            typeof entry?.field === 'string' && typeof entry?.message === 'string',
-    );
+    return declared.filter((entry): entry is FieldError => {
+        const { field, message } = (entry ?? {}) as Partial<Record<keyof FieldError, unknown>>;
+        return typeof field === 'string' && typeof message === 'string';
+    });
 }
 
 /** Return the envelope's prose when the body is one, else a message naming the status. */

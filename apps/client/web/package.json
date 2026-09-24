@@ -29,6 +29,7 @@
         "@storybook/addon-a11y": "^10.6.0",
         "@storybook/vue3-vite": "^10.6.0",
         "@testing-library/vue": "8.1.0",
+        "@vitejs/plugin-vue": "6.0.9",
         "@vue/test-utils": "2.5.1",
         "eslint": "10.11.0",
         "eslint-plugin-vuejs-accessibility": "2.6.0",

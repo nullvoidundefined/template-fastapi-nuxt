@@ -5,13 +5,9 @@
  * is not an `ApiRequestError` (the network, a bug) still produces a message rather than nothing.
  */
 import { ApiRequestError } from '~/services/apiClient/apiRequestError';
+import type { FormFailure } from '~/types/formFailure';
 
 const UNEXPECTED_FAILURE_MESSAGE = 'Something went wrong. Try again.';
-
-export type FormFailure = {
-    fieldMessages: Record<string, string>;
-    formMessage: string | undefined;
-};
 
 /** Return the per-field messages and the form-level message a failed submission should show. */
 export function readFormFailure(failure: unknown): FormFailure {

@@ -9,7 +9,8 @@ import { reactive, ref } from 'vue';
 
 import Button from '~/components/ui/Button/Button.vue';
 import TextField from '~/components/ui/TextField/TextField.vue';
-import { readFormFailure, type FormFailure } from '~/services/forms/readFormFailure';
+import { readFormFailure } from '~/services/forms/readFormFailure';
+import type { FormFailure } from '~/types/formFailure';
 import type { CredentialsInput } from '~/types/credentialsInput';
 import styles from './CredentialsForm.module.scss';
 

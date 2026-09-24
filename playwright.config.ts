@@ -18,6 +18,7 @@ export default defineConfig({
     reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
     use: {
         baseURL: process.env.WEB_BASE_URL,
+        testIdAttribute: 'data-test-id',
         trace: 'retain-on-failure',
     },
     projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
