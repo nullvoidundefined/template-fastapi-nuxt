@@ -133,6 +133,22 @@ describe('the session requests one navigation sends', () => {
         expect(countSessionRequests()).toBe(1);
     });
 
+    it('B-12, IAN-335: a session dated after the browser clock is not recent, so a replay under a lagging clock still revalidates', async () => {
+        const queryClient = await readAppQueryClient();
+        // A server clock ahead of the browser's makes an old render look younger than zero.
+        queryClient.setQueryData(sessionQueryKey, signedInUser, {
+            updatedAt: Date.now() + staleRenderAgeMilliseconds,
+        });
+        planExpiredSession();
+
+        const outcome = await runWhileHydratingServerRender(() =>
+            runRouteGate(requireSession, dashboardPath),
+        );
+
+        expect(readRedirectPath(outcome)).toBe(signInPath);
+        expect(countSessionRequests()).toBe(1);
+    });
+
     it('B-12: hydrating a page the server did not render still asks, so an expired session redirects', async () => {
         await seedCachedSession(signedInUser);
         planExpiredSession();

@@ -12,8 +12,10 @@
  * on the first visit, and a page wrongly exposed is noticed by whoever finds it.
  *
  * Every page response it lets through is marked `Cache-Control: no-store` (IAN-335). A page render
- * carries the session it was rendered with, and the browser's gate trusts a fresh server render
- * while hydrating, so a render replayed from the HTTP cache by Back must never exist.
+ * carries the session it was rendered with, and its HTML paints before any script can revalidate
+ * that session, so this header is the control that keeps a revoked session's page off screen when
+ * Back would replay it. The browser gate's recency check only decides what happens after
+ * hydration and is no substitute for it.
  *
  * `/api/**` is skipped deliberately. A proxied call from the browser must receive the backend's
  * own 401 envelope; answering it with a 302 to an HTML sign-in page gives `fetch` a page to parse
@@ -45,7 +47,8 @@ export default defineEventHandler((event) => {
         return undefined;
     }
     // Every page render can carry the visitor's session in its payload, so none may be stored:
-    // a Back navigation replaying a stored render would hydrate a session revoked since.
+    // a Back navigation replaying a stored render would paint a session revoked since.
+    // Applies to every page; a future `routeRules` isr, swr, or prerender entry would conflict.
     setResponseHeader(event, 'cache-control', PAGE_CACHE_CONTROL);
     if (PUBLIC_PAGE_PATHS.has(requestPath)) {
         return undefined;

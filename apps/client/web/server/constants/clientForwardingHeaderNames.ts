@@ -12,4 +12,4 @@ export const CLIENT_FORWARDING_HEADER_NAMES = [
     'x-forwarded-prefix',
     'x-forwarded-proto',
     'x-real-ip',
-];
+] as const;
