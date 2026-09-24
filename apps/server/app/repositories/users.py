@@ -63,6 +63,28 @@ async def lock_user_by_id(connection: AsyncConnection, user_id: uuid.UUID) -> Ro
     return (await connection.execute(statement)).one_or_none()
 
 
+async def list_users_page(connection: AsyncConnection, limit: int, offset: int) -> list[Row[Any]]:
+    """Return one page of users as id, email, role, and created_at, oldest first.
+
+    The columns are named rather than `select(users)`, so the password hash is never read into a
+    row that some caller could later serialize. The id breaks ties between users created in the
+    same instant, which keeps the order stable from one page to the next.
+    """
+    statement = (
+        select(users.c.id, users.c.email, users.c.role, users.c.created_at)
+        .order_by(users.c.created_at, users.c.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(await connection.execute(statement))
+
+
+async def count_users(connection: AsyncConnection) -> int:
+    """Return how many users exist, the total a paginated list reports beside its page."""
+    user_count = await connection.scalar(select(func.count()).select_from(users))
+    return int(user_count or 0)
+
+
 async def update_password_hash(
     connection: AsyncConnection, user_id: uuid.UUID, password_hash: str
 ) -> None:

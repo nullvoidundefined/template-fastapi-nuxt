@@ -60,7 +60,7 @@ async def test_b11_a_correct_login_writes_a_session_row_and_sets_the_same_cookie
     response = await auth_client.post(LOGIN_PATH, json={"email": email, "password": VALID_PASSWORD})
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"data": {"id": str(user_id), "email": email}}
+    assert response.json() == {"data": {"id": str(user_id), "email": email, "role": "member"}}
     attributes = cookies.attributes(response)
     assert "httponly" in attributes
     assert attributes["samesite"].lower() == "lax"

@@ -25,7 +25,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware, is_valid_request_id
 from app.middleware.request_timeout import RequestTimeoutMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
-from app.routers import auth, health
+from app.routers import admin, auth, health
 from app.schemas.errors import ErrorResponse, FieldError
 
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app, settings)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(admin.router)
     return app
 
 

@@ -67,7 +67,7 @@ async def test_b10_registration_stores_the_email_trimmed_and_lowercased(
     assert user_rows[0].email == email
     body = response.json()
     assert set(body) == {"data"}
-    assert set(body["data"]) == {"id", "email"}
+    assert set(body["data"]) == {"id", "email", "role"}
     assert body["data"]["email"] == email
     assert uuid.UUID(body["data"]["id"]) == user_rows[0].id
 

@@ -1,6 +1,6 @@
 """Request and response models for the auth routes.
 
-The response never carries a password hash, which is why `AuthenticatedUserData` names its two
+The response never carries a password hash, which is why `AuthenticatedUserData` names its three
 fields rather than serializing whatever row the repository returned: a model that spread a row
 would leak the hash the first time someone added a column.
 
@@ -14,6 +14,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.types import UUID4
+
+from app.constants.user_roles import UserRole
 
 # Deliberately permissive about the local part and strict about the overall shape: one `@`, a
 # domain with a dot, and no whitespace anywhere.
@@ -118,10 +120,11 @@ class ForgotPasswordResponse(BaseModel):
 
 
 class AuthenticatedUserData(BaseModel):
-    """The signed-in user, carrying only what a client may see."""
+    """The signed-in user, carrying only what a client may see: the id, address, and role."""
 
     id: UUID4
     email: str
+    role: UserRole
 
 
 class AuthenticatedUserResponse(BaseModel):

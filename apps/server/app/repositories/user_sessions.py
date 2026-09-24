@@ -9,17 +9,21 @@ request would otherwise write a row, which is a write per request for a column n
 that resolution, and two simultaneous requests deciding from the same read would both write. The
 condition lives in the statement, so Postgres evaluates it against the row it has locked and the
 second request updates nothing.
+
+`find_session_with_user` is the one lookup that turns a cookie's token hash into a session and its
+user. The session dependency and the idempotency middleware both resolve a cookie through it, so
+the two can never disagree about who a request belongs to.
 """
 
 import uuid
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
-from sqlalchemy import delete, update
+from sqlalchemy import Row, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import func, text
 
-from app.db.tables import user_sessions
+from app.db.tables import user_sessions, users
 
 # A session's last_seen_at is read by an operator and by the cleanup job, neither of which cares
 # about the difference between four minutes ago and now. Writing at most this often turns a write
@@ -43,6 +47,27 @@ async def create_session(
     # RETURNING on an INSERT of one row always yields the id; the cast documents that for the
     # type checker, which cannot see that the statement inserts exactly one row.
     return cast("uuid.UUID", session_id)
+
+
+async def find_session_with_user(connection: AsyncConnection, token_hash: str) -> Row[Any] | None:
+    """Return the session joined to its user for this token hash, its expiry not yet judged.
+
+    The expiry is deliberately not in the WHERE clause. Filtering on it here would make an expired
+    session indistinguishable from a token that never existed, and the session dependency answers
+    those two differently.
+    """
+    statement = (
+        select(
+            user_sessions.c.id.label("session_id"),
+            user_sessions.c.expires_at,
+            users.c.id.label("user_id"),
+            users.c.email,
+            users.c.role,
+        )
+        .join_from(user_sessions, users, user_sessions.c.user_id == users.c.id)
+        .where(user_sessions.c.token_hash == token_hash)
+    )
+    return (await connection.execute(statement)).one_or_none()
 
 
 async def touch_session(connection: AsyncConnection, session_id: uuid.UUID) -> None:

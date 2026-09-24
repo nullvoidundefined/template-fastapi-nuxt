@@ -18,6 +18,7 @@ import structlog
 from fastapi import APIRouter, Response, status
 
 from app.constants.job_names import RESET_EMAIL_JOB_NAME
+from app.constants.user_roles import UserRole
 from app.core.session_cookie import clear_session_cookie, set_session_cookie
 from app.dependencies.current_user import CurrentUser, OptionalCurrentUser, RequestConnection
 from app.dependencies.job_queue import RequestJobQueue
@@ -45,9 +46,9 @@ logger = structlog.get_logger(__name__)
 RESET_REQUESTED_MESSAGE = "If an account uses that address, a reset link is on its way"
 
 
-def build_user_response(user_id: object, email: str) -> AuthenticatedUserResponse:
+def build_user_response(user_id: object, email: str, role: UserRole) -> AuthenticatedUserResponse:
     """Shape the one body every successful auth route answers with."""
-    return AuthenticatedUserResponse(data=AuthenticatedUserData(id=user_id, email=email))
+    return AuthenticatedUserResponse(data=AuthenticatedUserData(id=user_id, email=email, role=role))
 
 
 @router.post(
@@ -65,7 +66,7 @@ async def register(
     registered = await register_user(connection, body.email, body.password)
     set_session_cookie(response, registered.raw_token, settings.environment)
     logger.info("user_registered", user_id=str(registered.id))
-    return build_user_response(registered.id, registered.email)
+    return build_user_response(registered.id, registered.email, registered.role)
 
 
 @router.post("/login", response_model=AuthenticatedUserResponse)
@@ -79,7 +80,7 @@ async def login(
     signed_in = await sign_in_user(connection, body.email, body.password)
     set_session_cookie(response, signed_in.raw_token, settings.environment)
     logger.info("user_signed_in", user_id=str(signed_in.id))
-    return build_user_response(signed_in.id, signed_in.email)
+    return build_user_response(signed_in.id, signed_in.email, signed_in.role)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -104,8 +105,8 @@ async def logout(
 
 @router.get("/me", response_model=AuthenticatedUserResponse)
 async def read_me(current: CurrentUser) -> AuthenticatedUserResponse:
-    """Answer the signed-in user's identity, and 401 without a usable session."""
-    return build_user_response(current.user.id, current.user.email)
+    """Answer the signed-in user's identity and role, and 401 without a usable session."""
+    return build_user_response(current.user.id, current.user.email, current.user.role)
 
 
 @router.patch("/me", response_model=AuthenticatedUserResponse)
@@ -123,7 +124,7 @@ async def change_my_password(
         body.new_password,
     )
     logger.info("user_password_changed", user_id=str(current.user.id))
-    return build_user_response(current.user.id, current.user.email)
+    return build_user_response(current.user.id, current.user.email, current.user.role)
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)

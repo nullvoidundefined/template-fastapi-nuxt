@@ -52,7 +52,7 @@ async def test_b32_auth_me_answers_the_id_and_email_and_never_the_password_hash(
     response = await auth_client.get(ME_PATH, headers=cookies.header(raw_token))
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"data": {"id": str(user_id), "email": email}}
+    assert response.json() == {"data": {"id": str(user_id), "email": email, "role": "member"}}
     stored_hash = (await auth_db.read_users(email))[0].password_hash
     assert stored_hash not in response.text
     assert "password" not in response.text

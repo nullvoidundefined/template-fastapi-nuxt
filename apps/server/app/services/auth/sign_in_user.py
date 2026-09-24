@@ -20,6 +20,7 @@ from sqlalchemy.sql import func
 
 from app.constants.error_codes import ErrorCode
 from app.constants.session import SESSION_TTL
+from app.constants.user_roles import UserRole
 from app.core.security import generate_session_token, verify_password
 from app.db.tables import user_sessions
 from app.errors import AppError
@@ -43,6 +44,7 @@ class SignedInUser:
 
     id: uuid.UUID
     email: str
+    role: UserRole
     raw_token: str
 
 
@@ -59,7 +61,7 @@ async def sign_in_user(connection: AsyncConnection, email: str, password: str) -
     await delete_expired_sessions(connection, user.id)
     raw_token, token_hash = generate_session_token()
     await create_session(connection, user.id, token_hash, datetime.now(UTC) + SESSION_TTL)
-    return SignedInUser(id=user.id, email=user.email, raw_token=raw_token)
+    return SignedInUser(id=user.id, email=user.email, role=UserRole(user.role), raw_token=raw_token)
 
 
 async def delete_expired_sessions(connection: AsyncConnection, user_id: uuid.UUID) -> None:
