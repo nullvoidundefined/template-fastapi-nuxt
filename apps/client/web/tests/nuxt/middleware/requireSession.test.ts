@@ -28,6 +28,7 @@ import {
     clearSessionCache,
     installBackendStub,
     planBackendOutage,
+    planBackendResponse,
     planExpiredSession,
     planSignedInSession,
     readAppQueryClient,
@@ -72,6 +73,28 @@ describe('requireSession', () => {
             firstServerErrorStatus,
         );
     }, 15000);
+
+    it.each([
+        [429, 'RATE_LIMIT_EXCEEDED'],
+        [403, 'CSRF_HEADER_MISSING'],
+    ])(
+        'B-12: a %i says nothing about the session, so it aborts rather than signing the visitor out',
+        async (refusalStatus, refusalCode) => {
+            planBackendResponse({
+                status: refusalStatus,
+                body: {
+                    code: refusalCode,
+                    error: 'Refused for a reason unrelated to the session.',
+                },
+            });
+
+            const outcome = await runRouteGate(requireSession, protectedPath);
+
+            expect(readRedirectPath(outcome)).toBeUndefined();
+            expect(outcome.settled).toBe('threw');
+        },
+        15000,
+    );
 
     it('B-12: lets a signed-in visitor through and leaves the session under the shared key', async () => {
         planSignedInSession();

@@ -19,7 +19,7 @@ import { sessionQueryKey } from '~/composables/useSessionQuery';
 import { ApiRequestError } from '~/services/apiClient/apiRequestError';
 import type { SessionOutcome } from '~/types/sessionOutcome';
 
-const FIRST_SERVER_ERROR_STATUS = 500;
+const UNAUTHORIZED_STATUS = 401;
 const SESSION_UNAVAILABLE_STATUS = 503;
 
 /** Return who is signed in, that nobody is, or that the backend could not say. */
@@ -40,7 +40,10 @@ export async function readSessionOutcome(
 
 /** Read a rejected session request as either a signed-out visitor or an unreachable backend. */
 function classifySessionFailure(err: unknown): SessionOutcome {
-    if (err instanceof ApiRequestError && err.status < FIRST_SERVER_ERROR_STATUS) {
+    // Only 401 is the backend saying who is not signed in. A 429 or 403 refuses the request for a
+    // reason unrelated to the session, and reading one as a sign-out would bounce a signed-in
+    // visitor to the sign-in page whenever they were rate-limited.
+    if (err instanceof ApiRequestError && err.status === UNAUTHORIZED_STATUS) {
         return { state: 'signedOut' };
     }
     const status = err instanceof ApiRequestError ? err.status : SESSION_UNAVAILABLE_STATUS;
