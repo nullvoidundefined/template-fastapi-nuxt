@@ -40,6 +40,15 @@ services:
       timeout: 3s
       retries: 10
 
+  # Stripe's official mock of its API, started only with `docker compose --profile e2e up`, so the
+  # end-to-end suite exercises checkout and the portal without a Stripe account or the network.
+  # It accepts any test key and answers from Stripe's OpenAPI fixtures. Published on loopback only.
+  stripe-mock:
+    image: stripe/stripe-mock:latest
+    profiles: ['e2e']
+    ports:
+      - '127.0.0.1:${STRIPE_MOCK_HOST_PORT:-12111}:12111'
+
   # One-shot: brings the schema to head and exits, so no process ever serves traffic against an
   # unmigrated database. It runs the API image rather than a checkout, which is what proves the
   # image really carries `alembic.ini` and `migrations/`; a missing COPY fails compose rather than
@@ -75,6 +84,12 @@ services:
       # trusting the whole range would trust every container on it, and uvicorn's allowlist
       # takes addresses and CIDRs, never a service name, which is why the network is fixed.
       FORWARDED_ALLOW_IPS: 172.28.0.10
+      # Billing stays unconfigured unless the host exports these, and an empty value reads as
+      # unset. The end-to-end run exports STRIPE_API_BASE=http://stripe-mock:12111 with a test
+      # key and signing secret, and starts the `e2e` profile so stripe-mock is there to answer.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_API_BASE: ${STRIPE_API_BASE:-}
     ports:
       - '3001:3001'
     depends_on:
