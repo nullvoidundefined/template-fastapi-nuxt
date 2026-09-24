@@ -9,15 +9,20 @@
  * refusing to show a sign-in page because the API is down would strand the one person who could
  * do nothing about it.
  */
-import { defineNuxtRouteMiddleware, navigateTo } from '#imports';
+import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp } from '#imports';
 import { useQueryClient } from '@tanstack/vue-query';
 
 import { useApiClient } from '~/composables/useApiClient';
+import { isHydratingServerRender } from '~/services/session/isHydratingServerRender';
 import { readSessionOutcome } from '~/services/session/readSessionOutcome';
 
 const DASHBOARD_PATH = '/dashboard';
 
 export default defineNuxtRouteMiddleware(async () => {
+    // The server already ran this gate for the page being hydrated; asking again spends a request.
+    if (isHydratingServerRender(useNuxtApp())) {
+        return undefined;
+    }
     const queryClient = useQueryClient();
     const apiClient = useApiClient();
     const outcome = await readSessionOutcome(queryClient, apiClient);
