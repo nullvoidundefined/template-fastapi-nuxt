@@ -9,17 +9,27 @@ An event is identified by the request ID tag and the user's ID, never the email 
 `send_default_pii` and frame locals stay off, and `scrub_sentry_event` removes cookies, the
 Authorization header, and every user field other than the ID before an event leaves the process,
 so a later change to what the SDK collects cannot leak a session token.
+
+The arq worker starts the SDK in its startup hook, and each job reports its own final failure
+through `open_sentry_job_scope` and `report_sentry_exception`, tagged with the arq job ID. The
+SDK's own arq integration is disabled: it wraps job functions only when the worker is built, which
+happens before the startup hook runs, so it would never report, and the global patch it installs
+would outlive the client that installed it.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 
 import sentry_sdk
 import structlog
+from sentry_sdk.integrations.arq import ArqIntegration
 from sentry_sdk.types import Event, Hint
 
 from app.core.settings import Settings
 
 REQUEST_ID_TAG = "request_id"
+JOB_ID_TAG = "job_id"
 # The Referer is withheld because Nitro forwards the reset page's address, token included.
 SCRUBBED_HEADER_NAMES = frozenset(
     {"authorization", "cookie", "set-cookie", "proxy-authorization", "referer"}
@@ -46,6 +56,7 @@ def initialize_sentry(settings: Settings) -> bool:
         # Authorization value verbatim; the end-to-end test of this client caught exactly that.
         include_local_variables=False,
         before_send=scrub_sentry_event,
+        disabled_integrations=[ArqIntegration()],
     )
     return True
 
@@ -101,3 +112,18 @@ def tag_sentry_request(request_id: str | None) -> None:
 def identify_sentry_user(user_id: str) -> None:
     """Name the signed-in user on this request's events by ID only."""
     sentry_sdk.set_user({"id": user_id})
+
+
+@contextmanager
+def open_sentry_job_scope(job_id: str | None) -> Iterator[None]:
+    """Isolate one job's events and breadcrumbs, tagging them with its arq job ID."""
+    with sentry_sdk.isolation_scope() as scope:
+        scope.clear_breadcrumbs()
+        if job_id:
+            scope.set_tag(JOB_ID_TAG, job_id)
+        yield
+
+
+def report_sentry_exception(err: BaseException) -> None:
+    """Send one exception to Sentry from the current scope."""
+    sentry_sdk.capture_exception(err)

@@ -161,6 +161,7 @@ level, where it fires, and its fields.
 | `request_database_connect_failed`           | warning | `db/session.py::get_connection`                                                                                         | `error_type`                                                            |
 | `worker_readiness_db_failed`                | warning | `workers/health.py::check_database`                                                                                     | `exc_info`                                                              |
 | `worker_readiness_redis_failed`             | warning | `workers/health.py::check_redis`                                                                                        | `exc_info`                                                              |
+| `job_failed`                                | error   | `workers/report_job_failure.py::report_job_failure` (any job that raised something other than arq's `Retry`)            | `job_name`, `job_id`, `exc_info`                                        |
 | `worker_heartbeat`                          | info    | `workers/jobs/log_worker_heartbeat.py` (the five-minute cron job)                                                       | none                                                                    |
 | `password_reset_email_failed`               | error   | `workers/jobs/send_password_reset_email.py` (last retry exhausted)                                                      | `job_try`, `err`                                                        |
 | `password_reset_email_retrying`             | warning | `workers/jobs/send_password_reset_email.py`                                                                             | `job_try`, `err`                                                        |
@@ -231,6 +232,15 @@ from a call site the enum does not name.
   scope, whose headers carry the session cookie and any `Authorization` value verbatim.
 - **Tags.** `tag_sentry_request` sets the `request_id` tag from `RequestContextMiddleware` on
   every request.
+- **Worker.** `apps/server/app/workers/settings.py::start_worker_resources` calls
+  `initialize_sentry` too, so the worker reports under the same DSN and scrubber. Every job
+  function is decorated with `apps/server/app/workers/report_job_failure.py::report_job_failure`,
+  which runs the job in its own isolation scope (`open_sentry_job_scope`) tagged `job_id`, and on
+  a failure logs `job_failed` and reports the exception before re-raising it. A job that raises
+  arq's `Retry` is not reported, because arq runs it again; the reset email's last try raises the
+  provider's own error, which is. The SDK's own `ArqIntegration` is disabled
+  (`disabled_integrations`), because it wraps job functions only when the worker is built, before
+  the startup hook has started the SDK, so it would never report.
 - **User identity.** `identify_sentry_user` is called from
   `apps/server/app/dependencies/current_user.py` once a session resolves to a user, and sets only
   `{"id": user_id}` - never the email.

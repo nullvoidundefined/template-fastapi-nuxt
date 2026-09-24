@@ -4,9 +4,11 @@ arq imports `WorkerSettings` to start the process (`arq app.workers.settings.Wor
 this is the one module allowed to read settings at import time; nothing else imports it. The jobs
 are the password-reset email, retried up to three tries, a five-minute heartbeat cron job, and the
 hourly `delete_expired_rows` cleanup cron job at minute 0.
-Startup opens the engine, builds the email client (Resend, or a logging stand-in without a key),
-and serves the health probes on WORKER_PORT as a background uvicorn server, which the container's
-HEALTHCHECK calls; shutdown stops the server and closes the rest.
+Startup starts Sentry when SENTRY_DSN is set (each job reports its own final failure, tagged
+with its job ID, through `report_job_failure`), opens the engine, builds the email client (Resend,
+or a logging stand-in without a key), and serves the health probes on WORKER_PORT as a background
+uvicorn server, which the container's HEALTHCHECK calls; shutdown stops the server and closes
+the rest.
 """
 
 import asyncio
@@ -20,6 +22,7 @@ from arq.worker import func
 from app.clients.analytics import create_analytics_client
 from app.clients.disabled_email import DisabledEmailClient
 from app.clients.resend import ResendEmailClient
+from app.clients.sentry import initialize_sentry
 from app.constants.cleanup import CLEANUP_CRON_MINUTE, CLEANUP_JOB_TIMEOUT_SECONDS
 from app.constants.job_names import CLEANUP_JOB_NAME, RESET_EMAIL_JOB_NAME
 from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
@@ -43,6 +46,7 @@ async def start_worker_resources(ctx: WorkerContext) -> None:
     """Open the engine, build the email client, and start the probe server once per process."""
     settings = get_settings()
     configure_logging(settings)
+    initialize_sentry(settings)
     ctx["engine"] = create_database_engine(settings)
     ctx["email_client"] = create_email_client(settings)
     ctx["analytics_client"] = create_analytics_client(settings)
