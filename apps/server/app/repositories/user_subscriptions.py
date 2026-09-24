@@ -44,6 +44,16 @@ async def get_subscription_by_user_id(
     return (await connection.execute(statement)).one_or_none()
 
 
+async def get_subscription_by_customer_id(
+    connection: AsyncConnection, customer_id: str
+) -> Row[Any] | None:
+    """Return the row naming the Stripe customer, or None when no user holds that customer."""
+    statement = select(user_subscriptions).where(
+        user_subscriptions.c.stripe_customer_id == customer_id
+    )
+    return (await connection.execute(statement)).one_or_none()
+
+
 async def link_subscription_to_user(
     connection: AsyncConnection, user_id: uuid.UUID, customer_id: str, subscription_id: str
 ) -> None:

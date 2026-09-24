@@ -455,38 +455,122 @@ async def test_b51_invoice_payment_failed_sets_past_due(
 
 
 @pytest.mark.integration
-async def test_b41_b42_a_failed_event_is_marked_failed_then_processed_on_redelivery(
+async def test_b41_a_failed_event_is_claimed_again_and_processed_on_redelivery(
     webhook_sender, billing_db, auth_emails
 ) -> None:
-    """A handler that raises marks the event failed and answers 500; Stripe's retry processes it.
+    """An event whose earlier attempt failed is taken back by Stripe's retry and applied."""
+    user_id, _customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "failed-then-retried"
+    )
+    event = build_payment_failed_event(subscription_id)
+    await webhook_sender.seed_ledger(event["id"], event["type"], "failed", FRESH_CLAIM_MINUTES_AGO)
+    [failed_row] = await webhook_sender.read_ledger(event["id"])
 
-    The checkout names a user who does not exist yet, so linking the row violates the foreign
-    key. Once the user exists, the same event delivered again is claimed again and applied.
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    [processed_row] = await webhook_sender.read_ledger(event["id"])
+    assert processed_row.status == "processed"
+    assert processed_row.processed_at is not None
+    assert processed_row.attempted_at > failed_row.attempted_at
+    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+
+
+@pytest.mark.integration
+async def test_b51_a_checkout_naming_no_existing_user_is_processed_without_a_link(
+    webhook_sender, billing_db
+) -> None:
+    """A retry could never create the user, so the event is marked processed and answers 200.
+
+    Failing it instead would have Stripe retry for three days an event that can never apply.
     """
     missing_user_id = uuid.uuid4()
-    customer_id = make_stripe_id("cus")
-    subscription_id = make_stripe_id("sub")
     event = build_stripe_event(
         "checkout.session.completed",
-        build_checkout_session(missing_user_id, customer_id, subscription_id),
+        build_checkout_session(missing_user_id, make_stripe_id("cus"), make_stripe_id("sub")),
     )
 
-    failed = await webhook_sender.deliver(event)
-    failed_rows = await webhook_sender.read_ledger(event["id"])
-    await webhook_sender.seed_user_with_id(missing_user_id, auth_emails("late-user"))
-    redelivered = await webhook_sender.deliver(event)
-    processed_rows = await webhook_sender.read_ledger(event["id"])
+    response = await webhook_sender.deliver(event)
 
-    assert failed.status_code == 500, failed.text
-    assert failed.json()["code"] == "BILLING_WEBHOOK_PROCESSING_FAILED"
-    assert [row.status for row in failed_rows] == ["failed"]
-    assert failed_rows[0].processed_at is None
-    assert redelivered.status_code == 200, redelivered.text
-    assert [row.status for row in processed_rows] == ["processed"]
-    assert processed_rows[0].attempted_at > failed_rows[0].attempted_at
-    stored = await billing_db.read_subscription(missing_user_id)
-    assert stored.stripe_customer_id == customer_id
-    assert stored.stripe_subscription_id == subscription_id
+    assert response.status_code == 200, response.text
+    assert response.json() == RECEIVED_BODY
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+    assert await billing_db.read_subscription(missing_user_id) is None
+
+
+@pytest.mark.integration
+async def test_b51_a_checkout_for_a_customer_linked_to_another_user_links_nothing(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """One customer belongs to one user, so the second user's checkout is processed unapplied."""
+    owner_id, customer_id, _subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "customer-owner"
+    )
+    owner_before = await billing_db.read_subscription(owner_id)
+    other_user_id, _raw_token = await billing_db.seed_signed_in_user(
+        auth_emails("customer-claimant")
+    )
+    event = build_stripe_event(
+        "checkout.session.completed",
+        build_checkout_session(other_user_id, customer_id, make_stripe_id("sub")),
+    )
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+    assert await billing_db.read_subscription(owner_id) == owner_before
+    assert await billing_db.read_subscription(other_user_id) is None
+
+
+@pytest.mark.integration
+async def test_b51_a_subscription_whose_metadata_names_no_existing_user_is_processed_unapplied(
+    webhook_sender, billing_db
+) -> None:
+    """The metadata fallback checks the user exists too, rather than failing on the foreign key."""
+    missing_user_id = uuid.uuid4()
+    subscription = build_subscription(
+        make_stripe_id("sub"),
+        make_stripe_id("cus"),
+        "active",
+        metadata={"user_id": str(missing_user_id)},
+    )
+    event = build_stripe_event("customer.subscription.created", subscription)
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+    assert await billing_db.read_subscription(missing_user_id) is None
+
+
+@pytest.mark.integration
+async def test_b51_a_subscription_for_a_customer_linked_to_another_user_is_processed_unapplied(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """The metadata fallback never links a customer that already belongs to a different user."""
+    owner_id, customer_id, _subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "subscription-owner"
+    )
+    owner_before = await billing_db.read_subscription(owner_id)
+    other_user_id, _raw_token = await billing_db.seed_signed_in_user(
+        auth_emails("subscription-claimant")
+    )
+    subscription = build_subscription(
+        make_stripe_id("sub"), customer_id, "active", metadata={"user_id": str(other_user_id)}
+    )
+    event = build_stripe_event("customer.subscription.created", subscription)
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+    assert await billing_db.read_subscription(owner_id) == owner_before
+    assert await billing_db.read_subscription(other_user_id) is None
 
 
 @pytest.mark.integration

@@ -14,7 +14,10 @@ dropped the same way: the row stores the event's `created` time with the state i
 
 A payload whose fields do not validate raises, which fails the event so Stripe retries it. An event
 that is well formed but names nothing we hold, such as a checkout without a user, is logged and
-changes nothing: retrying it could never succeed.
+changes nothing: retrying it could never succeed. The same holds before either handler links a
+user through `metadata.user_id`: a user id naming no user, or a customer already linked to a
+different user, is logged and the event is marked processed with no change, where letting the
+foreign key or the unique customer constraint raise would have Stripe retry it for three days.
 """
 
 import uuid
@@ -28,11 +31,13 @@ from app.clients.stripe import StripeWebhookEvent
 from app.constants.billing import StripeEventType, UserSubscriptionStatus
 from app.repositories.user_subscriptions import (
     SubscriptionState,
+    get_subscription_by_customer_id,
     link_subscription_to_user,
     set_subscription_status,
     update_subscription_state,
     upsert_subscription_for_user,
 )
+from app.repositories.users import lock_user_by_id
 from app.schemas.billing import (
     StripeCheckoutSession,
     StripeInvoice,
@@ -60,6 +65,8 @@ async def apply_checkout_completed(connection: AsyncConnection, event: StripeWeb
     if user_id is None or session.customer is None or session.subscription is None:
         logger.warning("billing_checkout_unlinkable", checkout_session_id=session.id)
         return
+    if not await is_linkable_to_user(connection, user_id, session.customer):
+        return
     await link_subscription_to_user(connection, user_id, session.customer, session.subscription)
 
 
@@ -72,6 +79,8 @@ async def apply_subscription_change(connection: AsyncConnection, event: StripeWe
     user_id = read_metadata_user_id(subscription.metadata)
     if user_id is None:
         logger.info("billing_subscription_unmatched", stripe_subscription_id=subscription.id)
+        return
+    if not await is_linkable_to_user(connection, user_id, subscription.customer):
         return
     if not await upsert_subscription_for_user(
         connection, user_id, subscription.customer, subscription.id, state
@@ -100,6 +109,28 @@ EVENT_HANDLERS: Mapping[StripeEventType, EventHandler] = {
     StripeEventType.CUSTOMER_SUBSCRIPTION_DELETED: apply_subscription_change,
     StripeEventType.INVOICE_PAYMENT_FAILED: apply_payment_failed,
 }
+
+
+async def is_linkable_to_user(
+    connection: AsyncConnection, user_id: uuid.UUID, customer_id: str
+) -> bool:
+    """Return True when the user exists and the customer is unlinked or already theirs.
+
+    The user's row is locked until the transaction ends, so the account cannot be deleted between
+    this check and the write that links it.
+    """
+    if await lock_user_by_id(connection, user_id) is None:
+        logger.warning("billing_link_user_missing", user_id=str(user_id))
+        return False
+    linked_row = await get_subscription_by_customer_id(connection, customer_id)
+    if linked_row is not None and linked_row.user_id != user_id:
+        logger.warning(
+            "billing_link_customer_owned_by_other_user",
+            stripe_customer_id=customer_id,
+            user_id=str(user_id),
+        )
+        return False
+    return True
 
 
 def build_subscription_state(
