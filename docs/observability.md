@@ -267,10 +267,15 @@ proxy-authorization}` (case-insensitively) from `request.headers`; strips the qu
 - **`sendDefaultPii: false`** always, which for the browser SDK means the visitor's IP address
   and cookies are not attached by default.
 - **`tracesSampleRate: 0`** - performance tracing is off.
-- **Scrubbing.** `beforeSend` (`stripEventQuery`) removes `query_string` and strips the query
-  string from the event's request URL; `beforeBreadcrumb` (`stripBreadcrumbQueries`) strips the
-  query string from every value in a breadcrumb's `data`. Both exist because the reset-password
-  page's URL carries a live token in its query string.
+- **Scrubbing.** `beforeSend` (`scrubEvent`) removes `query_string` and strips the query string
+  from the event's request URL; `beforeBreadcrumb` (`scrubBreadcrumb`) strips the query string
+  from every value in a breadcrumb's `data`. Both exist because the reset-password page's URL
+  carries a live token in its query string. Both also run free text through
+  `apps/client/web/shared/services/scrubSensitiveText.ts`, the browser mirror of the server's
+  `scrub_sensitive_text`: the event `message`, every exception `value`, and a breadcrumb's
+  `message` lose email addresses, `Bearer` values, `token=`/`password=`/`secret=`/`api_key=`/
+  `session=` values, and runs of 32 or more URL-safe characters, each replaced by `[REDACTED]`,
+  while UUIDs stay readable.
 - **Request-ID tag.** `apps/client/web/server/middleware/requestId.ts` sets the `request_id` tag
   on the Nitro-side isolation scope for every page request, matching the server's tag so an error
   on either side of one request joins the same logs.
