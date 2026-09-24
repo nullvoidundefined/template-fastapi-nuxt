@@ -15,9 +15,9 @@ import styles from './ThemeToggle.module.scss';
 defineOptions({ name: 'ThemeToggle' });
 
 const themeLabels: Record<ThemePreference, string> = {
-    system: 'System',
-    light: 'Light',
     dark: 'Dark',
+    light: 'Light',
+    system: 'System',
 };
 
 const selectId = useId();

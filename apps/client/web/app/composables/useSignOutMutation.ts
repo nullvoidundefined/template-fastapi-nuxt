@@ -15,7 +15,7 @@
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 
 import { signOutUser } from '~/api/signOutUser';
-import { resetAnalyticsUser } from '~/clients/analytics';
+import { analyticsClient } from '~/clients/analytics';
 import { useApiClient } from '~/composables/useApiClient';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 
@@ -30,7 +30,7 @@ export function useSignOutMutation(): ReturnType<typeof useMutation<undefined, E
         },
         onSuccess: () => {
             queryClient.removeQueries({ exact: true, queryKey: sessionQueryKey });
-            resetAnalyticsUser();
+            analyticsClient.resetUser();
         },
     });
 }

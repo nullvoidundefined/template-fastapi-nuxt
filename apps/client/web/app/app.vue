@@ -22,8 +22,8 @@ function formatDocumentTitle(pageTitle?: string | null): string {
 }
 
 useHead({
+    script: [{ innerHTML: buildThemeBootScript(), key: 'theme-boot', tagPosition: 'head' }],
     titleTemplate: formatDocumentTitle,
-    script: [{ key: 'theme-boot', innerHTML: buildThemeBootScript(), tagPosition: 'head' }],
 });
 </script>
 

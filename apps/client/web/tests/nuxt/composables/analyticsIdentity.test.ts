@@ -17,7 +17,7 @@ import { defineComponent, h } from 'vue';
 import { QueryClient, VueQueryPlugin, type VueQueryPluginOptions } from '@tanstack/vue-query';
 import { mountSuspended } from '@nuxt/test-utils/runtime';
 
-import { initializeAnalytics } from '~/clients/analytics';
+import { analyticsClient } from '~/clients/analytics';
 import { buildQueryClientOptions } from '~/config/queryClient';
 import { useRegisterMutation } from '~/composables/useRegisterMutation';
 import { useSignInMutation } from '~/composables/useSignInMutation';
@@ -98,7 +98,7 @@ function readIdentityCalls(): Array<{ method: string; args: unknown[] }> {
 }
 
 beforeAll(() => {
-    initializeAnalytics(['phc', 'identity', 'test'].join('_'));
+    analyticsClient.initialize(['phc', 'identity', 'test'].join('_'));
 });
 
 beforeEach(() => {

@@ -35,9 +35,11 @@ const userId = '8f4a2f6e-0d5c-4a9b-9a4d-3d6f5e2c1b0a';
 const projectKey = ['phc', 'browser', 'test'].join('_');
 
 /** Import a fresh copy of the client, so no test inherits another's initialization. */
-async function importAnalyticsClient(): Promise<typeof import('~/clients/analytics')> {
+async function importAnalyticsClient(): Promise<
+    (typeof import('~/clients/analytics'))['analyticsClient']
+> {
     vi.resetModules();
-    return import('~/clients/analytics');
+    return (await import('~/clients/analytics')).analyticsClient;
 }
 
 beforeEach(() => {
@@ -48,8 +50,8 @@ describe('the browser analytics client', () => {
     it('B-24: before initialization, identify and reset send nothing', async () => {
         const analytics = await importAnalyticsClient();
 
-        analytics.identifyAnalyticsUser(userId);
-        analytics.resetAnalyticsUser();
+        analytics.identifyUser(userId);
+        analytics.resetUser();
 
         expect(posthogCalls).toEqual([]);
     });
@@ -57,7 +59,7 @@ describe('the browser analytics client', () => {
     it('B-24: initializes through the ingest proxy with pageviews on and autocapture off', async () => {
         const analytics = await importAnalyticsClient();
 
-        analytics.initializeAnalytics(projectKey);
+        analytics.initialize(projectKey);
 
         expect(posthogCalls).toHaveLength(1);
         const [initCall] = posthogCalls;
@@ -73,20 +75,20 @@ describe('the browser analytics client', () => {
 
     it('B-24: identify sends the user ID and nothing else', async () => {
         const analytics = await importAnalyticsClient();
-        analytics.initializeAnalytics(projectKey);
+        analytics.initialize(projectKey);
         posthogCalls.length = 0;
 
-        analytics.identifyAnalyticsUser(userId);
+        analytics.identifyUser(userId);
 
         expect(posthogCalls).toEqual([{ method: 'identify', args: [userId] }]);
     });
 
     it('B-24: reset forgets the identified user', async () => {
         const analytics = await importAnalyticsClient();
-        analytics.initializeAnalytics(projectKey);
+        analytics.initialize(projectKey);
         posthogCalls.length = 0;
 
-        analytics.resetAnalyticsUser();
+        analytics.resetUser();
 
         expect(posthogCalls).toEqual([{ method: 'reset', args: [] }]);
     });

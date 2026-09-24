@@ -6,11 +6,11 @@
  */
 import { defineNuxtPlugin, useRuntimeConfig } from '#app';
 
-import { initializeAnalytics } from '~/clients/analytics';
+import { analyticsClient } from '~/clients/analytics';
 
 export default defineNuxtPlugin(() => {
     const { posthogKey } = useRuntimeConfig().public;
     if (posthogKey) {
-        initializeAnalytics(posthogKey);
+        analyticsClient.initialize(posthogKey);
     }
 });

@@ -25,5 +25,5 @@ export function useThemePreference(): ThemePreferenceState {
         themePreference.value = preference;
     }
 
-    return { themePreference, setThemePreference };
+    return { setThemePreference, themePreference };
 }

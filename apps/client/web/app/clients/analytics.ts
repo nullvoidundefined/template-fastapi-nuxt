@@ -11,17 +11,17 @@
  */
 import posthog from 'posthog-js';
 
-export const ANALYTICS_PROXY_PATH = '/api/ingest';
+const ANALYTICS_PROXY_PATH = '/api/ingest';
 
 let isAnalyticsInitialized = false;
 
 /** Start the SDK with the project key, sending through the proxy and recording pageviews. */
-export function initializeAnalytics(projectKey: string): void {
+function initializeAnalytics(projectKey: string): void {
     posthog.init(projectKey, {
         api_host: ANALYTICS_PROXY_PATH,
-        capture_pageview: 'history_change',
-        capture_pageleave: true,
         autocapture: false,
+        capture_pageleave: true,
+        capture_pageview: 'history_change',
         disable_session_recording: true,
         person_profiles: 'identified_only',
     });
@@ -29,15 +29,22 @@ export function initializeAnalytics(projectKey: string): void {
 }
 
 /** Tie later events to the signed-in user by ID, never by email. */
-export function identifyAnalyticsUser(userId: string): void {
+function identifyAnalyticsUser(userId: string): void {
     if (isAnalyticsInitialized) {
         posthog.identify(userId);
     }
 }
 
 /** Forget the identified user, so the next visitor on this browser starts anonymous. */
-export function resetAnalyticsUser(): void {
+function resetAnalyticsUser(): void {
     if (isAnalyticsInitialized) {
         posthog.reset();
     }
 }
+
+/** The browser analytics client: start it, identify the signed-in user, and forget them. */
+export const analyticsClient = {
+    identifyUser: identifyAnalyticsUser,
+    initialize: initializeAnalytics,
+    resetUser: resetAnalyticsUser,
+};

@@ -8,7 +8,7 @@
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 
 import { signInUser } from '~/api/signInUser';
-import { identifyAnalyticsUser } from '~/clients/analytics';
+import { analyticsClient } from '~/clients/analytics';
 import { useApiClient } from '~/composables/useApiClient';
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 import type { CredentialsInput } from '~/types/credentialsInput';
@@ -24,7 +24,7 @@ export function useSignInMutation(): ReturnType<
         mutationFn: (credentials) => signInUser(apiClient, credentials),
         onSuccess: (signedInUser) => {
             queryClient.setQueryData(sessionQueryKey, signedInUser);
-            identifyAnalyticsUser(signedInUser.id);
+            analyticsClient.identifyUser(signedInUser.id);
         },
     });
 }
