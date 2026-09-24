@@ -19,6 +19,7 @@ from arq.worker import func
 from app.clients.disabled_email import DisabledEmailClient
 from app.clients.resend import ResendEmailClient
 from app.constants.job_names import RESET_EMAIL_JOB_NAME
+from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
 from app.core.logging import configure_logging
 from app.core.settings import Settings, get_settings
 from app.db.engine import create_database_engine
@@ -32,7 +33,6 @@ HEALTH_SERVER_START_TIMEOUT_SECONDS = 5
 HEARTBEAT_MINUTES = set(range(0, 60, 5))
 # Three tries in total: a Resend outage long enough to outlast them is one an operator should see
 # in the failed-job log rather than one the queue keeps absorbing.
-RESET_EMAIL_MAX_TRIES = 3
 
 
 async def start_worker_resources(ctx: WorkerContext) -> None:

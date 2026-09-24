@@ -9,3 +9,5 @@ from datetime import timedelta
 
 PASSWORD_RESET_TTL = timedelta(hours=1)
 RESET_PAGE_PATH = "/reset-password"
+# arq runs the reset email at most this many times before it is given up and logged as failed.
+RESET_EMAIL_MAX_TRIES = 3

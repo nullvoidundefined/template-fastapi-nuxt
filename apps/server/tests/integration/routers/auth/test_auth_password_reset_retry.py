@@ -114,6 +114,36 @@ async def test_b47_arq_retries_a_failed_send_and_the_second_try_delivers(
 
 
 @pytest.mark.integration
+async def test_b47_the_last_try_fails_with_the_real_error_instead_of_asking_again(
+    worker_environment, auth_db, auth_emails
+) -> None:
+    """R-344: on its final try the job raises the provider's error, so the failure is logged."""
+    from arq.worker import Retry  # noqa: PLC0415
+
+    from app.workers.jobs.send_password_reset_email import (  # noqa: PLC0415
+        send_password_reset_email,
+    )
+
+    email = auth_emails("exhausted")
+    await auth_db.seed_user(email, ORIGINAL_PASSPHRASE)
+    email_client = FlakyEmailClient()
+    final_try = 3
+
+    try:
+        await send_password_reset_email(
+            {"engine": auth_db.engine, "email_client": email_client, "job_try": final_try},
+            email,
+            REQUEST_ID,
+        )
+    except Retry as retry:
+        raise AssertionError("the final try asked arq for a fourth one") from retry
+    except RuntimeError as err:
+        assert "503" in str(err)
+    else:
+        raise AssertionError("the final try swallowed the provider error")
+
+
+@pytest.mark.integration
 async def test_r341_the_job_binds_the_request_id_of_the_request_that_enqueued_it(
     worker_environment, auth_db, auth_emails
 ) -> None:

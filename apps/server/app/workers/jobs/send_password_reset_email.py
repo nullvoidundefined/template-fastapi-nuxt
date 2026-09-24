@@ -16,6 +16,7 @@ ID of the request that enqueued it, so its log lines and its Resend call carry t
 import structlog
 from arq.worker import Retry
 
+from app.constants.password_reset import RESET_EMAIL_MAX_TRIES
 from app.core.settings import get_settings
 from app.services.auth.issue_password_reset import issue_password_reset
 from app.services.email.build_password_reset_email import build_password_reset_email
@@ -43,7 +44,12 @@ async def send_password_reset_email(
         if "job_try" not in ctx:
             raise
         job_try = ctx["job_try"]
-        logger.warning("password_reset_email_retrying", job_try=job_try, exc_info=err)
+        if job_try >= RESET_EMAIL_MAX_TRIES:
+            # The last try: raise the provider's own error, so the lost email is logged with its
+            # cause rather than as one more "retrying" warning arq then drops.
+            logger.error("password_reset_email_failed", job_try=job_try, err=err)
+            raise
+        logger.warning("password_reset_email_retrying", job_try=job_try, err=err)
         raise Retry(defer=RESET_EMAIL_RETRY_DELAY_SECONDS * job_try) from err
 
 

@@ -4,8 +4,9 @@ A thin client over the one endpoint the application uses, rather than the Resend
 synchronous, and a POST with a bearer key is all it would add. The HTTP client is built once per
 worker process and reused, so each send reuses the connection pool.
 
-A non-2xx answer raises. The email job lets that raise escape so arq retries it, because a send
-that failed quietly would lose the reset email with nobody told (spec, failure modes).
+A non-2xx answer raises. The email job turns that into arq's `Retry` until its last try, and on
+the last try lets it escape and logs it, because a send that failed quietly would lose the reset
+email with nobody told (spec, failure modes).
 """
 
 from collections.abc import Mapping
