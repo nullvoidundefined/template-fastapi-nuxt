@@ -20,7 +20,8 @@ outbound call for that request (R-341).
   `useRequestHeaders(['cookie', 'x-request-id', 'x-forwarded-for'])` to forward to FastAPI.
 - **The `/api/[...path]` proxy.** `apps/client/web/server/api/[...path].ts` forwards whatever
   request-ID header is present on the proxied call (it does not strip or replace it, unlike
-  `X-Forwarded-For`, which it does replace).
+  `X-Forwarded-For`, which it replaces with the resolved client address or strips when no
+  trustworthy address resolves).
 - **FastAPI.** `asgi-correlation-id`'s `CorrelationIdMiddleware`, registered outermost in
   `apps/server/app/main.py`, validates an inbound `X-Request-Id` with
   `is_valid_request_id` (the same character-and-length rule as the Nitro middleware), mints one

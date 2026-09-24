@@ -260,6 +260,26 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         );
     });
 
+    it('US-AUTH-003: strips a client-sent X-Forwarded-For chain when no trustworthy address resolves, so the backend never keys on a forged entry', async () => {
+        const handleRequest = await createNitroRouteTable();
+
+        // The web handler has no socket peer, and the edge entry here is not an address, so
+        // nothing resolves and the forged chain is the only thing that could reach the backend.
+        await handleRequest(
+            new Request('http://web.test/api/v1/auth/login', {
+                method: 'POST',
+                headers: {
+                    'X-Forwarded-For': [forgedForwardedForEntry, 'not-an-address'].join(', '),
+                    'Content-Type': 'application/json',
+                },
+                body: '{"email":"person@example.test"}',
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        expect(backendRequests[0]!.headers.get('x-forwarded-for')).toBeNull();
+    });
+
     it('US-AUTH-003: answers /api/health from the Nuxt server itself, never through the proxy', async () => {
         const handleRequest = await createNitroRouteTable();
 
