@@ -65,6 +65,25 @@ components:
       - data
       title: AuthenticatedUserResponse
       type: object
+    BillingRedirectData:
+      description: The hosted Stripe page the browser is sent to next.
+      properties:
+        url:
+          title: Url
+          type: string
+      required:
+      - url
+      title: BillingRedirectData
+      type: object
+    BillingRedirectResponse:
+      description: The `{ data }` envelope around a Checkout or portal URL.
+      properties:
+        data:
+          $ref: '#/components/schemas/BillingRedirectData'
+      required:
+      - data
+      title: BillingRedirectResponse
+      type: object
     ChangePasswordRequest:
       additionalProperties: false
       description: The body of a password change, which proves the caller knows the current password.
@@ -83,6 +102,19 @@ components:
       - new_password
       title: ChangePasswordRequest
       type: object
+    CheckoutCreate:
+      additionalProperties: false
+      description: 'The body of `POST /v1/billing/checkout`: the Stripe price to subscribe to.'
+      properties:
+        price_id:
+          maxLength: 255
+          pattern: ^price_[A-Za-z0-9]+$
+          title: Price Id
+          type: string
+      required:
+      - price_id
+      title: CheckoutCreate
+      type: object
     ErrorCode:
       description: Every error code this application answers with, namespaced DOMAIN_REASON.
       enum:
@@ -92,6 +124,11 @@ components:
       - AUTH_SESSION_EXPIRED
       - AUTH_EMAIL_ALREADY_REGISTERED
       - AUTH_RESET_TOKEN_INVALID
+      - BILLING_NO_ACCOUNT
+      - BILLING_NOT_CONFIGURED
+      - BILLING_WEBHOOK_MISCONFIGURED
+      - BILLING_WEBHOOK_INVALID_SIGNATURE
+      - BILLING_WEBHOOK_PROCESSING_FAILED
       - CSRF_HEADER_MISSING
       - IDEMPOTENCY_KEY_IN_PROGRESS
       - IDEMPOTENCY_KEY_REUSED
@@ -104,7 +141,6 @@ components:
       - SERVER_INTERNAL_ERROR
       - SERVER_RATE_LIMIT_UNAVAILABLE
       - SERVER_REQUEST_TIMEOUT
-      - UPLOADS_STORAGE_UNCONFIGURED
       title: ErrorCode
       type: string
     ErrorResponse:
@@ -279,58 +315,6 @@ components:
       - offset
       title: PageMeta
       type: object
-    PresignUploadRequest:
-      additionalProperties: false
-      description: 'What the client wants to upload: its purpose and its file extension.'
-      properties:
-        extension:
-          maxLength: 5
-          minLength: 1
-          title: Extension
-          type: string
-        purpose:
-          $ref: '#/components/schemas/UploadPurpose'
-      required:
-      - purpose
-      - extension
-      title: PresignUploadRequest
-      type: object
-    PresignedUploadData:
-      description: Everything the browser needs to PUT the file straight to R2.
-      properties:
-        content_type:
-          title: Content Type
-          type: string
-        expires_in_seconds:
-          title: Expires In Seconds
-          type: integer
-        key:
-          title: Key
-          type: string
-        method:
-          const: PUT
-          default: PUT
-          title: Method
-          type: string
-        upload_url:
-          title: Upload Url
-          type: string
-      required:
-      - upload_url
-      - key
-      - content_type
-      - expires_in_seconds
-      title: PresignedUploadData
-      type: object
-    PresignedUploadResponse:
-      description: The success envelope for a presigned upload.
-      properties:
-        data:
-          $ref: '#/components/schemas/PresignedUploadData'
-      required:
-      - data
-      title: PresignedUploadResponse
-      type: object
     RegisterRequest:
       additionalProperties: false
       description: The body of a registration.
@@ -376,12 +360,6 @@ components:
       - password
       title: ResetPasswordRequest
       type: object
-    UploadPurpose:
-      description: What the uploaded file is for; each purpose has its own extension allowlist.
-      enum:
-      - avatar
-      title: UploadPurpose
-      type: string
     UserRole:
       description: Every role the `user_role` enum holds, in its declared order.
       enum:
@@ -414,6 +392,25 @@ components:
       - msg
       - type
       title: ValidationError
+      type: object
+    WebhookReceivedData:
+      description: 'The acknowledgement Stripe needs: any 2xx stops its retries.'
+      properties:
+        received:
+          title: Received
+          type: boolean
+      required:
+      - received
+      title: WebhookReceivedData
+      type: object
+    WebhookReceivedResponse:
+      description: The `{ data }` envelope around the webhook's acknowledgement.
+      properties:
+        data:
+          $ref: '#/components/schemas/WebhookReceivedData'
+      required:
+      - data
+      title: WebhookReceivedResponse
       type: object
 info:
   title: template-fastapi-nuxt
@@ -774,22 +771,22 @@ paths:
       summary: Reset Password With Token
       tags:
       - auth
-  /v1/uploads:
+  /v1/billing/checkout:
     post:
-      description: Answer a URL the browser can PUT the file to within fifteen minutes.
-      operationId: create_presigned_upload_v1_uploads_post
+      description: Create a subscription Checkout session for the signed-in user; answer its URL.
+      operationId: create_checkout_v1_billing_checkout_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PresignUploadRequest'
+              $ref: '#/components/schemas/CheckoutCreate'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PresignedUploadResponse'
+                $ref: '#/components/schemas/BillingRedirectResponse'
           description: Successful Response
         '400':
           content:
@@ -809,6 +806,65 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: An unexpected error occurred
-      summary: Create Presigned Upload
+      summary: Create Checkout
       tags:
-      - uploads
+      - billing
+  /v1/billing/portal:
+    post:
+      description: Open the billing portal for the signed-in user's Stripe customer; answer its URL.
+      operationId: create_portal_v1_billing_portal_post
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingRedirectResponse'
+          description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: An unexpected error occurred
+      summary: Create Portal
+      tags:
+      - billing
+  /v1/billing/webhook:
+    post:
+      description: 'Verify a Stripe delivery against its raw bytes and apply it at most once.
+
+
+        The body is read as bytes and never parsed before the signature is checked, because any
+
+        re-serialization would change the bytes Stripe signed. No session and no CSRF header are
+
+        involved: Stripe sends neither, and the signature is what authenticates the request.'
+      operationId: receive_webhook_v1_billing_webhook_post
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookReceivedResponse'
+          description: Successful Response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The request failed validation
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The event could not be processed
+      summary: Receive Webhook
+      tags:
+      - billing
