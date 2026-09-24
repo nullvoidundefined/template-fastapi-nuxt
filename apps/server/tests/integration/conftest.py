@@ -35,20 +35,27 @@ ALEMBIC_CONFIG_PATH = SERVER_ROOT / "alembic.ini"
 MIGRATIONS_PATH = SERVER_ROOT / "migrations"
 
 # Every other client session on the current database: a server's pool, another test run, a psql.
+# pg_isready is left out: CI's Postgres service health check connects to the same database every
+# few seconds under that application name, and a probe that lands on the count is not a server.
 OTHER_CLIENTS_SQL = text(
-    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
-    "AND pid <> pg_backend_pid() AND backend_type = 'client backend'"
+    "SELECT application_name FROM pg_stat_activity WHERE datname = current_database() "
+    "AND pid <> pg_backend_pid() AND backend_type = 'client backend' "
+    "AND application_name <> 'pg_isready'"
 )
+# Bounds the guard's one connection, so a host that never answers cannot hang the run.
+GUARD_CONNECT_TIMEOUT_SECONDS = 5.0
 
 AlembicConfigFactory = Callable[[str], Config]
 
 
-async def count_other_database_clients(database_url: str) -> int:
-    """Return how many other client sessions are connected to the database the URL names."""
-    engine = create_async_engine(database_url)
+async def list_other_database_clients(database_url: str) -> list[str]:
+    """Return the application name of every other client session on the database the URL names."""
+    engine = create_async_engine(
+        database_url, connect_args={"timeout": GUARD_CONNECT_TIMEOUT_SECONDS}
+    )
     try:
         async with engine.connect() as connection:
-            return int(await connection.scalar(OTHER_CLIENTS_SQL) or 0)
+            return list((await connection.scalars(OTHER_CLIENTS_SQL)).all())
     finally:
         await engine.dispose()
 
@@ -59,7 +66,7 @@ def refuse_shared_test_database(database_url: str) -> None:
     An unreachable database is left to the tests themselves, which report it as they always have.
     """
     try:
-        other_client_count = asyncio.run(count_other_database_clients(database_url))
+        other_client_count = len(asyncio.run(list_other_database_clients(database_url)))
     except (OSError, SQLAlchemyError):
         return
     if other_client_count == 0:
