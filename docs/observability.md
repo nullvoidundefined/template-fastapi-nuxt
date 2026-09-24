@@ -249,7 +249,13 @@ from a call site the enum does not name.
   query string from `request.url`; drops any header in `{authorization, cookie, set-cookie,
 proxy-authorization}` (case-insensitively) from `request.headers`; strips the query string from
   every string value inside every breadcrumb's `data`; and keeps only the `id` field of
-  `event.user`, dropping anything else the SDK might have attached.
+  `event.user`, dropping anything else the SDK might have attached. It
+  also scrubs free text with `scrub_sensitive_text`: every breadcrumb `message`, every exception
+  `value`, the event `message`, and `logentry.message`, `logentry.formatted` and each string in
+  `logentry.params` lose email addresses, `Bearer` values, `token=`/`password=`/`secret=`/
+  `api_key=`/`session=` values, and any run of 32 or more URL-safe characters (a session or reset
+  token, a digest, an API key), each replaced by `[REDACTED]`. UUIDs are left readable, because
+  the request and user IDs they carry are how an event is joined to its logs.
 
 ### Browser (`apps/client/web/shared/services/buildSentryOptions.ts`, used by both
 
