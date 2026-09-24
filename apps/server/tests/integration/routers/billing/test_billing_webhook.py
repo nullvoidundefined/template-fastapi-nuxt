@@ -715,3 +715,51 @@ async def test_b6_b7_the_webhook_is_exempt_from_csrf_and_both_rate_limit_buckets
         statuses.append(response.status_code)
 
     assert set(statuses) == {200}
+
+
+@pytest.mark.integration
+async def test_b51_a_payment_failure_created_before_a_recovery_cannot_mark_it_past_due(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """A retried payment that succeeded is newer than the failure Stripe delivers late."""
+    user_id, customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "late-payment-failure"
+    )
+    recovered_at = int(time.time())
+    recovery = build_stripe_event(
+        "customer.subscription.updated",
+        build_subscription(subscription_id, customer_id, "active"),
+        created=recovered_at,
+    )
+    late_failure = build_stripe_event(
+        "invoice.payment_failed",
+        {"id": make_stripe_id("in"), "object": "invoice", "subscription": subscription_id},
+        created=recovered_at - EARLIER_EVENT_SECONDS,
+    )
+
+    assert (await webhook_sender.deliver(recovery)).status_code == 200
+    failed = await webhook_sender.deliver(late_failure)
+
+    assert failed.status_code == 200, failed.text
+    assert (await billing_db.read_subscription(user_id)).status == "active"
+
+
+@pytest.mark.integration
+async def test_b51_a_late_checkout_for_a_replaced_subscription_leaves_the_row_alone(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """A checkout for the old subscription must not repoint a row that names the newer one."""
+    user_id, customer_id, current_subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "late-checkout"
+    )
+    replaced_subscription_id = make_stripe_id("sub")
+    late_checkout = build_stripe_event(
+        "checkout.session.completed",
+        build_checkout_session(user_id, customer_id, replaced_subscription_id),
+    )
+
+    response = await webhook_sender.deliver(late_checkout)
+
+    assert response.status_code == 200, response.text
+    stored = await billing_db.read_subscription(user_id)
+    assert stored.stripe_subscription_id == current_subscription_id

@@ -67,7 +67,11 @@ async def apply_checkout_completed(connection: AsyncConnection, event: StripeWeb
         return
     if not await is_linkable_to_user(connection, user_id, session.customer):
         return
-    await link_subscription_to_user(connection, user_id, session.customer, session.subscription)
+    is_linked = await link_subscription_to_user(
+        connection, user_id, session.customer, session.subscription
+    )
+    if not is_linked:
+        logger.info("billing_checkout_link_ignored", stripe_subscription_id=session.subscription)
 
 
 async def apply_subscription_change(connection: AsyncConnection, event: StripeWebhookEvent) -> None:
@@ -99,7 +103,12 @@ async def apply_payment_failed(connection: AsyncConnection, event: StripeWebhook
     if subscription_id is None:
         logger.info("billing_invoice_without_subscription", stripe_invoice_id=invoice.id)
         return
-    await set_subscription_status(connection, subscription_id, UserSubscriptionStatus.PAST_DUE)
+    event_created_at = datetime.fromtimestamp(event.created, UTC)
+    is_written = await set_subscription_status(
+        connection, subscription_id, UserSubscriptionStatus.PAST_DUE, event_created_at
+    )
+    if not is_written:
+        logger.info("billing_payment_failure_ignored", stripe_subscription_id=subscription_id)
 
 
 EVENT_HANDLERS: Mapping[StripeEventType, EventHandler] = {

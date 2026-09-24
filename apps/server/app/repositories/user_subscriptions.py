@@ -56,19 +56,27 @@ async def get_subscription_by_customer_id(
 
 async def link_subscription_to_user(
     connection: AsyncConnection, user_id: uuid.UUID, customer_id: str, subscription_id: str
-) -> None:
-    """Create the user's row naming the customer and subscription, or repoint the existing one.
+) -> bool:
+    """Create the user's row naming the customer and subscription; False when it names another.
 
     The status is left alone: the subscription's own events carry it, and a checkout that arrives
     after them must not overwrite what they wrote.
     """
     ids = {"stripe_customer_id": customer_id, "stripe_subscription_id": subscription_id}
+    current_subscription = user_subscriptions.c.stripe_subscription_id
+    # A row that already names a different subscription keeps it: a checkout delivered late for a
+    # subscription since replaced must not point the row back at the old one.
     statement = (
         insert(user_subscriptions)
         .values(user_id=user_id, **ids)
-        .on_conflict_do_update(index_elements=[user_subscriptions.c.user_id], set_=ids)
+        .on_conflict_do_update(
+            index_elements=[user_subscriptions.c.user_id],
+            set_=ids,
+            where=or_(current_subscription.is_(None), current_subscription == subscription_id),
+        )
+        .returning(user_subscriptions.c.id)
     )
-    await connection.execute(statement)
+    return (await connection.execute(statement)).first() is not None
 
 
 async def update_subscription_state(
@@ -123,13 +131,25 @@ async def upsert_subscription_for_user(
 
 
 async def set_subscription_status(
-    connection: AsyncConnection, subscription_id: str, status: UserSubscriptionStatus
+    connection: AsyncConnection,
+    subscription_id: str,
+    status: UserSubscriptionStatus,
+    event_created_at: datetime,
 ) -> bool:
-    """Set only the status of the row naming the subscription; False when no row names it."""
+    """Set only the status, unless the row already holds a newer event; False when not written.
+
+    An invoice event goes through the same ordering guard as the subscription events, because a
+    payment failure delivered after the recovery that followed it would otherwise mark a paying
+    subscription past due.
+    """
+    last_applied = user_subscriptions.c.last_stripe_event_created_at
     statement = (
         update(user_subscriptions)
-        .where(user_subscriptions.c.stripe_subscription_id == subscription_id)
-        .values(status=status.value)
+        .where(
+            user_subscriptions.c.stripe_subscription_id == subscription_id,
+            or_(last_applied.is_(None), last_applied <= event_created_at),
+        )
+        .values(status=status.value, last_stripe_event_created_at=event_created_at)
         .returning(user_subscriptions.c.id)
     )
     return (await connection.execute(statement)).first() is not None
