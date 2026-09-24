@@ -31,6 +31,8 @@ PERIOD_END_AT = datetime(2026, 2, 1, tzinfo=UTC)
 STALE_SIGNATURE_AGE_SECONDS = 3600
 GLOBAL_RATE_LIMIT = 100
 EARLIER_EVENT_SECONDS = 60
+LARGE_PADDING_BYTES = 200 * 1024
+OVERSIZED_PADDING_BYTES = 2 * 1024 * 1024
 STALE_CLAIM_MINUTES_AGO = 11
 FRESH_CLAIM_MINUTES_AGO = 2
 
@@ -659,6 +661,45 @@ async def test_b42_an_unparseable_event_object_is_marked_failed_and_changes_noth
     assert response.status_code == 500, response.text
     assert response.json()["code"] == "BILLING_WEBHOOK_PROCESSING_FAILED"
     assert [row.status for row in await webhook_sender.read_ledger(event["id"])] == ["failed"]
+    assert await billing_db.read_subscription(user_id) == before
+
+
+@pytest.mark.integration
+async def test_b43_a_signed_delivery_of_200_kb_is_processed(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """Stripe's larger events pass the 100 KB limit other routes keep, and are applied."""
+    user_id, _customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "large-delivery"
+    )
+    event = build_payment_failed_event(subscription_id)
+    event["data"]["object"]["description"] = "x" * LARGE_PADDING_BYTES
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "processed"
+    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+
+
+@pytest.mark.integration
+async def test_b43_a_signed_delivery_of_2_mb_answers_413_and_writes_nothing(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """The webhook's ceiling is 1 MB, not none: a 2 MB delivery never reaches the route."""
+    user_id, _customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "oversized-delivery"
+    )
+    before = await billing_db.read_subscription(user_id)
+    event = build_payment_failed_event(subscription_id)
+    event["data"]["object"]["description"] = "x" * OVERSIZED_PADDING_BYTES
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 413, response.text
+    assert response.json()["code"] == "INPUT_PAYLOAD_TOO_LARGE"
+    assert await webhook_sender.read_ledger(event["id"]) == []
     assert await billing_db.read_subscription(user_id) == before
 
 

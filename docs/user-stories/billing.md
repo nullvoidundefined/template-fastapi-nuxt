@@ -48,6 +48,7 @@
 - [x] A subscription event that no row names links the user its `metadata.user_id` names only when that user's row names no subscription yet; a late event for a subscription the user has since replaced changes nothing.
 - [x] Subscription events apply in the order Stripe created them: the row stores the `created` time of the last one applied, and an older event delivered later changes nothing.
 - [x] An event whose `metadata.user_id` names no existing user, or whose customer is already linked to a different user, is logged and marked processed with no change, answering 200, so Stripe does not retry for three days an event that can never apply.
+- [x] The webhook accepts bodies up to 1 MB, where every other route keeps the 100 KB limit, so a large Stripe event is processed; a larger delivery still answers 413 `INPUT_PAYLOAD_TOO_LARGE` before the route runs.
 - [x] The webhook is exempt from the CSRF guard and from both rate-limit buckets (spec B-6, B-7).
 
 **E2E test:** none; Stripe cannot deliver to the end-to-end stack, so the integration suite `apps/server/tests/integration/routers/billing/test_billing_webhook.py` covers it with signed deliveries
