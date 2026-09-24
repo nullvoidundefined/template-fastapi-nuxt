@@ -12,6 +12,7 @@ revision that introduces it rather than by whatever happens to reference it firs
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.constants.idempotency import IDEMPOTENCY_KEY_STATE_ENUM_NAME, IdempotencyKeyState
 from app.constants.user_roles import USER_ROLE_ENUM_NAME, UserRole
 
 NAMING_CONVENTION = {
@@ -110,4 +111,41 @@ user_password_resets = sa.Table(
     ),
     sa.Index("ix_user_password_resets_user_id", "user_id"),
     sa.Index("ix_user_password_resets_expires_at", "expires_at"),
+)
+
+request_idempotency_key_state = postgresql.ENUM(
+    *(state.value for state in IdempotencyKeyState),
+    name=IDEMPOTENCY_KEY_STATE_ENUM_NAME,
+    create_type=False,
+)
+
+# One claim per key and user, binding the key to the method, path, and body hash of the request
+# that took it. `claim_token` names whichever request holds the claim now, so a superseded holder's
+# completion or release, both scoped to its own token, changes nothing. The index on `created_at`
+# serves the slice 08 cleanup of rows past the twenty-four hour replay window.
+request_idempotency_keys = sa.Table(
+    "request_idempotency_keys",
+    metadata,
+    sa.Column("key", sa.Text(), primary_key=True),
+    sa.Column(
+        "user_id",
+        sa.Uuid(),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    sa.Column("request_method", sa.Text(), nullable=False),
+    sa.Column("request_path", sa.Text(), nullable=False),
+    sa.Column("request_body_hash", sa.Text(), nullable=False),
+    sa.Column("state", request_idempotency_key_state, nullable=False),
+    sa.Column("locked_until", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("claim_token", sa.Uuid(), nullable=False),
+    sa.Column("status_code", sa.Integer(), nullable=True),
+    sa.Column("response_body", postgresql.JSONB(none_as_null=True), nullable=True),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Index("ix_request_idempotency_keys_created_at", "created_at"),
 )

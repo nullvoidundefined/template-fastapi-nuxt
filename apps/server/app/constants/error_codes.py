@@ -26,6 +26,8 @@ class ErrorCode(StrEnum):
     AUTH_RESET_TOKEN_INVALID = "AUTH_RESET_TOKEN_INVALID"  # noqa: S105 (a code, not a secret)
     # A state-changing request arrived without X-Requested-With (slice 02, PR 4).
     CSRF_HEADER_MISSING = "CSRF_HEADER_MISSING"
+    # Another request holding the same Idempotency-Key is still running (slice 05).
+    IDEMPOTENCY_KEY_IN_PROGRESS = "IDEMPOTENCY_KEY_IN_PROGRESS"
     # An Idempotency-Key was reused for a different method, path, or body (slice 05).
     IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED"
     # The request body exceeded the 100 KB limit, rejected before the route ran.
