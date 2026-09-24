@@ -34,6 +34,7 @@ trades the retry's protection for bounded memory, and no route streams or answer
 import asyncio
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -79,6 +80,8 @@ JSON_CONTENT_TYPE = "application/json"
 JSON_MEDIA_TYPE_SUFFIX = "+json"
 # RFC 9110 forbids a Content-Length on these, so a replay of one sends none, as the handler did.
 BODILESS_STATUSES = frozenset({204, 304})
+# ASCII digits only: `str.isdigit()` also accepts latin-1 superscripts, which `int()` refuses.
+CONTENT_LENGTH_PATTERN = re.compile(r"[0-9]+")
 
 # Storing the response is retried this many times, with a short growing pause, before the
 # claim is left for its lease to lapse.
@@ -391,7 +394,7 @@ def record_declared_length(captured: CapturedResponse, value: str) -> None:
     handler's committed answer to the client. Treated as undeclared, the body's running total
     still bounds what is buffered.
     """
-    if not value.strip().isdigit():
+    if CONTENT_LENGTH_PATTERN.fullmatch(value.strip()) is None:
         return
     captured.has_content_length = True
     if int(value) > MAX_STORED_RESPONSE_BYTES:

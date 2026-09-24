@@ -44,6 +44,8 @@ STREAM_PATH = "/test-only/idempotent/stream"
 OVERSIZED_PATH = "/test-only/idempotent/oversized"
 UNDECLARED_OVERSIZED_PATH = "/test-only/idempotent/undeclared-oversized"
 MALFORMED_LENGTH_PATH = "/test-only/idempotent/malformed-length"
+# Superscript two is a latin-1 byte that `str.isdigit()` accepts and `int()` refuses.
+SUPERSCRIPT_LENGTH_PATH = "/test-only/idempotent/superscript-length"
 NO_CONTENT_PATH = "/test-only/idempotent/no-content"
 PROBLEM_PATH = "/test-only/idempotent/problem"
 CREATED_LOCATION = "/v1/things/42"
@@ -239,17 +241,21 @@ def add_stored_response_routes(router: APIRouter, probe: HandlerProbe) -> None:
             methods=["POST"],
         )
     )
-    router.routes.append(
-        Route(
-            MALFORMED_LENGTH_PATH,
-            RawAsgiEndpoint(
-                probe,
-                [(b"content-type", b"application/json"), (b"content-length", b"not-a-number")],
-                lambda call_number: f'{{"data": {{"call": {call_number}}}}}'.encode(),
-            ),
-            methods=["POST"],
+    for path, malformed_length in (
+        (MALFORMED_LENGTH_PATH, b"not-a-number"),
+        (SUPERSCRIPT_LENGTH_PATH, b"1\xb2"),
+    ):
+        router.routes.append(
+            Route(
+                path,
+                RawAsgiEndpoint(
+                    probe,
+                    [(b"content-type", b"application/json"), (b"content-length", malformed_length)],
+                    lambda call_number: f'{{"data": {{"call": {call_number}}}}}'.encode(),
+                ),
+                methods=["POST"],
+            )
         )
-    )
     router.add_api_route(TEXT_PATH, answer_text, methods=["POST"])
     router.add_api_route(HEADERS_PATH, answer_with_headers, methods=["POST"])
     router.add_api_route(STREAM_PATH, answer_stream, methods=["POST"])

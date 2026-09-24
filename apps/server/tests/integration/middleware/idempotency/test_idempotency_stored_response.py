@@ -27,6 +27,7 @@ from tests.integration.middleware.idempotency.conftest import (
     OVERSIZED_PATH,
     PROBLEM_PATH,
     STREAM_PATH,
+    SUPERSCRIPT_LENGTH_PATH,
     TEXT_PATH,
     UNDECLARED_OVERSIZED_PATH,
     UNLISTED_HEADER_NAME,
@@ -257,3 +258,26 @@ async def test_a_suffixed_json_body_is_kept_in_the_column_older_replicas_read(
     claim = await idempotency_db.read_claim(key, user.id)
     assert claim is not None
     assert claim.response_body == {"title": "rejected", "call": 1}
+
+
+@pytest.mark.integration
+async def test_a_content_length_with_a_non_ascii_digit_is_judged_by_the_body(
+    idempotency_app, idempotency_db, handler_probe
+) -> None:
+    """A length that `isdigit()` accepts but `int()` refuses is treated as undeclared too."""
+    user = await idempotency_db.sign_in_user()
+    key = build_unique_key()
+    body = encode_body({"item": "superscript"})
+
+    async with idempotency_app as client:
+        first = await client.post(
+            SUPERSCRIPT_LENGTH_PATH, content=body, headers=build_request_headers(user, key)
+        )
+        second = await client.post(
+            SUPERSCRIPT_LENGTH_PATH, content=body, headers=build_request_headers(user, key)
+        )
+
+    assert first.status_code == 201
+    assert first.json() == {"data": {"call": 1}}
+    assert second.json() == first.json()
+    assert handler_probe.calls == 1
