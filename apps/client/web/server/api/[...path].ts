@@ -24,10 +24,8 @@
 import { resolveClientAddress } from '#shared/services/resolveClientAddress';
 
 import { isForwardableBackendPath } from '../services/isForwardableBackendPath';
-import {
-    CLIENT_FORWARDING_HEADER_NAMES,
-    withholdRequestHeaders,
-} from '../services/withholdRequestHeaders';
+import { CLIENT_FORWARDING_HEADER_NAMES } from '../constants/clientForwardingHeaderNames';
+import { withholdRequestHeaders } from '../services/withholdRequestHeaders';
 
 const NOT_FOUND_STATUS = 404;
 

@@ -13,13 +13,18 @@ import type { QueryClient } from '@tanstack/vue-query';
 
 import { sessionQueryKey } from '~/composables/useSessionQuery';
 
-const RECENT_SESSION_WINDOW_MILLISECONDS = 30 * 1000;
+// Thirty seconds.
+const RECENT_SESSION_WINDOW_MILLISECONDS = 30_000;
 
 /** Return true when the cache holds a session fetched within the recent-render window. */
 export function hasRecentServerSession(queryClient: QueryClient): boolean {
     const sessionState = queryClient.getQueryState(sessionQueryKey);
-    if (!sessionState || sessionState.data === undefined) {
+    if (!sessionState) {
         return false;
     }
-    return Date.now() - sessionState.dataUpdatedAt < RECENT_SESSION_WINDOW_MILLISECONDS;
+    const { data: cachedSession, dataUpdatedAt } = sessionState;
+    return (
+        cachedSession !== undefined &&
+        Date.now() - dataUpdatedAt < RECENT_SESSION_WINDOW_MILLISECONDS
+    );
 }

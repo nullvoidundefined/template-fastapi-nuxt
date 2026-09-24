@@ -13,10 +13,8 @@
  * otherwise turn the host into userinfo and send the request anywhere. And the visitor's
  * credentials and forwarding headers are removed, since PostHog has no use for them.
  */
-import {
-    CLIENT_FORWARDING_HEADER_NAMES,
-    withholdRequestHeaders,
-} from '../../services/withholdRequestHeaders';
+import { CLIENT_FORWARDING_HEADER_NAMES } from '../../constants/clientForwardingHeaderNames';
+import { withholdRequestHeaders } from '../../services/withholdRequestHeaders';
 
 const INGEST_ROUTE_PREFIX = '/api/ingest';
 const NOT_FOUND_STATUS = 404;
