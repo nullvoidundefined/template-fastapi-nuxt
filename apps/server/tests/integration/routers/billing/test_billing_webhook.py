@@ -29,6 +29,8 @@ PERIOD_START_AT = datetime(2026, 1, 1, tzinfo=UTC)
 PERIOD_END_AT = datetime(2026, 2, 1, tzinfo=UTC)
 STALE_SIGNATURE_AGE_SECONDS = 3600
 GLOBAL_RATE_LIMIT = 100
+STALE_CLAIM_MINUTES_AGO = 11
+FRESH_CLAIM_MINUTES_AGO = 2
 
 
 def build_checkout_session(user_id: object, customer_id: str, subscription_id: str) -> dict:
@@ -82,6 +84,14 @@ def move_period_to_top_level(subscription: dict[str, Any]) -> dict[str, Any]:
     subscription["current_period_start"] = item.pop("current_period_start")
     subscription["current_period_end"] = item.pop("current_period_end")
     return subscription
+
+
+def build_payment_failed_event(subscription_id: str) -> dict[str, Any]:
+    """Return an `invoice.payment_failed` event naming the subscription at the top level."""
+    return build_stripe_event(
+        "invoice.payment_failed",
+        {"id": make_stripe_id("in"), "object": "invoice", "subscription": subscription_id},
+    )
 
 
 async def seed_linked_user(billing_db, auth_emails, label: str) -> tuple[uuid.UUID, str, str]:
@@ -370,32 +380,70 @@ async def test_b41_b42_a_failed_event_is_marked_failed_then_processed_on_redeliv
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(("minutes_ago", "is_reclaimed"), [(11, True), (2, False)])
-async def test_b41_a_claim_older_than_ten_minutes_is_taken_over_and_a_fresh_one_is_not(
-    webhook_sender, billing_db, auth_emails, minutes_ago, is_reclaimed
+async def test_b41_a_claim_older_than_ten_minutes_is_taken_over_on_redelivery(
+    webhook_sender, billing_db, auth_emails
 ) -> None:
-    """A claim a crash left behind is processed on redelivery; a live one is left to its holder."""
+    """A claim a crashed handler left behind is claimed again, applied, and marked processed."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
         billing_db, auth_emails, "stale-claim"
     )
-    before = await billing_db.read_subscription(user_id)
-    event = build_stripe_event(
-        "invoice.payment_failed",
-        {"id": make_stripe_id("in"), "object": "invoice", "subscription": subscription_id},
-    )
-    await webhook_sender.seed_ledger(event["id"], event["type"], "claimed", minutes_ago)
+    event = build_payment_failed_event(subscription_id)
+    await webhook_sender.seed_ledger(event["id"], event["type"], "claimed", STALE_CLAIM_MINUTES_AGO)
 
     response = await webhook_sender.deliver(event)
 
     assert response.status_code == 200, response.text
     [ledger_row] = await webhook_sender.read_ledger(event["id"])
-    stored = await billing_db.read_subscription(user_id)
-    if is_reclaimed:
-        assert ledger_row.status == "processed"
-        assert stored.status == "past_due"
-    else:
-        assert ledger_row.status == "claimed"
-        assert stored == before
+    assert ledger_row.status == "processed"
+    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+
+
+@pytest.mark.integration
+async def test_b41_a_fresh_claim_held_by_another_delivery_answers_409_so_stripe_retries(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """A claim younger than ten minutes may still crash, so the delivery is refused, not acked.
+
+    Answering 200 here would end Stripe's retries while the event's only other delivery might yet
+    fail, losing the event; a 409 leaves Stripe to deliver it again after the holder finishes.
+    """
+    user_id, _customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "fresh-claim"
+    )
+    before = await billing_db.read_subscription(user_id)
+    event = build_payment_failed_event(subscription_id)
+    await webhook_sender.seed_ledger(event["id"], event["type"], "claimed", FRESH_CLAIM_MINUTES_AGO)
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "BILLING_WEBHOOK_IN_PROGRESS"
+    [ledger_row] = await webhook_sender.read_ledger(event["id"])
+    assert ledger_row.status == "claimed"
+    assert await billing_db.read_subscription(user_id) == before
+
+
+@pytest.mark.integration
+async def test_b21_an_event_already_processed_answers_200_and_changes_nothing(
+    webhook_sender, billing_db, auth_emails
+) -> None:
+    """A redelivery of a processed event is acknowledged, and neither table moves."""
+    user_id, _customer_id, subscription_id = await seed_linked_user(
+        billing_db, auth_emails, "already-processed"
+    )
+    before = await billing_db.read_subscription(user_id)
+    event = build_payment_failed_event(subscription_id)
+    await webhook_sender.seed_ledger(
+        event["id"], event["type"], "processed", FRESH_CLAIM_MINUTES_AGO
+    )
+    [seeded_row] = await webhook_sender.read_ledger(event["id"])
+
+    response = await webhook_sender.deliver(event)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == RECEIVED_BODY
+    assert await webhook_sender.read_ledger(event["id"]) == [seeded_row]
+    assert await billing_db.read_subscription(user_id) == before
 
 
 @pytest.mark.integration

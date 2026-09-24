@@ -370,7 +370,7 @@ export interface components {
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "BILLING_NO_ACCOUNT" | "BILLING_NOT_CONFIGURED" | "BILLING_WEBHOOK_MISCONFIGURED" | "BILLING_WEBHOOK_INVALID_SIGNATURE" | "BILLING_WEBHOOK_PROCESSING_FAILED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "BILLING_NO_ACCOUNT" | "BILLING_NOT_CONFIGURED" | "BILLING_WEBHOOK_MISCONFIGURED" | "BILLING_WEBHOOK_INVALID_SIGNATURE" | "BILLING_WEBHOOK_IN_PROGRESS" | "BILLING_WEBHOOK_PROCESSING_FAILED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT" | "UPLOADS_STORAGE_UNCONFIGURED";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -1176,6 +1176,15 @@ export interface operations {
             };
             /** @description The request failed validation */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Another delivery is processing the event */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

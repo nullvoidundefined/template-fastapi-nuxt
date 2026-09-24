@@ -4,8 +4,10 @@ The steps, each in its own transaction on a connection of its own:
 
 1. An event type outside the allowlist is acknowledged and nothing is written (B-34).
 2. The event is claimed in `billing_webhook_events` and the claim committed, so a concurrent
-   redelivery sees it. A delivery that claims nothing, because the event was processed or another
-   delivery is working on it, is acknowledged without applying it again (B-21).
+   redelivery sees it. A delivery of an event already processed is acknowledged without applying
+   it again (B-21). A delivery that meets another delivery's claim younger than ten minutes answers
+   409 `BILLING_WEBHOOK_IN_PROGRESS`: that holder may yet crash, and a 200 here would end Stripe's
+   retries and lose the event, so Stripe is left to deliver it again.
 3. The handler's writes and the `processed` mark commit together, so an event is never marked
    processed without its changes, nor changed without being marked.
 4. When the handler raises, that transaction rolls back, the event is marked `failed` in a
@@ -21,7 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.clients.stripe import StripeWebhookEvent
-from app.constants.billing import HANDLED_STRIPE_EVENT_TYPES
+from app.constants.billing import HANDLED_STRIPE_EVENT_TYPES, WebhookClaimOutcome
 from app.constants.error_codes import ErrorCode
 from app.db.session import CONNECT_FAILURE_TYPES
 from app.errors import AppError
@@ -33,6 +35,7 @@ from app.repositories.billing_webhook_events import (
 from app.services.billing.apply_webhook_event import apply_webhook_event
 
 PROCESSING_FAILED_MESSAGE = "The webhook event could not be processed"
+IN_PROGRESS_MESSAGE = "Another delivery of this webhook event is being processed"
 # What a handler raises for a bad row or a bad payload: a database error, a failed validation
 # (pydantic's `ValidationError` is a `ValueError`), or a missing or mistyped field. Anything else
 # is a defect rather than an event Stripe should retry, and reaches the 500 handler unchanged.
@@ -51,16 +54,27 @@ class WebhookProcessingFailedError(AppError):
         )
 
 
+class WebhookInProgressError(AppError):
+    """Another delivery holds a live claim on the event; Stripe retries the refused delivery."""
+
+    def __init__(self) -> None:
+        """Answer 409 with the registry's in-progress code."""
+        super().__init__(409, ErrorCode.BILLING_WEBHOOK_IN_PROGRESS, IN_PROGRESS_MESSAGE)
+
+
 async def process_webhook_event(engine: AsyncEngine, event: StripeWebhookEvent) -> None:
     """Ignore, skip, or apply the event, raising when its handler fails."""
     if event.type not in HANDLED_STRIPE_EVENT_TYPES:
         logger.info("billing_webhook_event_ignored", event_type=event.type)
         return
     async with engine.begin() as connection:
-        is_claimed = await claim_webhook_event(connection, event.id, event.type)
-    if not is_claimed:
+        claim_outcome = await claim_webhook_event(connection, event.id, event.type)
+    if claim_outcome is WebhookClaimOutcome.ALREADY_PROCESSED:
         logger.info("billing_webhook_event_skipped", stripe_event_id=event.id)
         return
+    if claim_outcome is WebhookClaimOutcome.IN_PROGRESS:
+        logger.info("billing_webhook_event_in_progress", stripe_event_id=event.id)
+        raise WebhookInProgressError
     try:
         async with engine.begin() as connection:
             await apply_webhook_event(connection, event)

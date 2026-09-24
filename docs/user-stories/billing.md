@@ -44,6 +44,7 @@
 - [x] The same event delivered twice changes `user_subscriptions` once, and `checkout.session.completed` is mapped to its user through `metadata.user_id` (spec B-21).
 - [x] Each of the five allowlisted events writes its columns: checkout links the customer and subscription; the three subscription events set the status, plan, period, and cancel flag; `invoice.payment_failed` sets `past_due` (spec B-51).
 - [x] A handler exception marks the event `failed` and answers 500 `BILLING_WEBHOOK_PROCESSING_FAILED`; a failed event and a claim older than ten minutes are processed on redelivery (spec B-41, B-42).
+- [x] A delivery that meets another delivery's claim younger than ten minutes answers 409 `BILLING_WEBHOOK_IN_PROGRESS`, so Stripe retries it rather than losing the event if that holder crashes; a redelivery of an event already processed answers 200 and changes nothing.
 - [x] The webhook is exempt from the CSRF guard and from both rate-limit buckets (spec B-6, B-7).
 
 **E2E test:** none; Stripe cannot deliver to the end-to-end stack, so the integration suite `apps/server/tests/integration/routers/billing/test_billing_webhook.py` covers it with signed deliveries

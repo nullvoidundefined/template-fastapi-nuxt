@@ -3,8 +3,9 @@
 `UserSubscriptionStatus` mirrors Stripe's subscription statuses, which are the Express template's
 `subscription_status` values, so a status Stripe sends is stored as the same word. The ledger
 states are the three a delivery moves through: claimed while a handler runs, then processed or
-failed. The allowlist names the five Stripe events the Express template handles; every other
-verified event is acknowledged and ignored.
+failed; a claim's outcome tells the delivery which of the three it met. The allowlist names the
+five Stripe events the Express template handles; every other verified event is acknowledged and
+ignored.
 """
 
 import re
@@ -37,6 +38,14 @@ class BillingWebhookEventStatus(StrEnum):
     CLAIMED = "claimed"
     PROCESSED = "processed"
     FAILED = "failed"
+
+
+class WebhookClaimOutcome(StrEnum):
+    """What a delivery's claim found: its own claim, a finished event, or another live claim."""
+
+    CLAIMED = "claimed"
+    ALREADY_PROCESSED = "already_processed"
+    IN_PROGRESS = "in_progress"
 
 
 class StripeEventType(StrEnum):

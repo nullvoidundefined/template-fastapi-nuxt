@@ -32,6 +32,8 @@ class ErrorCode(StrEnum):
     BILLING_WEBHOOK_MISCONFIGURED = "BILLING_WEBHOOK_MISCONFIGURED"
     # A webhook's signature did not verify against the signing secret (slice 06).
     BILLING_WEBHOOK_INVALID_SIGNATURE = "BILLING_WEBHOOK_INVALID_SIGNATURE"
+    # Another delivery of the same event holds a claim younger than ten minutes; retry (slice 06).
+    BILLING_WEBHOOK_IN_PROGRESS = "BILLING_WEBHOOK_IN_PROGRESS"
     # A verified webhook's handler raised; the event is marked failed for a retry (slice 06).
     BILLING_WEBHOOK_PROCESSING_FAILED = "BILLING_WEBHOOK_PROCESSING_FAILED"
     # A state-changing request arrived without X-Requested-With (slice 02, PR 4).

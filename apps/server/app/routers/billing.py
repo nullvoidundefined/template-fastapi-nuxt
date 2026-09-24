@@ -65,7 +65,10 @@ async def create_portal(
 @router.post(
     "/webhook",
     response_model=WebhookReceivedResponse,
-    responses={500: {"model": ErrorResponse, "description": "The event could not be processed"}},
+    responses={
+        409: {"model": ErrorResponse, "description": "Another delivery is processing the event"},
+        500: {"model": ErrorResponse, "description": "The event could not be processed"},
+    },
 )
 async def receive_webhook(
     request: Request, engine: RequestEngine, settings: RequestSettings
