@@ -43,8 +43,9 @@ services:
   # Stripe's official mock of its API, started only with `docker compose --profile e2e up`, so the
   # end-to-end suite exercises checkout and the portal without a Stripe account or the network.
   # It accepts any test key and answers from Stripe's OpenAPI fixtures. Published on loopback only.
+  # Pinned to a release, so a new stripe-mock cannot change the end-to-end run's answers unannounced.
   stripe-mock:
-    image: stripe/stripe-mock:latest
+    image: stripe/stripe-mock:v0.203.0
     profiles: ['e2e']
     ports:
       - '127.0.0.1:${STRIPE_MOCK_HOST_PORT:-12111}:12111'
