@@ -106,8 +106,11 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         try:
             yield
         finally:
-            await app.state.job_queue.aclose()
-            await app.state.engine.dispose()
+            # Nested, so a Redis error while closing the queue cannot skip the engine's disposal.
+            try:
+                await app.state.job_queue.aclose()
+            finally:
+                await app.state.engine.dispose()
 
     return lifespan
 

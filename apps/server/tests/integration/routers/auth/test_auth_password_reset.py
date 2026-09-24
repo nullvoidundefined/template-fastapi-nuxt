@@ -158,7 +158,9 @@ async def test_b14_forgot_password_answers_200_and_enqueues_one_job_for_any_addr
     assert response.status_code == 200, response.text
     assert set(response.json()) == {"data"}
     assert isinstance(response.json()["data"]["message"], str)
-    assert job_queue.enqueued == [(RESET_EMAIL_JOB_NAME, (email,))]
+    # The request's own ID travels with the job, so the worker's logs and its Resend call carry
+    # the ID of the request that asked for the email (R-341).
+    assert job_queue.enqueued == [(RESET_EMAIL_JOB_NAME, (email, response.headers["X-Request-Id"]))]
 
 
 @pytest.mark.integration

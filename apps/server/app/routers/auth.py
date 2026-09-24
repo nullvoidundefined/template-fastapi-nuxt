@@ -135,7 +135,10 @@ async def request_password_reset(
     The route never looks the address up. The job does, in the worker, so the response and the
     work this request causes are identical for a known and an unknown address (B-14).
     """
-    await job_queue.enqueue_job(RESET_EMAIL_JOB_NAME, body.email)
+    # The request's ID travels with the job, so the worker's work for this request is correlated
+    # with it (R-341).
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
+    await job_queue.enqueue_job(RESET_EMAIL_JOB_NAME, body.email, request_id)
     return ForgotPasswordResponse(data=ForgotPasswordData(message=RESET_REQUESTED_MESSAGE))
 
 

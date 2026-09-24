@@ -23,6 +23,7 @@ class WorkerContext(TypedDict, total=False):
 
     redis: Redis
     job_id: str
+    job_try: int
     engine: AsyncEngine
     email_client: WorkerEmailClient
     health_server: uvicorn.Server
