@@ -11,10 +11,10 @@ Two behaviors are pinned against the real Postgres and the engine `create_app()`
   follows expand and contract never produces the error. This is the guarantee the README's
   migration rule depends on.
 - An in-place type change fails exactly one request, and the next one succeeds without a restart:
-  on the error, the dialect bumps a process-wide invalidation timestamp, and every connection then
-  re-prepares any statement cached before it. If a SQLAlchemy upgrade removed that recovery, the
-  second assertion would fail and the chosen answer (documentation, not a disabled cache) would
-  need revisiting.
+  on the error, the dialect bumps an invalidation timestamp the whole engine shares, and every
+  connection then re-prepares any statement cached before it. If a SQLAlchemy upgrade removed
+  that recovery, the second assertion would fail and the chosen answer (documentation, not a
+  disabled cache) would need revisiting.
 
 The schema change runs on an engine of its own, as `alembic upgrade head` would from the
 pre-deploy step, because DDL emitted on the application's own engine invalidates its cache first.
