@@ -2,7 +2,7 @@
 
 Status key: **Complete** | **Partial** | **Planned**
 
-Last updated: 2026-09-24 (slice 03: the gate, the ui kit and the auth forms)
+Last updated: 2026-09-24 (slice 04: password reset end to end)
 
 <!--
 R-607: one `## <Area>` section per product area, each holding one table.
@@ -45,6 +45,7 @@ the date and what changed. Section shape:
 | Auth gate: server cookie gate, client revalidating middleware, protected and auth layouts               | **Complete** | US-AUTH-003; spec B-12, B-45                                                                                                                                    |
 | UI kit: Button, Modal, Toast, TextField with Storybook stories and a visual-regression CI job           | **Complete** | US-AUTH-004; spec B-39, B-48                                                                                                                                    |
 | Register, log-in and dashboard password-change forms with field-level errors                            | **Complete** | US-AUTH-004; spec B-38, B-50                                                                                                                                    |
+| Password reset: `user_password_resets`, the forgot and reset endpoints, and the arq email job           | **Partial**  | spec B-14, B-15, B-47; the backend is done (Resend client, `with_client_telemetry`, retries); the two pages (B-36) arrive in the slice 04 frontend half         |
 
 ## Landing
 

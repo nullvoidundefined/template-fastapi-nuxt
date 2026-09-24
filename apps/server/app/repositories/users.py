@@ -20,7 +20,7 @@ mutable attribute; the id the session resolved to is the account itself.
 import uuid
 from typing import Any
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row, func, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.db.tables import users
@@ -61,3 +61,11 @@ async def lock_user_by_id(connection: AsyncConnection, user_id: uuid.UUID) -> Ro
     """
     statement = select(users).where(users.c.id == user_id).with_for_update()
     return (await connection.execute(statement)).one_or_none()
+
+
+async def update_password_hash(
+    connection: AsyncConnection, user_id: uuid.UUID, password_hash: str
+) -> None:
+    """Store a new bcrypt hash for this user; the caller hashes, this only writes."""
+    statement = update(users).where(users.c.id == user_id).values(password_hash=password_hash)
+    await connection.execute(statement)

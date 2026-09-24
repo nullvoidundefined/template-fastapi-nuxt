@@ -44,6 +44,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Password Reset
+         * @description Enqueue the reset email and answer 200, whether or not an account uses the address.
+         *
+         *     The route never looks the address up. The job does, in the worker, so the response and the
+         *     work this request causes are identical for a known and an unknown address (B-14).
+         */
+        post: operations["request_password_reset_v1_auth_forgot_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/login": {
         parameters: {
             query?: never;
@@ -132,6 +155,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Password With Token
+         * @description Set a new password from an emailed token and sign the account out everywhere.
+         */
+        post: operations["reset_password_with_token_v1_auth_reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -171,7 +214,7 @@ export interface components {
          * @description Every error code this application answers with, namespaced DOMAIN_REASON.
          * @enum {string}
          */
-        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
+        ErrorCode: "AUTH_ADMIN_REQUIRED" | "AUTH_INVALID_CREDENTIALS" | "AUTH_REQUIRED" | "AUTH_SESSION_EXPIRED" | "AUTH_EMAIL_ALREADY_REGISTERED" | "AUTH_RESET_TOKEN_INVALID" | "CSRF_HEADER_MISSING" | "IDEMPOTENCY_KEY_REUSED" | "INPUT_PAYLOAD_TOO_LARGE" | "INPUT_VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "ROUTING_METHOD_NOT_ALLOWED" | "ROUTING_NOT_FOUND" | "SERVER_DATABASE_UNAVAILABLE" | "SERVER_INTERNAL_ERROR" | "SERVER_RATE_LIMIT_UNAVAILABLE" | "SERVER_REQUEST_TIMEOUT";
         /**
          * ErrorResponse
          * @description One failed request: a registry code the client switches on and a human-readable message.
@@ -211,6 +254,33 @@ export interface components {
              * @description Why this field was rejected.
              */
             message: string;
+        };
+        /**
+         * ForgotPasswordData
+         * @description The confirmation a reset request answers with, identical for every address.
+         */
+        ForgotPasswordData: {
+            /** Message */
+            message: string;
+        };
+        /**
+         * ForgotPasswordRequest
+         * @description The body of a reset request.
+         *
+         *     The email carries no pattern, for the reason `LoginRequest` gives: the answer is the same 200
+         *     for every address, and a 400 for one that is not even registrable would be the one response
+         *     that differed.
+         */
+        ForgotPasswordRequest: {
+            /** Email */
+            email: string;
+        };
+        /**
+         * ForgotPasswordResponse
+         * @description The `{ data }` envelope of a reset request.
+         */
+        ForgotPasswordResponse: {
+            data: components["schemas"]["ForgotPasswordData"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -267,6 +337,20 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * ResetPasswordRequest
+         * @description The body of a reset: the token from the email's link and the new password.
+         *
+         *     The password takes registration's constraints, since it becomes the account's password on
+         *     exactly the same terms. The token's ceiling is generous against the 43 characters a real one
+         *     has, and exists so an oversized value is refused before it is hashed.
+         */
+        ResetPasswordRequest: {
+            /** Password */
+            password: string;
+            /** Token */
+            token: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -371,6 +455,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReadiness"];
+                };
+            };
+        };
+    };
+    request_password_reset_v1_auth_forgot_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgotPasswordResponse"];
+                };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -572,6 +707,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuthenticatedUserResponse"];
                 };
+            };
+            /** @description The request failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description An unexpected error occurred */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reset_password_with_token_v1_auth_reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request failed validation */
             400: {
