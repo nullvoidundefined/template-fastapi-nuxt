@@ -103,7 +103,7 @@ The integrations are optional everywhere. Without `SENTRY_DSN` the API reports n
 | `pnpm smoke`                      | The smoke suite: every service's health probe and the landing page, against the compose ports by default (`SMOKE_WEB_URL`, `SMOKE_API_URL`, `SMOKE_WORKER_URL` override them)                                                                                                                                         |
 | `pnpm check:contract`             | Fails when `openapi.yaml` or `@repo/api-types` no longer match the code                                                                                                                                                                                                                                               |
 
-The integration suite needs a Postgres database and a Redis database that nothing else uses, not the compose stack's own `app` database and Redis database 0. Its revision tests downgrade and re-upgrade the schema, which invalidates the prepared statements a running API holds, so the stack's next request on each pooled connection answers 500; and its Redis fixtures flush their database, which would empty the stack's rate-limit counters and job queue. Create the test database once and point the suite at it and at Redis database 1:
+The integration suite needs a Postgres database and a Redis database that nothing else uses, not the compose stack's own `app` database and Redis database 0. Its revision tests downgrade and re-upgrade the schema, dropping and creating enum types again, which invalidates the prepared statements a running API holds, so the stack's next request that reads an affected table answers 500 (see Migrations under traffic below); and its Redis fixtures flush their database, which would empty the stack's rate-limit counters and job queue. Create the test database once and point the suite at it and at Redis database 1:
 
 ```bash
 docker compose exec postgres createdb -U app app_test
@@ -149,6 +149,17 @@ The template itself is never deployed (owner decision, 2026-09-24). A fork deplo
 | `web`    | the repository root | `/apps/client/web/railway.toml`    | `/api/health`   | Builds from the root because it needs the workspace      |
 
 Railway builds a service from its Root Directory but reads a config file only from an absolute path in the repository, which is why each service sets both. The API's pre-deploy command runs once per deploy on the new image, before any replica takes traffic, so replicas never race each other to migrate and no replica serves against an unmigrated schema.
+
+### Migrations under traffic
+
+The old replicas keep serving while the pre-deploy command migrates, so every migration runs underneath code that was written for the schema before it. A migration therefore has to be additive, and a change that is not additive ships as expand and contract across separate deploys: add the new column or table first, backfill it, switch the code to it, and drop the old shape in a later deploy that no running code still reads. The Python convention's "Risky Migrations" section describes the four stages.
+
+The rule also protects the API's prepared statements. The asyncpg dialect caches one prepared statement per SQL string on every pooled connection, and Postgres refuses to execute a cached statement whose result columns changed type underneath it, raising `InvalidCachedStatementError` ("cached plan must not change result type"). Measured against a live engine for IAN-347, with the column cases pinned by `apps/server/tests/integration/db/test_cached_statement_after_migration.py`:
+
+- Adding a column, or dropping a column and adding it back with the same type, leaves every cached statement valid, and no request fails.
+- Changing a column's type in place, or dropping an enum type and creating it again (which gives it a new identity), fails the first request that runs a statement reading that column with 500 `SERVER_INTERNAL_ERROR`, and a request on another connection that runs the same statement at the same moment can fail as well. The dialect then marks every cached statement in the process as stale, so the next request prepares the statement again and succeeds without a restart. Each API process pays that one failure separately.
+
+The cache stays on. Turning it off (`prepared_statement_cache_size=0`) removes the failure but prepares every statement again on every execution, which measured at about 2.1 ms per statement against 0.6 ms with the cache on the local compose Postgres, an extra database round trip for each statement a request runs, to guard against a migration that the rule above already forbids. Retrying the failed statement is not possible either, because Postgres has already aborted the request's transaction by the time the error arrives, and replaying the whole request could repeat side effects that happened before the failing statement, such as a Stripe call.
 
 Set these variables on each service before its first deploy. Railway variables are per service, so a value the API and the worker both need is set on both. Mark every secret as sealed.
 
