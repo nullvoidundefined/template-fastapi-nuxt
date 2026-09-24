@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.clients.stripe import StripeWebhookEvent
 from app.constants.billing import HANDLED_STRIPE_EVENT_TYPES, WebhookClaimOutcome
 from app.constants.error_codes import ErrorCode
-from app.db.session import CONNECT_FAILURE_TYPES
 from app.errors import AppError
 from app.repositories.billing_webhook_events import (
     claim_webhook_event,
@@ -40,6 +39,12 @@ IN_PROGRESS_MESSAGE = "Another delivery of this webhook event is being processed
 # (pydantic's `ValidationError` is a `ValueError`), or a missing or mistyped field. Anything else
 # is a defect rather than an event Stripe should retry, and reaches the 500 handler unchanged.
 HANDLER_FAILURE_TYPES = (SQLAlchemyError, ValueError, LookupError, TypeError)
+# What marking the event failed may raise: any database error, not only a failure to connect, and
+# the socket errors a lost connection surfaces as. Each is logged with its traceback and swallowed
+# on purpose: the delivery already answers 500 PROCESSING_FAILED, Stripe redelivers it, and the
+# claim left behind is taken over once it is stale, so raising here would only replace the
+# registry's retryable code with an unhandled-error 500.
+MARK_FAILED_FAILURE_TYPES = (SQLAlchemyError, OSError)
 
 logger = structlog.get_logger(__name__)
 
@@ -96,5 +101,5 @@ async def mark_event_failed_safely(engine: AsyncEngine, event: StripeWebhookEven
     try:
         async with engine.begin() as connection:
             await mark_webhook_event_failed(connection, event.id)
-    except CONNECT_FAILURE_TYPES as err:
+    except MARK_FAILED_FAILURE_TYPES as err:
         logger.error("billing_webhook_mark_failed_failed", exc_info=err, stripe_event_id=event.id)
