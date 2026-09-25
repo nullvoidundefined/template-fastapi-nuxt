@@ -49,6 +49,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.constants.error_codes import ErrorCode
 from app.constants.idempotency import (
+    CLAIM_GENERATION_STATE_KEY,
     IDEMPOTENCY_KEY_HEADER,
     IDEMPOTENCY_KEY_PATTERN,
     IDEMPOTENT_METHODS,
@@ -106,10 +107,15 @@ class ClaimDecision(Enum):
 
 @dataclass(slots=True, frozen=True)
 class ClaimOutcome:
-    """The decision, and for a replay the stored row to answer with."""
+    """The decision, for a replay the stored row, and for a claim the generation it belongs to.
+
+    `created_at` identifies the claim row this request holds: a takeover keeps it, and a release
+    deletes the row, so the retry that follows inserts a new generation with a new one.
+    """
 
     decision: ClaimDecision
     stored: Row[Any] | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -212,6 +218,7 @@ class IdempotencyMiddleware:
             record_response_message(captured, message)
             await send(message)
 
+        bind_claim_generation(scope, claim)
         try:
             await self.app(scope, receive, capture_and_send)
         except BaseException:
@@ -246,6 +253,20 @@ async def resolve_request_claim(scope: Scope, key: str, body: bytes) -> "Request
     claim_token = uuid.uuid4()
     outcome = await resolve_claim(engine, request, claim_token)
     return RequestClaim(engine, request, claim_token, outcome)
+
+
+def bind_claim_generation(scope: Scope, claim: RequestClaim) -> None:
+    """Expose this claim's generation to the route, for keys it sends a provider (IAN-373).
+
+    The value is stable across a lease takeover and new after a release, which is exactly when a
+    provider-side idempotency key should repeat and when it must not, and it is a hash, so neither
+    the client's key nor the user id reaches a provider.
+    """
+    if claim.outcome.created_at is None:
+        return
+    identity = f"{claim.request.user_id}:{claim.request.key}:{claim.outcome.created_at.isoformat()}"
+    generation = hashlib.sha256(identity.encode()).hexdigest()
+    scope.setdefault("state", {})[CLAIM_GENERATION_STATE_KEY] = generation
 
 
 def read_request_target(scope: Scope) -> str:
@@ -313,8 +334,9 @@ async def resolve_claim(
     """Claim the key, or decide from the existing row; a vanished row retries the insert once."""
     for _attempt in range(CLAIM_INSERT_ATTEMPTS):
         async with engine.begin() as connection:
-            if await claim_idempotency_key(connection, request, claim_token):
-                return ClaimOutcome(ClaimDecision.CLAIMED)
+            created_at = await claim_idempotency_key(connection, request, claim_token)
+            if created_at is not None:
+                return ClaimOutcome(ClaimDecision.CLAIMED, created_at=created_at)
         outcome = await judge_stored_claim(engine, request)
         if outcome.decision is ClaimDecision.TAKE_OVER:
             outcome = await attempt_take_over(engine, request, claim_token)
@@ -328,9 +350,10 @@ async def attempt_take_over(
 ) -> ClaimOutcome:
     """Take the expired claim over, or re-read it when another request moved first."""
     async with engine.begin() as connection:
-        if await take_over_idempotency_key(connection, request, claim_token):
+        created_at = await take_over_idempotency_key(connection, request, claim_token)
+        if created_at is not None:
             logger.info("idempotency_claim_taken_over", path=request.path)
-            return ClaimOutcome(ClaimDecision.CLAIMED)
+            return ClaimOutcome(ClaimDecision.CLAIMED, created_at=created_at)
     outcome = await judge_stored_claim(engine, request)
     if outcome.decision is ClaimDecision.TAKE_OVER:
         # Expired again between two statements: another request is contending for it, and

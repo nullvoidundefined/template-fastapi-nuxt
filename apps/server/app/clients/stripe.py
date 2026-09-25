@@ -4,7 +4,8 @@ A thin client over the two Stripe calls the API makes. The SDK talks through its
 client, configured here with a ten-second timeout and no automatic retries: the telemetry wrapper
 bounds each whole call with the same ten seconds, and a retry inside the SDK would spend that
 bound on a second attempt the caller never asked for. Checkout is made safe to retry by the
-`Idempotency-Key` middleware in front of the route instead.
+`Idempotency-Key` middleware in front of the route, and a keyed checkout also passes Stripe an
+idempotency key of its own, so a rerun after a crash reaches Stripe as the same call (IAN-373).
 
 Every call runs inside `with_client_telemetry`, so it is logged with its duration and outcome and
 carries the request ID to Stripe as `X-Request-Id` (R-346). A Stripe error raises; the route turns
@@ -64,7 +65,12 @@ class StripeBillingClient:
         )
 
     async def create_checkout_session(
-        self, price_id: str, user_id: str, success_url: str, cancel_url: str
+        self,
+        price_id: str,
+        user_id: str,
+        success_url: str,
+        cancel_url: str,
+        idempotency_key: str | None = None,
     ) -> str:
         """Create a subscription Checkout session for one price and user; return its URL.
 
@@ -82,9 +88,10 @@ class StripeBillingClient:
         }
 
         async def create_session(forwarded_headers: Mapping[str, str]) -> str | None:
-            session = await self.sdk_client.v1.checkout.sessions.create_async(
-                params, {"headers": forwarded_headers}
-            )
+            options: stripe.RequestOptions = {"headers": forwarded_headers}
+            if idempotency_key is not None:
+                options["idempotency_key"] = idempotency_key
+            session = await self.sdk_client.v1.checkout.sessions.create_async(params, options)
             return session.url
 
         url = await with_client_telemetry(
