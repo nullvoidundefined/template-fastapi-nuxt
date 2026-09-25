@@ -13,6 +13,7 @@ import shutil
 import ssl
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -100,7 +101,7 @@ def ca_certificate_path(tmp_path: Path) -> Path:
     return certificate_path
 
 
-def assert_timeouts_present(connect_args: dict) -> None:
+def assert_timeouts_present(connect_args: dict[str, Any]) -> None:
     """Assert the connect timeout and the statement timeout survive the TLS change."""
     assert "timeout" in connect_args
     assert connect_args["timeout"] > 0
