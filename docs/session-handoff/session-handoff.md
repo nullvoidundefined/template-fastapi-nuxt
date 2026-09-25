@@ -2,37 +2,40 @@
 
 ## Last commit
 
-- `a04a82b` Slice 02 PR 5: rate limiting and the Redis settings guard (#28), on `main`. This handoff lands on `docs/slice02-complete` as its own pull request.
+- `5e62a4b`, chore(tests): hold apps/server/tests to mypy --strict in CI and pre-commit (IAN-380) (#50), on `main`. This handoff lands on `chore/session-handoff-copilot-audit` as its own pull request.
 
 ## Production state
 
-- Nothing is deployed. The template runs locally with `docker compose up --detach --wait`, which now brings the schema to head through a one-shot `migrate` service before `api` or `worker` start. The full CI graph, ten checks, is green on `main`.
-- Postgres and Redis publish on host ports 5433 and 6380. Integration tests need `TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app_test` and `TEST_REDIS_URL=redis://localhost:6380/1`, a database and a Redis database the running stack does not use (create the database once with `docker compose exec postgres createdb -U app app_test`); the suite refuses a database another client is connected to (IAN-340).
-- Compose now fixes a subnet (`172.28.0.0/16`) and gives `web` the static address `172.28.0.10`, because `FORWARDED_ALLOW_IPS` on the API must name one address and uvicorn's allowlist takes addresses rather than service names.
+- Nothing is deployed. The template runs locally with `docker compose up --detach --wait`. The full CI graph (ten checks) is green on `main`, and the full server suite on `main` gives 559 passed and 22 skipped.
+- Integration tests need `TEST_DATABASE_URL=postgresql+asyncpg://app@localhost:5433/app_test`. The `app_test` database exists on the compose Postgres. The suite refuses a database that another client is connected to (IAN-340).
+- Repository setting changed this session, by the owner's decision: **rebase merges are now enabled**. That lets a bundle PR merge with `gh pr merge <n> --rebase --delete-branch --admin` and keep one commit per ticket on `main`. Squash is still the default for everything else.
 
 ## Session metrics
 
-- Three pull requests merged: #26 (IAN-169), #27 (IAN-170), #28 (IAN-171). Slice 02 is complete and IAN-166 is closed.
-- Test count went from 120 to 194. Estimates ran 1.6 to 1.9 times over on every ticket: 95 minutes against 50, 63 against 40, 105 against 55.
-- Velocity: the estimates are not wrong about the work, they omit two things. Review rounds, and the test updates a new guard forces on an existing suite (PR 4 broke 19 passing tests, all correctly). Estimate a standard ticket touching application code at 60 minutes plus about 20 for review, and a complex one at double.
-- Codex reached its usage limit during IAN-171, so its tests and its pre-merge review came from the in-house fallbacks (R-907, R-517). The test-author agent takes about 15 minutes where Codex takes 4. Any ticket starting while Codex is limited should be estimated at roughly double.
+- 6 PRs merged (#45 to #50), 8 commits on `main`, 73 files changed (+1531 / -355). Tickets closed: IAN-369 to IAN-377 and IAN-380. IAN-372 was dropped.
+- Rework: #45 took 4 review rounds (rework 3), #49 took 1, and #50 took 1. Everything else passed its first review.
+- Velocity: most single-finding fixes took a quarter to a third of their estimate (estimate ratios 0.2 to 0.4), so estimates for that kind of ticket should come down. The CORS validator came in at its estimate only because of its review rounds. Actual minutes were split between tickets using the commit timeline, not measured from the transcript.
 
 ## What shipped
 
-- **#26 (IAN-169):** Alembic, the first revision (the `set_updated_at` trigger function, `users`, the unique index on `lower(email)`), and `get_connection`, the per-request transaction at `scope="function"`. The database classification moved off the global handlers into `get_connection`, so only a route that really opened a connection can report a database outage.
-- **#27 (IAN-170):** security headers, CORS, the CSRF header guard, and the 30 second timeout, in one ordered chain. `send_error_envelope` was extracted so every pure ASGI layer writes the same envelope without raising into a handler that cannot see it.
-- **#28 (IAN-171):** the rate limiter. Two buckets counted in Redis by one Lua script that increments and arms the window together, keyed on the address uvicorn resolved and never on a header. Deployed environments never count in process; when Redis is gone the four auth paths fail closed and everything else is served.
+- **Copilot audit (IAN-369).** All 44 closed PRs were swept. 33 Copilot threads had been left unresolved, or resolved with no reply. Checked against `main`, 21 had already been fixed by later work and 12 were still present. All 33 threads now carry a reply (the fixing SHA, where the issue was already fixed, or why no change was needed) and are resolved. None remain unresolved across #1 to #50.
+- **#45 (IAN-370):** `CORS_ORIGIN` must be one origin exactly as a browser serializes it, in every environment. `*`, `null`, userinfo, paths, lists, mixed case and default ports are refused at startup, and the settings model hides inputs in its errors.
+- **#46 (IAN-371, IAN-374), bundle:** the API-only production check moved to `require_api_production_values`, which only `create_app()` calls, so the worker and migrations start without `CORS_ORIGIN` and `FORWARDED_ALLOW_IPS`. The 413 response now goes through `send_error_envelope`.
+- **#47 (IAN-375, IAN-376), bundle:** a mypy strict annotation fix, plus tests that check `Idempotency-Key` and `X-Request-Id` forwarding through the proxy by name.
+- **#48 (IAN-377):** five stale docs and comments corrected.
+- **#49 (IAN-373):** Checkout sends Stripe `checkout-<claim generation>` as its idempotency key. The claim generation is derived from the claim row's `created_at`, which a takeover keeps and a release resets. So a crash takeover reaches Stripe under the same key, and a released failure gets a fresh key (Stripe replays a saved 500 for 24 hours).
+- **#50 (IAN-380):** `apps/server/tests` is now held to `mypy --strict`. It had 276 errors. `pyproject.toml` sets `files = ["app", "tests"]` and `explicit_package_bases = true`, and CI and lefthook run plain `uv run mypy`.
 
 ## Pending
 
-- **IAN-306, trivial:** the production TLS branch in `migrations/env.py` has no test. `build_connect_args` is covered, but the branch that decides to pass it is not, because the integration fixture always sets `sqlalchemy.url` and compose runs as development. Testing it means moving `build_migration_engine` into an importable module, since `env.py` runs the chain at import.
-- **IAN-312, trivial:** integration tests fail rather than skip when `TEST_REDIS_URL` or `TEST_DATABASE_URL` names a service that is not answering. The documented verification command goes red for environmental reasons, which trains the reader to ignore red. `tests/integration/middleware/conftest.py` already does this correctly and is the model.
-- **Untested change on `main`:** `EXPOSED_CORS_HEADERS` in `app/main.py`. Nothing asserts `Access-Control-Expose-Headers`. Recorded in the PR document rather than left implicit.
-- **Slice 03 has no plan yet.** The spec's slice plan describes it; the five-PR breakdown does not exist. That is the next planning task, and it needs Gate 1 approval before any code.
-- **Deferred, R-801:** the engineering-audit signal has now fired on `apps/server` for three sessions running with no audit on record. Slice 02 added eleven commits to that surface.
+- **IAN-384 (backlog, about 30 minutes):** six bare `Any` annotations that predate this session remain under `tests/`. The ticket lists each file and line. It also asks whether to turn on ruff ANN401 for `tests/` so the gap stays closed.
+- **Accepted gap on #49:** if our side times out after Stripe has already created the session, the claim is released and the retry can create a second Checkout session. That session is unpaid and expires on its own. This was recorded as an accepted residual of the owner's chosen design.
+- **Still open from before:** IAN-306 (the migration TLS branch has no test), IAN-312 (integration tests fail rather than skip when Redis is down), and IAN-326 (the auth e2e spec exhausts its rate-limit bucket locally).
+- **Deferred, R-801:** the engineering-audit signal keeps firing on `apps/server` (28 commits) with no audit on record.
 
 ## Next session
 
-- Plan slice 03 (auth: register, login, logout, session resolution) as its own document under `docs/slices/`, following the shape of `slice-02-data-and-errors.md`, then take Gate 1 approval before writing code.
-- Read first: `docs/superpowers/specs/2026-09-19-template-fastapi-nuxt-design.md` for the slice-03 criteria, `apps/server/app/middleware/` for the chain slice 03's routes arrive behind, and `apps/server/app/db/session.py` for the dependency its repositories will take.
-- Three lessons worth carrying, each of which cost time this session. A test that wraps a middleware around a bare `Response` proves nothing about what a client receives; drive the built application. A fixture naming a default port for a shared service is a latent cross-test dependency; name a closed port as the database URL already does. And a mutation check without an assertion that the mutation applied is worse than none, because it returns a confident wrong answer.
+- For IAN-384, read `tests/conftest.py` (`StripeRecorder.build_client`) and the five other files named in the ticket, then `apps/server/pyproject.toml` (`[tool.ruff]`) before deciding on ANN401.
+- The merge guard reads the task ledger before a compound command runs. Record `task-tier.sh set trivial` in one Bash call and run `gh pr merge` in the next. After a merge from a worktree, the error "'main' is already used by worktree" is harmless: the merge has already landed.
+- Linear's `save_issue` can echo the issue as it was before the update when calls are batched. Check with `get_issue` before retrying.
+- Stripe's Python SDK adds its own random `Idempotency-Key` to every POST. A test that only asserts a key is present, or that two keys differ, passes without any derived key. Assert the derived shape instead.
