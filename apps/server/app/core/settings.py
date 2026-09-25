@@ -30,7 +30,9 @@ MAX_TCP_PORT = 65535
 class Settings(BaseSettings):
     """Every environment variable the API reads, with its type and default."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Every refusal names the variable but never repeats its value: a pasted URL can carry a
+    # password in its userinfo, and the startup error lands in the platform's log.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     app_name: str = "template-fastapi-nuxt"
     environment: Literal["development", "test", "staging", "production"] = "development"
@@ -98,9 +100,11 @@ class Settings(BaseSettings):
             return None
         origin = value.strip()
         if origin.lower() in UNSAFE_CORS_ORIGINS:
-            raise ValueError(f"CORS_ORIGIN must name one concrete origin, not {origin!r}")
+            raise ValueError("CORS_ORIGIN must name one concrete origin, not a wildcard or null")
         if not is_browser_origin(origin):
-            raise ValueError(f"CORS_ORIGIN must be scheme://host[:port] only, not {origin!r}")
+            raise ValueError(
+                "CORS_ORIGIN must be scheme://host[:port] exactly as a browser sends it"
+            )
         return origin
 
     @model_validator(mode="after")
@@ -121,7 +125,9 @@ def is_browser_origin(candidate: str) -> bool:
     """Return True when the text is an http(s) origin exactly as a browser serializes one.
 
     That is a lowercase scheme and host, no userinfo, path, or whitespace, and a port only when it
-    is not the scheme's default, which a browser always leaves out of the Origin header.
+    is not the scheme's default, which a browser always leaves out of the Origin header. IPv4
+    shorthand such as `127.1`, which a browser would rewrite, is not normalized here; it fails
+    closed as a CORS mismatch rather than widening what is allowed.
     """
     match = BROWSER_ORIGIN_PATTERN.fullmatch(candidate)
     if match is None:
