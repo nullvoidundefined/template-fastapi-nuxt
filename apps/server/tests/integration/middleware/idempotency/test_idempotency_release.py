@@ -5,11 +5,16 @@ propagates through it, and a 5xx response passes through it as ordinary messages
 no claim behind, and the retry must run the handler and be the response that is stored.
 """
 
+from contextlib import AbstractAsyncContextManager
+
+import httpx
 import pytest
 
 from tests.integration.middleware.idempotency.conftest import (
     FLAKY_PATH,
     UNAVAILABLE_PATH,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -19,7 +24,11 @@ from tests.integration.middleware.idempotency.conftest import (
 @pytest.mark.integration
 @pytest.mark.parametrize(("path", "failed_status"), [(FLAKY_PATH, 500), (UNAVAILABLE_PATH, 503)])
 async def test_b18_a_failed_handler_releases_its_claim_and_the_retry_runs(
-    idempotency_app, idempotency_db, handler_probe, path, failed_status
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    path: str,
+    failed_status: int,
 ) -> None:
     """The failure leaves no row, the retry runs the handler, and the retry is what is stored."""
     user = await idempotency_db.sign_in_user()

@@ -16,7 +16,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from tests.integration.routers.billing.conftest import build_stripe_event, make_stripe_id
+from tests.integration.routers.billing.conftest import (
+    BillingDatabase,
+    WebhookSender,
+    build_stripe_event,
+    make_stripe_id,
+)
+from tests.integration.routers.conftest import EmailFactory
 
 SERVICE_MODULE = "app.services.billing.process_webhook_event"
 FAILING_STATEMENT = text("SELECT 1 / 0")
@@ -29,7 +35,10 @@ async def fail_in_database(connection: AsyncConnection, _stripe_event_id: str) -
 
 @pytest.mark.integration
 async def test_b41_a_failed_processed_mark_rolls_back_the_handlers_writes(
-    webhook_sender, billing_db, auth_emails, monkeypatch
+    webhook_sender: WebhookSender,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The checkout's link and the mark are one transaction, so neither survives the other."""
     monkeypatch.setattr(f"{SERVICE_MODULE}.mark_webhook_event_processed", fail_in_database)
@@ -58,7 +67,7 @@ async def test_b41_a_failed_processed_mark_rolls_back_the_handlers_writes(
 
 @pytest.mark.integration
 async def test_b42_a_failed_failure_mark_still_answers_500_and_leaves_the_claim(
-    webhook_sender, monkeypatch
+    webhook_sender: WebhookSender, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Any database error marking the event failed is logged, not raised over the 500 answer."""
     monkeypatch.setattr(f"{SERVICE_MODULE}.mark_webhook_event_failed", fail_in_database)

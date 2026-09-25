@@ -146,6 +146,7 @@ def assert_verification_precedes_every_guard(source: str) -> None:
     )
     binding_index = bindings[0]
     binding = function.body[binding_index]
+    assert isinstance(binding, (ast.Assign, ast.AnnAssign)), ast.unparse(binding)
     target = binding.targets[0] if isinstance(binding, ast.Assign) else binding.target
     assert isinstance(target, ast.Name), ast.unparse(binding)
 

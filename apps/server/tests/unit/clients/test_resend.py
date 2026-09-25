@@ -7,12 +7,19 @@ arq retry it. The disabled client that stands in when no key is configured is as
 since it is what every development and test process actually sends through.
 """
 
+from __future__ import annotations
+
 import json
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 import structlog
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from app.clients.resend import ResendEmailClient
 
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 SENDER = "Template <noreply@example.test>"
@@ -24,7 +31,7 @@ HTML = '<p><a href="https://app.example.test/reset-password?token=abc">Reset</a>
 API_KEY = "_".join(("re", "unit", "placeholder"))
 
 
-def build_client(handler: object) -> object:
+def build_client(handler: Callable[[httpx.Request], httpx.Response]) -> ResendEmailClient:
     """Return a Resend client whose HTTP calls are answered by the handler."""
     from app.clients.resend import ResendEmailClient  # noqa: PLC0415
 

@@ -5,20 +5,31 @@
 and the failure has to surface through the `on_error` callback the factory wires (R-346).
 """
 
+from __future__ import annotations
+
 import uuid
+from typing import TYPE_CHECKING
 
 import pytest
 import structlog
+
+if TYPE_CHECKING:
+    from app.core.settings import Settings
 
 USER_ID = uuid.UUID("5f0b1f9c-3a4e-4c1d-9a51-0d2f6c7e8a10")
 CLOSED_LOCAL_HOST = "http://127.0.0.1:1"
 
 
-def build_settings(**overrides: object) -> object:
+def build_settings(**overrides: str) -> Settings:
     """Build Settings with a database URL, so the constructor has what it requires."""
     from app.core.settings import Settings  # noqa: PLC0415
 
-    return Settings(database_url="postgresql+asyncpg://127.0.0.1:1/none", **overrides)
+    return Settings(
+        database_url="postgresql+asyncpg://127.0.0.1:1/none",
+        **overrides,  # type: ignore[arg-type]  # pydantic-settings' __init__ stub types its
+        # own config kwargs (_case_sensitive, _env_file, ...), not the model fields **overrides
+        # forwards, so mypy checks the spread against every one of those instead.
+    )
 
 
 async def test_ian344_a_failed_background_upload_is_logged_as_a_failed_posthog_call(

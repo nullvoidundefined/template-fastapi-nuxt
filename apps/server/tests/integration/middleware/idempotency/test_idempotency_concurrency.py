@@ -16,12 +16,24 @@ interleaving on demand; everything either side of the pause is the real code aga
 
 import asyncio
 import uuid
+from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 
+import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.repositories.request_idempotency_keys import (
+    IdempotentRequest,
+)
+from app.repositories.request_idempotency_keys import (
+    take_over_idempotency_key as real_take_over_idempotency_key,
+)
 from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
     HOLD_TIMEOUT_SECONDS,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -32,7 +44,9 @@ IN_PROGRESS_CODE = "IDEMPOTENCY_KEY_IN_PROGRESS"
 
 @pytest.mark.integration
 async def test_b44_two_simultaneous_posts_run_the_handler_once_one_success_one_409(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The second arrives while the first holds its claim, and is refused rather than run."""
     user = await idempotency_db.sign_in_user()
@@ -58,7 +72,9 @@ async def test_b44_two_simultaneous_posts_run_the_handler_once_one_success_one_4
 
 @pytest.mark.integration
 async def test_b44_a_claim_stranded_past_its_lease_is_taken_over_and_runs_once(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """A crashed process's claim does not strand the key: the next request takes it over."""
     user = await idempotency_db.sign_in_user()
@@ -82,7 +98,9 @@ async def test_b44_a_claim_stranded_past_its_lease_is_taken_over_and_runs_once(
 
 @pytest.mark.integration
 async def test_b44_two_simultaneous_takeovers_of_a_stranded_claim_run_the_handler_once(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """Only one takeover can win the single UPDATE; the other meets a live lease and gets 409."""
     user = await idempotency_db.sign_in_user()
@@ -112,7 +130,9 @@ async def test_b44_two_simultaneous_takeovers_of_a_stranded_claim_run_the_handle
 
 @pytest.mark.integration
 async def test_b53_a_superseded_holders_late_completion_changes_nothing(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """After a takeover the stored response and the claim belong to the request that took over."""
     user = await idempotency_db.sign_in_user()
@@ -145,7 +165,9 @@ async def test_b53_a_superseded_holders_late_completion_changes_nothing(
 
 @pytest.mark.integration
 async def test_b53_a_superseded_holders_late_release_leaves_the_new_claim_in_place(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The original fails after being taken over; its release must not delete the new claim."""
     user = await idempotency_db.sign_in_user()
@@ -183,7 +205,10 @@ async def test_b53_a_superseded_holders_late_release_leaves_the_new_claim_in_pla
 
 @pytest.mark.integration
 async def test_b53_a_release_between_lease_check_and_takeover_claims_afresh_and_runs_once(
-    idempotency_app, idempotency_db, handler_probe, monkeypatch
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The takeover finds the row gone, retries the claim insert once, and runs the handler."""
     import app.middleware.idempotency as idempotency_module  # noqa: PLC0415
@@ -196,13 +221,14 @@ async def test_b53_a_release_between_lease_check_and_takeover_claims_afresh_and_
     handler_probe.failing_calls.add(1)
     at_takeover = asyncio.Event()
     holder_released = asyncio.Event()
-    real_take_over = idempotency_module.take_over_idempotency_key
 
-    async def pause_before_take_over(*args: object, **kwargs: object) -> object:
+    async def pause_before_take_over(
+        connection: AsyncConnection, request: IdempotentRequest, claim_token: uuid.UUID
+    ) -> datetime | None:
         """Stop between the lease check and the takeover until the holder has released."""
         at_takeover.set()
         await asyncio.wait_for(holder_released.wait(), HOLD_TIMEOUT_SECONDS)
-        return await real_take_over(*args, **kwargs)
+        return await real_take_over_idempotency_key(connection, request, claim_token)
 
     monkeypatch.setattr(idempotency_module, "take_over_idempotency_key", pause_before_take_over)
 

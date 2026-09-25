@@ -38,8 +38,8 @@ pre-commit:
       run: uv run black {staged_files}
       stage_fixed: true
     mypy:
-      glob: 'apps/server/app/**/*.py'
-      run: cd apps/server && uv run mypy app
+      glob: 'apps/server/{app,tests}/**/*.py'
+      run: cd apps/server && uv run mypy
     no-em-dash:
       glob: '*.{py,ts,mts,vue,js,mjs,md,scss,yml,yaml}'
       run: |

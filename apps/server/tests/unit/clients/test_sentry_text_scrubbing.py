@@ -12,6 +12,8 @@ Every secret-shaped value is built at run time, so no credential-shaped literal 
 import secrets
 import uuid
 
+from sentry_sdk.types import Event
+
 EMAIL_ADDRESS = "@".join(("person", "example.test"))
 
 
@@ -25,7 +27,7 @@ def test_ian344_breadcrumb_messages_lose_emails_and_tokens() -> None:
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
     raw_token = build_raw_token()
-    event = {
+    event: Event = {
         "breadcrumbs": {
             "values": [
                 {"category": "log", "message": f"reset requested for {EMAIL_ADDRESS}"},
@@ -38,7 +40,9 @@ def test_ian344_breadcrumb_messages_lose_emails_and_tokens() -> None:
     scrubbed = scrub_sentry_event(event, {})
 
     assert scrubbed is not None
-    messages = [crumb["message"] for crumb in scrubbed["breadcrumbs"]["values"]]
+    breadcrumbs = scrubbed["breadcrumbs"]
+    assert isinstance(breadcrumbs, dict)
+    messages = [crumb["message"] for crumb in breadcrumbs["values"]]
     assert EMAIL_ADDRESS not in repr(scrubbed)
     assert raw_token not in repr(scrubbed)
     assert messages[0].startswith("reset requested for ")
@@ -51,7 +55,7 @@ def test_ian344_exception_values_lose_emails_bearer_values_and_named_secrets() -
 
     bearer_value = build_raw_token()
     password_value = secrets.token_hex(6)
-    event = {
+    event: Event = {
         "exception": {
             "values": [
                 {"type": "ValueError", "value": f"no account for {EMAIL_ADDRESS}"},
@@ -79,7 +83,7 @@ def test_ian344_log_event_messages_and_params_lose_emails_and_tokens() -> None:
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
     raw_token = build_raw_token()
-    event = {
+    event: Event = {
         "message": f"failed for {EMAIL_ADDRESS}",
         "logentry": {
             "message": "failed for %s with %s",
@@ -93,7 +97,9 @@ def test_ian344_log_event_messages_and_params_lose_emails_and_tokens() -> None:
     assert scrubbed is not None
     assert EMAIL_ADDRESS not in repr(scrubbed)
     assert raw_token not in repr(scrubbed)
-    assert scrubbed["logentry"]["message"] == "failed for %s with %s"
+    logentry = scrubbed["logentry"]
+    assert logentry is not None
+    assert logentry["message"] == "failed for %s with %s"
 
 
 def test_ian344_a_request_id_in_free_text_stays_readable() -> None:
@@ -102,7 +108,7 @@ def test_ian344_a_request_id_in_free_text_stays_readable() -> None:
 
     request_id = str(uuid.uuid4())
     raw_token = build_raw_token()
-    event = {
+    event: Event = {
         "breadcrumbs": {
             "values": [{"category": "log", "message": f"request {request_id} used {raw_token}"}]
         }
@@ -111,6 +117,8 @@ def test_ian344_a_request_id_in_free_text_stays_readable() -> None:
     scrubbed = scrub_sentry_event(event, {})
 
     assert scrubbed is not None
-    [breadcrumb] = scrubbed["breadcrumbs"]["values"]
+    breadcrumbs = scrubbed["breadcrumbs"]
+    assert isinstance(breadcrumbs, dict)
+    [breadcrumb] = breadcrumbs["values"]
     assert request_id in breadcrumb["message"]
     assert raw_token not in breadcrumb["message"]

@@ -7,7 +7,10 @@ Registration answers the same body shape, so a new account is shown to be a memb
 
 import uuid
 
+import httpx
 import pytest
+
+from tests.integration.routers.conftest import AuthDatabase, CookieTools, EmailFactory
 
 ME_PATH = "/v1/auth/me"
 REGISTER_PATH = "/v1/auth/register"
@@ -16,7 +19,10 @@ VALID_PASSWORD = "-".join(("correct", "horse", "battery", "staple"))
 
 @pytest.mark.integration
 async def test_b19_auth_me_answers_admin_for_an_admin(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """The role comes from the users row, so a promoted user reads back as an admin."""
     email = auth_emails("admin")
@@ -32,7 +38,9 @@ async def test_b19_auth_me_answers_admin_for_an_admin(
 
 
 @pytest.mark.integration
-async def test_b19_a_new_registration_is_a_member(auth_client, auth_emails) -> None:
+async def test_b19_a_new_registration_is_a_member(
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory
+) -> None:
     """Registration can never create an admin, and its body says which role it did create."""
     email = auth_emails("register")
 

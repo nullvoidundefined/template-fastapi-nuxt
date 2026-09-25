@@ -15,7 +15,7 @@ import importlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -84,7 +84,10 @@ class FakeRedis:
 def build_redis_connection_error() -> Exception:
     """Return the error redis-py raises when the server cannot be reached."""
     redis_exceptions = importlib.import_module("redis.exceptions")
-    return redis_exceptions.ConnectionError("Error 61 connecting to 127.0.0.1:6379.")
+    # importlib.import_module returns ModuleType, so attribute access types as Any.
+    return cast(
+        Exception, redis_exceptions.ConnectionError("Error 61 connecting to 127.0.0.1:6379.")
+    )
 
 
 async def request_worker_probe(

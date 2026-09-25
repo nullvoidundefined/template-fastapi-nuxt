@@ -15,6 +15,7 @@ the exception's own message reaches the body. Neither may carry a traceback.
 
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from typing import cast
 
 import asyncpg
 import httpx
@@ -91,7 +92,7 @@ def assert_error_envelope(
 ) -> dict[str, object]:
     """Assert the response is the { code, error } envelope with one status and one code."""
     assert response.status_code == expected_status, response.text
-    response_body = response.json()
+    response_body: dict[str, object] = response.json()
     assert "detail" not in response_body, response_body
     assert response_body["code"] == expected_code, response_body
     assert isinstance(response_body["error"], str), response_body
@@ -244,18 +245,22 @@ def build_lost_connection_error() -> Exception:
     driver's real wrapper class reaches the handler: `DBAPIError` is neither `OperationalError`
     nor `OSError`, which is how a real outage previously fell through to the 500 handler.
     """
-    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()
-    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)
+    # SQLAlchemy's PGDialect_asyncpg carries no stubs for these classmethods/constructor.
+    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()  # type: ignore[no-untyped-call]
+    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)  # type: ignore[no-untyped-call]
     raw = dbapi.Error(asyncpg.exceptions.ConnectionDoesNotExistError("connection was closed"))
-    return DBAPIError.instance("SELECT 1", {}, raw, dbapi.Error, dialect=dialect)
+    return cast(Exception, DBAPIError.instance("SELECT 1", {}, raw, dbapi.Error, dialect=dialect))
 
 
 def build_integrity_error() -> Exception:
     """Return the DBAPIError a constraint violation becomes, which is not a connection failure."""
-    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()
-    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)
+    # SQLAlchemy's PGDialect_asyncpg carries no stubs for these classmethods/constructor.
+    dbapi = pg_asyncpg.PGDialect_asyncpg.import_dbapi()  # type: ignore[no-untyped-call]
+    dialect = pg_asyncpg.PGDialect_asyncpg(dbapi=dbapi)  # type: ignore[no-untyped-call]
     raw = dbapi.Error(asyncpg.exceptions.UniqueViolationError("duplicate key value"))
-    return DBAPIError.instance("INSERT INTO users", {}, raw, dbapi.Error, dialect=dialect)
+    return cast(
+        Exception, DBAPIError.instance("INSERT INTO users", {}, raw, dbapi.Error, dialect=dialect)
+    )
 
 
 def build_review_router() -> APIRouter:
@@ -372,7 +377,9 @@ async def test_review2_b2_the_500_log_line_carries_the_request_id(
     configured = list(original_config["processors"])
     recorded: list[dict[str, object]] = []
 
-    def record(_logger: object, _name: str, event_dict: dict[str, object]) -> dict[str, object]:
+    def record(
+        _logger: object, _name: str, event_dict: structlog.typing.EventDict
+    ) -> structlog.typing.EventDict:
         recorded.append(dict(event_dict))
         return event_dict
 

@@ -65,9 +65,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-toolchain
-      - name: mypy (strict)
+      - name: mypy (strict, app and tests)
         working-directory: apps/server
-        run: uv run mypy app
+        run: uv run mypy
       - name: vue-tsc and tsc
         run: pnpm typecheck
 

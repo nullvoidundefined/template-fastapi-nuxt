@@ -9,7 +9,10 @@ proves by staying empty. Every assertion is made on what the application assembl
 
 import re
 
+import httpx
 import pytest
+
+from tests.integration.routers.uploads.conftest import UploadsHarness
 
 UPLOADS_PATH = "/v1/uploads"
 FIFTEEN_MINUTES = 900
@@ -18,7 +21,7 @@ UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{
 
 @pytest.mark.integration
 async def test_b29_a_valid_request_presigns_a_server_generated_key(
-    uploads_client, uploads_harness
+    uploads_client: httpx.AsyncClient, uploads_harness: UploadsHarness
 ) -> None:
     """The answer carries the URL, the key under the user's prefix, the type, and the expiry."""
     response = await uploads_client.post(
@@ -47,7 +50,7 @@ async def test_b29_a_valid_request_presigns_a_server_generated_key(
 
 
 @pytest.mark.integration
-async def test_b29_each_presign_gets_a_fresh_key(uploads_client) -> None:
+async def test_b29_each_presign_gets_a_fresh_key(uploads_client: httpx.AsyncClient) -> None:
     """Two requests never share a key, so one upload cannot overwrite another."""
     body = {"purpose": "avatar", "extension": "webp"}
 
@@ -60,7 +63,7 @@ async def test_b29_each_presign_gets_a_fresh_key(uploads_client) -> None:
 
 @pytest.mark.integration
 async def test_b29_a_client_supplied_key_is_refused_before_any_r2_call(
-    uploads_client, uploads_harness
+    uploads_client: httpx.AsyncClient, uploads_harness: UploadsHarness
 ) -> None:
     """A body naming its own key answers 400 and presigns nothing."""
     response = await uploads_client.post(
@@ -76,7 +79,7 @@ async def test_b29_a_client_supplied_key_is_refused_before_any_r2_call(
 @pytest.mark.integration
 @pytest.mark.parametrize("extension", ["exe", "svg", "html", "PNG", "png/../x", "p.ng", ""])
 async def test_b29_a_disallowed_extension_is_refused_before_any_r2_call(
-    uploads_client, uploads_harness, extension: str
+    uploads_client: httpx.AsyncClient, uploads_harness: UploadsHarness, extension: str
 ) -> None:
     """An extension outside the purpose's allowlist answers 400 and presigns nothing."""
     response = await uploads_client.post(
@@ -98,7 +101,7 @@ async def test_b29_a_disallowed_extension_is_refused_before_any_r2_call(
     ],
 )
 async def test_r406_malformed_bodies_are_refused_before_any_r2_call(
-    uploads_client, uploads_harness, body: dict[str, str]
+    uploads_client: httpx.AsyncClient, uploads_harness: UploadsHarness, body: dict[str, str]
 ) -> None:
     """An unknown purpose, a missing extension, or an oversized one answers 400."""
     response = await uploads_client.post(UPLOADS_PATH, json=body)
@@ -110,7 +113,7 @@ async def test_r406_malformed_bodies_are_refused_before_any_r2_call(
 
 @pytest.mark.integration
 async def test_b29_an_anonymous_request_is_refused_before_any_r2_call(
-    uploads_harness,
+    uploads_harness: UploadsHarness,
 ) -> None:
     """Without a session the route answers 401 and presigns nothing."""
     import httpx  # noqa: PLC0415
@@ -136,7 +139,7 @@ async def test_b29_an_anonymous_request_is_refused_before_any_r2_call(
 
 @pytest.mark.integration
 async def test_b29_without_r2_configured_the_route_answers_503(
-    uploads_client, uploads_harness
+    uploads_client: httpx.AsyncClient, uploads_harness: UploadsHarness
 ) -> None:
     """An unconfigured deployment refuses the upload rather than signing for no bucket."""
     uploads_harness.application.state.storage_client = None

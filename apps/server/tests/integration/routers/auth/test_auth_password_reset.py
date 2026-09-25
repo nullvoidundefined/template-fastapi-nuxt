@@ -15,11 +15,19 @@ proves a session was revoked first proves the same cookie authenticated a moment
 import asyncio
 import hashlib
 import re
+import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt
+import httpx
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Row, text
+
+from app.workers.context import WorkerContext
+from tests.integration.routers.conftest import AuthAppFactory, AuthDatabase, EmailFactory
 
 FORGOT_ROUTE = "/v1/auth/forgot-password"
 RESET_ROUTE = "/v1/auth/reset-password"
@@ -72,6 +80,9 @@ class FakeEmailClient:
         """Record the message."""
         self.sent.append({"to": to, "subject": subject, "html": html})
 
+    async def close(self) -> None:
+        """Release nothing; there is nothing real underneath the fake to close."""
+
 
 class FailingEmailClient:
     """Raises the way a Resend outage does, so the job's retry path can be asserted."""
@@ -79,6 +90,9 @@ class FailingEmailClient:
     async def send_email(self, to: str, subject: str, html: str) -> None:
         """Refuse every send."""
         raise RuntimeError("resend is unavailable")
+
+    async def close(self) -> None:
+        """Release nothing; there is nothing real underneath the fake to close."""
 
 
 def credentials(email: str, passphrase: str) -> dict[str, str]:
@@ -108,17 +122,23 @@ def job_environment(monkeypatch: pytest.MonkeyPatch, migrated_database_url: str)
     get_settings.cache_clear()
 
 
-async def run_reset_email_job(auth_db, email: str, email_client: object) -> None:
+async def run_reset_email_job(
+    auth_db: AuthDatabase, email: str, email_client: FakeEmailClient | FailingEmailClient
+) -> None:
     """Run the job with the context arq would give it: the engine and the email client."""
     from app.workers.jobs.send_password_reset_email import (  # noqa: PLC0415
         send_password_reset_email,
     )
 
-    worker_context = {"engine": auth_db.engine, "email_client": email_client, "job_id": JOB_ID}
+    worker_context: WorkerContext = {
+        "engine": auth_db.engine,
+        "email_client": email_client,
+        "job_id": JOB_ID,
+    }
     await send_password_reset_email(worker_context, email)
 
 
-async def issue_reset_token(auth_db, email: str) -> str:
+async def issue_reset_token(auth_db: AuthDatabase, email: str) -> str:
     """Run the job for this address and return the token its email carried."""
     email_client = FakeEmailClient()
     await run_reset_email_job(auth_db, email, email_client)
@@ -126,21 +146,26 @@ async def issue_reset_token(auth_db, email: str) -> str:
     return extract_reset_token(email_client.sent[0]["html"])
 
 
-async def read_resets(auth_db, user_id) -> list:
+async def read_resets(auth_db: AuthDatabase, user_id: uuid.UUID) -> list[Row[Any]]:
     """Return every password reset row the user owns."""
     async with auth_db.engine.connect() as connection:
         return list(await connection.execute(SELECT_RESETS_SQL, {"user_id": user_id}))
 
 
-async def read_password_hash(auth_db, email: str) -> bytes:
+async def read_password_hash(auth_db: AuthDatabase, email: str) -> bytes:
     """Return the stored bcrypt hash for this address."""
-    return (await auth_db.read_users(email))[0].password_hash.encode()
+    password_hash: str = (await auth_db.read_users(email))[0].password_hash
+    return password_hash.encode()
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("is_known", [True, False], ids=["known", "unknown"])
 async def test_b14_forgot_password_answers_200_and_enqueues_one_job_for_any_address(
-    is_known, build_auth_app, open_auth_browsers, auth_db, auth_emails
+    is_known: bool,
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_db: AuthDatabase,
+    auth_emails: EmailFactory,
 ) -> None:
     """B-14: the response and the queue work are identical whether or not the account exists."""
     from app.dependencies.job_queue import get_job_queue  # noqa: PLC0415
@@ -166,7 +191,7 @@ async def test_b14_forgot_password_answers_200_and_enqueues_one_job_for_any_addr
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
 async def test_b47_the_job_mails_a_link_whose_token_hashes_to_the_stored_row(
-    auth_db, auth_emails
+    auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """B-47: one email to the requester, and its token is the one whose SHA-256 was stored."""
     email = auth_emails("mailed")
@@ -188,7 +213,9 @@ async def test_b47_the_job_mails_a_link_whose_token_hashes_to_the_stored_row(
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
-async def test_b14_the_job_sends_nothing_for_an_unknown_address(auth_emails, auth_db) -> None:
+async def test_b14_the_job_sends_nothing_for_an_unknown_address(
+    auth_emails: EmailFactory, auth_db: AuthDatabase
+) -> None:
     """B-14: only the known address's job sends a message."""
     email_client = FakeEmailClient()
 
@@ -199,7 +226,9 @@ async def test_b14_the_job_sends_nothing_for_an_unknown_address(auth_emails, aut
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
-async def test_b47_a_send_error_raises_out_of_the_job_so_arq_retries(auth_db, auth_emails) -> None:
+async def test_b47_a_send_error_raises_out_of_the_job_so_arq_retries(
+    auth_db: AuthDatabase, auth_emails: EmailFactory
+) -> None:
     """B-47: a Resend failure is not swallowed, because a swallowed send loses the email."""
     email = auth_emails("outage")
     await auth_db.seed_user(email, ORIGINAL_PASSPHRASE)
@@ -211,7 +240,7 @@ async def test_b47_a_send_error_raises_out_of_the_job_so_arq_retries(auth_db, au
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
 async def test_b15_a_token_resets_once_and_signs_out_every_session(
-    auth_client, auth_db, auth_emails
+    auth_client: httpx.AsyncClient, auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """B-15: the first submission sets the password and revokes sessions; a replay is refused."""
     email = auth_emails("reset")
@@ -238,7 +267,7 @@ async def test_b15_a_token_resets_once_and_signs_out_every_session(
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
 async def test_b15_an_expired_token_is_refused_and_changes_nothing(
-    auth_client, auth_db, auth_emails
+    auth_client: httpx.AsyncClient, auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """B-15: a token past its hour answers 400 and the password stays what it was."""
     email = auth_emails("expired")
@@ -256,7 +285,9 @@ async def test_b15_an_expired_token_is_refused_and_changes_nothing(
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
-async def test_b15_a_newer_reset_retires_the_older_token(auth_client, auth_db, auth_emails) -> None:
+async def test_b15_a_newer_reset_retires_the_older_token(
+    auth_client: httpx.AsyncClient, auth_db: AuthDatabase, auth_emails: EmailFactory
+) -> None:
     """B-15: only the latest link works once a second reset has been issued."""
     email = auth_emails("reissued")
     user_id = await auth_db.seed_user(email, ORIGINAL_PASSPHRASE)
@@ -275,7 +306,10 @@ async def test_b15_a_newer_reset_retires_the_older_token(auth_client, auth_db, a
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
 async def test_b15_two_concurrent_submissions_of_one_token_produce_one_success(
-    build_auth_app, open_auth_browsers, auth_db, auth_emails
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_db: AuthDatabase,
+    auth_emails: EmailFactory,
 ) -> None:
     """B-15: the atomic consume lets exactly one of two simultaneous submissions through."""
     email = auth_emails("race")
@@ -292,7 +326,9 @@ async def test_b15_two_concurrent_submissions_of_one_token_produce_one_success(
 
 
 @pytest.mark.integration
-async def test_b15_a_reset_password_shorter_than_the_minimum_is_refused(auth_client) -> None:
+async def test_b15_a_reset_password_shorter_than_the_minimum_is_refused(
+    auth_client: httpx.AsyncClient,
+) -> None:
     """R-406: the reset body takes the same password constraints registration does."""
     response = await auth_client.post(RESET_ROUTE, json=reset_body("any-token", "short"))
 

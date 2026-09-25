@@ -11,7 +11,7 @@ point before the network, so what is asserted is what Sentry would have received
 """
 
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
@@ -20,6 +20,12 @@ import structlog
 from fastapi import APIRouter
 from sentry_sdk.envelope import Envelope
 from sentry_sdk.transport import Transport
+from sentry_sdk.types import Event
+
+from tests.conftest import ApiClientFactory, ServerAppFactory
+
+if TYPE_CHECKING:
+    from app.core.settings import Settings
 
 # Built from parts so no DSN-shaped literal with a key sits in the source (R-108).
 TEST_DSN = "".join(("https://", "publickey", "@", "sentry.example.test", "/1"))
@@ -51,8 +57,12 @@ def inert_sentry() -> Iterator[None]:
     sentry_sdk.init()
 
 
-def build_settings(**overrides: object) -> object:
-    """Build Settings with a database URL, so the constructor has what it requires."""
+def build_settings(**overrides: Any) -> "Settings":
+    """Build Settings with a database URL, so the constructor has what it requires.
+
+    `overrides` carries whatever mix of str, bool, and float values a test wants to set, so it is
+    typed `Any` rather than a narrower type the different Settings fields could not share.
+    """
     from app.core.settings import Settings  # noqa: PLC0415
 
     return Settings(database_url="postgresql+asyncpg://127.0.0.1:1/none", **overrides)
@@ -88,7 +98,7 @@ def test_b30_before_send_removes_cookies_and_the_authorization_header() -> None:
     """Cookies, Cookie, Set-Cookie and Authorization go, in any case; other headers stay."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
-    event = {
+    event: Event = {
         "request": {
             "cookies": {"session": COOKIE_VALUE},
             "headers": {
@@ -116,7 +126,7 @@ def test_b30_before_send_drops_the_request_body_and_every_query_string() -> None
     """A login body carries the email and a reset link carries its token; neither leaves."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
-    event = {
+    event: Event = {
         "request": {
             "data": {"email": "person@example.test", "password": "[Filtered]"},
             "query_string": "token=from-the-email",
@@ -136,7 +146,9 @@ def test_b30_before_send_drops_the_request_body_and_every_query_string() -> None
     assert "data" not in scrubbed["request"]
     assert "query_string" not in scrubbed["request"]
     assert scrubbed["request"]["url"] == "https://api.example.test/v1/auth/reset-password"
-    assert scrubbed["breadcrumbs"]["values"][0]["data"] == {"url": "https://x.test/a"}
+    breadcrumbs = scrubbed["breadcrumbs"]
+    assert isinstance(breadcrumbs, dict)
+    assert breadcrumbs["values"][0]["data"] == {"url": "https://x.test/a"}
     assert "person@example.test" not in repr(scrubbed)
     assert "from-the-email" not in repr(scrubbed)
 
@@ -145,7 +157,7 @@ def test_b30_before_send_withholds_the_referer_which_carries_the_reset_token() -
     """Nitro forwards the reset page's address as the Referer, token and all."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
-    event = {
+    event: Event = {
         "request": {
             "headers": {
                 "Referer": "https://app.example.test/reset-password?token=from-the-email",
@@ -164,13 +176,18 @@ def test_b30_before_send_accepts_an_event_with_no_request() -> None:
     """An event raised outside a request, such as in a job, passes through unchanged."""
     from app.clients.sentry import scrub_sentry_event  # noqa: PLC0415
 
-    event = {"message": "job failed", "level": "error"}
+    event: Event = {"message": "job failed", "level": "error"}
+    # A shallow copy, so the assertion below proves the function returned equal content rather
+    # than the same object the caller passed in.
+    copied_event = cast(Event, dict(event))
 
-    assert scrub_sentry_event(dict(event), {}) == event
+    assert scrub_sentry_event(copied_event, {}) == event
 
 
 async def test_b30_an_unhandled_error_reaches_sentry_tagged_and_scrubbed(
-    build_server_app, build_api_client, monkeypatch: pytest.MonkeyPatch
+    build_server_app: ServerAppFactory,
+    build_api_client: ApiClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Through create_app(): the event carries the response's request ID, and no credential."""
     monkeypatch.setenv("SENTRY_DSN", TEST_DSN)

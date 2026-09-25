@@ -12,11 +12,20 @@ protection standing between this endpoint and an unbounded credential-guessing r
 
 import hashlib
 import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 
+import httpx
 import pytest
 
 from app.constants.rate_limits import AUTH_REQUEST_LIMIT
 from app.constants.session import SESSION_TTL
+from tests.integration.routers.conftest import (
+    AuthAppFactory,
+    AuthDatabase,
+    CookieTools,
+    EmailFactory,
+)
 
 LOGIN_PATH = "/v1/auth/login"
 ME_PATH = "/v1/auth/me"
@@ -28,7 +37,10 @@ OTHER_PASSWORD = "-".join(("another", "entirely", "different", "phrase"))
 
 @pytest.mark.integration
 async def test_b11_a_wrong_password_and_an_unknown_email_answer_exactly_the_same_thing(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-11: both failures answer 401 AUTH_INVALID_CREDENTIALS, byte for byte, and set no cookie."""
     known_email = auth_emails("known")
@@ -51,7 +63,10 @@ async def test_b11_a_wrong_password_and_an_unknown_email_answer_exactly_the_same
 
 @pytest.mark.integration
 async def test_b11_a_correct_login_writes_a_session_row_and_sets_the_same_cookie(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-11: the answer carries the user, and the cookie's token is stored only as its hash."""
     email = auth_emails("correct")
@@ -73,7 +88,11 @@ async def test_b11_a_correct_login_writes_a_session_row_and_sets_the_same_cookie
 
 @pytest.mark.integration
 async def test_b11_a_login_removes_the_expired_session_and_leaves_the_live_one_working(
-    build_auth_app, open_auth_browsers, auth_emails, auth_db, cookies
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-11: exactly the expired row goes, and the other browser is still signed in afterwards.
 
@@ -109,7 +128,10 @@ async def test_b11_a_login_removes_the_expired_session_and_leaves_the_live_one_w
 
 @pytest.mark.integration
 async def test_b11_a_mixed_case_whitespace_padded_address_logs_in(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-11: the address is folded on the way in, so the account is found however it was typed."""
     email = auth_emails("padded")
@@ -127,7 +149,10 @@ async def test_b11_a_mixed_case_whitespace_padded_address_logs_in(
 
 @pytest.mark.integration
 async def test_b7_the_auth_bucket_counts_login_and_leaves_auth_me_outside_it(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-7: the eleventh login in the window is refused, while `/auth/me` keeps answering.
 

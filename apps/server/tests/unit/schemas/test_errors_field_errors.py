@@ -17,7 +17,7 @@ document, and from there `@repo/api-types`, or the frontend in PR 4 is back to r
 import importlib
 import json
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -59,15 +59,24 @@ def test_the_envelope_omits_the_field_error_list_unless_a_failure_names_fields()
     from app.schemas.errors import FieldError  # noqa: PLC0415
 
     plain = json.loads(
-        build_error_response(404, ErrorCode.ROUTING_NOT_FOUND, "The resource was not found").body
+        # JSONResponse.body is typed bytes | memoryview[int]; it is always bytes at runtime.
+        cast(
+            bytes,
+            build_error_response(
+                404, ErrorCode.ROUTING_NOT_FOUND, "The resource was not found"
+            ).body,
+        )
     )
     annotated = json.loads(
-        build_error_response(
-            400,
-            ErrorCode.INPUT_VALIDATION_ERROR,
-            ERROR_MESSAGE,
-            field_errors=[FieldError(field="email", message=FIELD_MESSAGE)],
-        ).body
+        cast(
+            bytes,
+            build_error_response(
+                400,
+                ErrorCode.INPUT_VALIDATION_ERROR,
+                ERROR_MESSAGE,
+                field_errors=[FieldError(field="email", message=FIELD_MESSAGE)],
+            ).body,
+        )
     )
 
     assert set(plain) == {"code", "error"}

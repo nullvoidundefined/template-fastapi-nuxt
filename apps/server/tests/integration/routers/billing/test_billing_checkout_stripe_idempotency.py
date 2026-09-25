@@ -19,8 +19,13 @@ Stripe call would have left.
 import re
 import uuid
 
+import httpx
 import pytest
 from sqlalchemy import text
+
+from tests.conftest import StripeRecorder
+from tests.integration.routers.billing.conftest import BillingDatabase
+from tests.integration.routers.conftest import CookieTools, EmailFactory
 
 CHECKOUT_PATH = "/v1/billing/checkout"
 PRICE_ID = "price_Basic123"
@@ -41,14 +46,18 @@ def is_derived_checkout_key(stripe_key: str | None) -> bool:
     return stripe_key is not None and DERIVED_CHECKOUT_KEY_PATTERN.fullmatch(stripe_key) is not None
 
 
-def read_stripe_idempotency_keys(stripe_recorder) -> list[str | None]:
+def read_stripe_idempotency_keys(stripe_recorder: StripeRecorder) -> list[str | None]:
     """Return the idempotency key each recorded Stripe request carried, in order."""
     return [request.headers.get(STRIPE_IDEMPOTENCY_HEADER) for request in stripe_recorder.requests]
 
 
 @pytest.mark.integration
 async def test_ian373_a_takeover_after_a_crash_reaches_stripe_under_the_same_key(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """The retry that takes over a crashed claim must reach Stripe under the first call's key."""
     user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("crash"))
@@ -75,7 +84,11 @@ async def test_ian373_a_takeover_after_a_crash_reaches_stripe_under_the_same_key
 
 @pytest.mark.integration
 async def test_ian373_a_retry_after_a_released_failure_reaches_stripe_under_a_new_key(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """A released claim must not reuse the key Stripe saved the failure under."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("released"))
@@ -98,7 +111,11 @@ async def test_ian373_a_retry_after_a_released_failure_reaches_stripe_under_a_ne
 
 @pytest.mark.integration
 async def test_ian373_two_users_sending_the_same_client_key_reach_stripe_under_different_keys(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """A client key is scoped to its user, so Stripe must never see one user's key reused."""
     _first_id, first_token = await billing_db.seed_signed_in_user(auth_emails("shared-a"))

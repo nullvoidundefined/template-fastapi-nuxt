@@ -53,8 +53,8 @@ def test_stripe_secrets_are_read_as_secrets_that_never_print(
 
     settings = get_settings()
 
-    assert getattr(settings, "stripe_secret_key", None) is not None
-    assert getattr(settings, "stripe_webhook_secret", None) is not None
+    assert settings.stripe_secret_key is not None
+    assert settings.stripe_webhook_secret is not None
     assert settings.stripe_secret_key.get_secret_value() == STRIPE_TEST_API_KEY
     assert settings.stripe_webhook_secret.get_secret_value() == WEBHOOK_SIGNING_VALUE
     assert settings.stripe_api_base == STRIPE_MOCK_BASE

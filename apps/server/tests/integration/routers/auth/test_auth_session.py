@@ -16,7 +16,10 @@ import uuid
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
+import httpx
 import pytest
+
+from tests.integration.routers.conftest import AuthDatabase, CookieTools, EmailFactory
 
 LOGIN_PATH = "/v1/auth/login"
 LOGOUT_PATH = "/v1/auth/logout"
@@ -41,7 +44,10 @@ def has_past_expiry(attributes: dict[str, str]) -> bool:
 
 @pytest.mark.integration
 async def test_b32_auth_me_answers_the_id_and_email_and_never_the_password_hash(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-32: the body is `{ data: { id, email } }` and the response carries no hash at all."""
     email = auth_emails("me")
@@ -59,7 +65,9 @@ async def test_b32_auth_me_answers_the_id_and_email_and_never_the_password_hash(
 
 
 @pytest.mark.integration
-async def test_b32_auth_me_answers_401_auth_required_without_a_session(auth_client) -> None:
+async def test_b32_auth_me_answers_401_auth_required_without_a_session(
+    auth_client: httpx.AsyncClient,
+) -> None:
     """B-32: no cookie is `AUTH_REQUIRED` in the envelope, not a 403 and not an empty 200."""
     response = await auth_client.get(ME_PATH)
 
@@ -69,7 +77,10 @@ async def test_b32_auth_me_answers_401_auth_required_without_a_session(auth_clie
 
 @pytest.mark.integration
 async def test_b31_logout_answers_204_deletes_the_row_and_clears_the_cookie(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-31: the session that just worked is gone from the table and cleared from the browser."""
     email = auth_emails("logout")
@@ -96,7 +107,10 @@ async def test_b31_logout_answers_204_deletes_the_row_and_clears_the_cookie(
 
 @pytest.mark.integration
 async def test_b31_logout_without_a_session_answers_204_and_revokes_nothing_else(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-31: an anonymous logout is a no-op that still answers 204, and nobody else is signed out.
 

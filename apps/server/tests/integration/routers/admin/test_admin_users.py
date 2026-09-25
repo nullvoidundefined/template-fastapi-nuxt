@@ -11,8 +11,11 @@ integration database holds whatever users other tests have committed.
 
 import uuid
 
+import httpx
 import pytest
 from sqlalchemy import text
+
+from tests.integration.routers.conftest import AuthDatabase, CookieTools, EmailFactory
 
 ADMIN_USERS_PATH = "/v1/admin/users"
 VALID_PASSWORD = "-".join(("correct", "horse", "battery", "staple"))
@@ -21,7 +24,9 @@ DEFAULT_PAGE_LIMIT = 20
 COUNT_USERS_SQL = text("SELECT count(*) FROM users")
 
 
-async def seed_signed_in_user(auth_db, email: str, is_admin: bool = False) -> tuple[uuid.UUID, str]:
+async def seed_signed_in_user(
+    auth_db: AuthDatabase, email: str, is_admin: bool = False
+) -> tuple[uuid.UUID, str]:
     """Commit a user and a live session for it, optionally as an admin; return the id and token."""
     user_id = await auth_db.seed_user(email, VALID_PASSWORD)
     if is_admin:
@@ -31,7 +36,7 @@ async def seed_signed_in_user(auth_db, email: str, is_admin: bool = False) -> tu
     return user_id, raw_token
 
 
-async def count_users(auth_db) -> int:
+async def count_users(auth_db: AuthDatabase) -> int:
     """Return how many users the database holds right now."""
     async with auth_db.engine.connect() as connection:
         return int(await connection.scalar(COUNT_USERS_SQL))
@@ -39,7 +44,10 @@ async def count_users(auth_db) -> int:
 
 @pytest.mark.integration
 async def test_b19_a_member_is_refused_with_auth_admin_required(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """A signed-in member gets 403 and the registry code, and no user data at all."""
     _user_id, raw_token = await seed_signed_in_user(auth_db, auth_emails("member"))
@@ -52,7 +60,9 @@ async def test_b19_a_member_is_refused_with_auth_admin_required(
 
 
 @pytest.mark.integration
-async def test_b19_a_request_without_a_session_answers_auth_required(auth_client) -> None:
+async def test_b19_a_request_without_a_session_answers_auth_required(
+    auth_client: httpx.AsyncClient,
+) -> None:
     """No cookie is a 401, not a 403: the caller is unknown rather than unprivileged."""
     response = await auth_client.get(ADMIN_USERS_PATH)
 
@@ -62,7 +72,10 @@ async def test_b19_a_request_without_a_session_answers_auth_required(auth_client
 
 @pytest.mark.integration
 async def test_b19_an_admin_receives_the_page_with_exactly_four_keys_per_user(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """The envelope, the default page, and the exact item shape, with no hash anywhere."""
     admin_email = auth_emails("admin")
@@ -96,7 +109,10 @@ async def test_b19_an_admin_receives_the_page_with_exactly_four_keys_per_user(
 
 @pytest.mark.integration
 async def test_b19_the_default_page_is_twenty_from_offset_zero(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """Without parameters the meta echoes the defaults the route applied."""
     _admin_id, raw_token = await seed_signed_in_user(auth_db, auth_emails("admin"), is_admin=True)
@@ -112,7 +128,10 @@ async def test_b19_the_default_page_is_twenty_from_offset_zero(
 
 @pytest.mark.integration
 async def test_b19_limit_and_offset_page_through_users_in_a_stable_order(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """Two one-item pages are two different users, and together they equal the two-item page."""
     _admin_id, raw_token = await seed_signed_in_user(auth_db, auth_emails("admin"), is_admin=True)
@@ -147,7 +166,11 @@ async def test_b19_limit_and_offset_page_through_users_in_a_stable_order(
     ],
 )
 async def test_b19_an_out_of_range_or_malformed_page_answers_400(
-    auth_client, auth_emails, auth_db, cookies, params
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
+    params: dict[str, int | str],
 ) -> None:
     """R-406: a bad page parameter is the validation envelope, never a 500 and never a query."""
     _admin_id, raw_token = await seed_signed_in_user(auth_db, auth_emails("admin"), is_admin=True)

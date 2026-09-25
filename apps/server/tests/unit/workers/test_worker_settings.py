@@ -211,7 +211,8 @@ def test_b3_worker_settings_schedule_the_heartbeat_every_five_minutes() -> None:
     [heartbeat_cron_job] = heartbeat_cron_jobs
     assert isinstance(heartbeat_cron_job, CronJob)
     assert heartbeat_cron_job.coroutine is heartbeat_module.log_worker_heartbeat
-    assert set(heartbeat_cron_job.minute) == HEARTBEAT_MINUTES
+    assert isinstance(heartbeat_cron_job.minute, set)
+    assert heartbeat_cron_job.minute == HEARTBEAT_MINUTES
     assert heartbeat_cron_job.run_at_startup is False
 
 

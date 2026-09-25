@@ -15,7 +15,10 @@ query somewhere it should not.
 
 import uuid
 
+import httpx
 import pytest
+
+from tests.integration.routers.conftest import AuthDatabase, CookieTools, EmailFactory
 
 LOGIN_PATH = "/v1/auth/login"
 LOGOUT_PATH = "/v1/auth/logout"
@@ -41,7 +44,7 @@ JSON_CONTENT_TYPE = {"Content-Type": "application/json"}
 
 @pytest.mark.integration
 async def test_r406_register_refuses_an_oversized_body_an_injection_and_bad_encoding(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """R-406: registration refuses all three, and a password full of SQL is stored as a password."""
     email = auth_emails("hostile")
@@ -71,7 +74,7 @@ async def test_r406_register_refuses_an_oversized_body_an_injection_and_bad_enco
 
 @pytest.mark.integration
 async def test_r406_login_refuses_an_oversized_body_an_injection_and_bad_encoding(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """R-406: every hostile login is refused, and none of them writes a session."""
     email = auth_emails("hostile-login")
@@ -105,7 +108,7 @@ async def test_r406_login_refuses_an_oversized_body_an_injection_and_bad_encodin
 
 @pytest.mark.integration
 async def test_r406_logout_refuses_an_oversized_body_and_ignores_a_hostile_cookie(
-    auth_client, cookies
+    auth_client: httpx.AsyncClient, cookies: CookieTools
 ) -> None:
     """R-406: logout answers 204 for any cookie it cannot resolve, and 413 for a huge body."""
     oversized = await auth_client.post(LOGOUT_PATH, json={"padding": OVERSIZED_VALUE})
@@ -124,7 +127,7 @@ async def test_r406_logout_refuses_an_oversized_body_and_ignores_a_hostile_cooki
 
 @pytest.mark.integration
 async def test_r406_auth_me_refuses_a_hostile_cookie_as_401_through_the_envelope(
-    auth_client, cookies
+    auth_client: httpx.AsyncClient, cookies: CookieTools
 ) -> None:
     """R-406: the cookie is client input reaching a lookup, so every bad one is a clean 401."""
     unknown = await auth_client.get(ME_PATH, headers=cookies.header(uuid.uuid4().hex))
@@ -139,7 +142,10 @@ async def test_r406_auth_me_refuses_a_hostile_cookie_as_401_through_the_envelope
 
 @pytest.mark.integration
 async def test_r406_change_password_refuses_an_oversized_body_an_injection_and_bad_encoding(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """R-406: a hostile password change is refused, and the caller is still signed in after."""
     email = auth_emails("hostile-change")

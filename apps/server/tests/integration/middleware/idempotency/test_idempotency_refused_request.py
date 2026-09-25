@@ -5,10 +5,15 @@ one reads the claim table itself. A signed-in user sends a keyed POST without th
 guard answers 403, and afterwards no row exists for that key and the handler never ran.
 """
 
+from contextlib import AbstractAsyncContextManager
+
+import httpx
 import pytest
 
 from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_unique_key,
     encode_body,
 )
@@ -16,7 +21,9 @@ from tests.integration.middleware.idempotency.conftest import (
 
 @pytest.mark.integration
 async def test_a_keyed_request_the_csrf_guard_refuses_leaves_no_claim_row(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The 403 arrives, the claim table holds nothing for the key, and the handler never ran."""
     user = await idempotency_db.sign_in_user()

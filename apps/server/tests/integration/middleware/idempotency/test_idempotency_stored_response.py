@@ -14,6 +14,9 @@ Set-Cookie is never stored or replayed. A claim row would otherwise hold a live 
 clear text, where the sessions table keeps only its hash.
 """
 
+from contextlib import AbstractAsyncContextManager
+
+import httpx
 import pytest
 
 from tests.integration.middleware.idempotency.conftest import (
@@ -31,6 +34,8 @@ from tests.integration.middleware.idempotency.conftest import (
     TEXT_PATH,
     UNDECLARED_OVERSIZED_PATH,
     UNLISTED_HEADER_NAME,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -39,7 +44,9 @@ from tests.integration.middleware.idempotency.conftest import (
 
 @pytest.mark.integration
 async def test_a_plain_text_response_is_stored_and_replayed_byte_for_byte(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """A non-JSON 201 completes its claim, and the retry gets the same bytes and content type."""
     user = await idempotency_db.sign_in_user()
@@ -65,7 +72,9 @@ async def test_a_plain_text_response_is_stored_and_replayed_byte_for_byte(
 
 @pytest.mark.integration
 async def test_a_replay_carries_the_allowlisted_headers_and_never_a_cookie(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """Location and Cache-Control come back; Set-Cookie and an unlisted header do not."""
     user = await idempotency_db.sign_in_user()
@@ -97,7 +106,9 @@ async def test_a_replay_carries_the_allowlisted_headers_and_never_a_cookie(
 
 @pytest.mark.integration
 async def test_a_streaming_response_is_passed_through_and_never_keyed(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The stream reaches the client whole, no claim is kept, and the retry runs again."""
     user = await idempotency_db.sign_in_user()
@@ -121,7 +132,9 @@ async def test_a_streaming_response_is_passed_through_and_never_keyed(
 
 @pytest.mark.integration
 async def test_a_response_past_the_cap_is_passed_through_and_never_keyed(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """An oversized body reaches the client whole, no claim is kept, and the retry runs again."""
     from app.constants.idempotency import MAX_STORED_RESPONSE_BYTES  # noqa: PLC0415
@@ -148,7 +161,9 @@ async def test_a_response_past_the_cap_is_passed_through_and_never_keyed(
 
 @pytest.mark.integration
 async def test_a_claim_completed_before_the_raw_body_columns_still_replays_its_json(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """A row revision 0005 wrote has only a JSONB body; it replays as JSON without running."""
     user = await idempotency_db.sign_in_user()
@@ -170,7 +185,9 @@ async def test_a_claim_completed_before_the_raw_body_columns_still_replays_its_j
 
 @pytest.mark.integration
 async def test_a_body_past_the_cap_with_no_declared_length_is_never_keyed(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The running total catches a body whose size no Content-Length announced."""
     from app.constants.idempotency import MAX_STORED_RESPONSE_BYTES  # noqa: PLC0415
@@ -195,7 +212,9 @@ async def test_a_body_past_the_cap_with_no_declared_length_is_never_keyed(
 
 @pytest.mark.integration
 async def test_a_malformed_content_length_is_judged_by_the_body_and_still_replays(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """An unparseable length neither breaks the response nor loses the key."""
     user = await idempotency_db.sign_in_user()
@@ -218,7 +237,9 @@ async def test_a_malformed_content_length_is_judged_by_the_body_and_still_replay
 
 @pytest.mark.integration
 async def test_a_replayed_204_carries_no_content_length(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """RFC 9110 forbids Content-Length on a 204, so the replay sends none, as the handler did."""
     user = await idempotency_db.sign_in_user()
@@ -242,7 +263,9 @@ async def test_a_replayed_204_carries_no_content_length(
 
 @pytest.mark.integration
 async def test_a_suffixed_json_body_is_kept_in_the_column_older_replicas_read(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """An `application/problem+json` body is parsed into `response_body` like plain JSON."""
     user = await idempotency_db.sign_in_user()
@@ -262,7 +285,9 @@ async def test_a_suffixed_json_body_is_kept_in_the_column_older_replicas_read(
 
 @pytest.mark.integration
 async def test_a_content_length_with_a_non_ascii_digit_is_judged_by_the_body(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """A length that `isdigit()` accepts but `int()` refuses is treated as undeclared too."""
     user = await idempotency_db.sign_in_user()

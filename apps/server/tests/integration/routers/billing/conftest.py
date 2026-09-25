@@ -17,7 +17,7 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 import httpx
@@ -28,6 +28,7 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.conftest import StripeRecorder
+from tests.integration.routers.conftest import AuthDatabase
 
 CLIENT_URL = "https://client.example.test"
 VALID_PASSWORD = "-".join(("correct", "horse", "battery", "staple"))
@@ -49,7 +50,7 @@ BillingAppFactory = Callable[..., FastAPI]
 class BillingDatabase:
     """Seeds signed-in users and subscriptions, and reads subscriptions back."""
 
-    def __init__(self, auth_db: Any) -> None:
+    def __init__(self, auth_db: AuthDatabase) -> None:
         """Wrap the auth helpers, whose engine no request ever uses."""
         self.auth_db = auth_db
 
@@ -118,9 +119,9 @@ def build_billing_app(
 @pytest_asyncio.fixture
 async def billing_browser(
     build_billing_app: BillingAppFactory,
-    open_auth_browsers: Callable[..., Any],
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
     stripe_recorder: StripeRecorder,
-) -> AsyncIterator[Any]:
+) -> AsyncIterator[httpx.AsyncClient]:
     """Yield one browser on an app whose Stripe calls the recorder answers."""
     application = build_billing_app(stripe_client=stripe_recorder.build_client())
     async with open_auth_browsers(application) as browsers:
@@ -129,15 +130,16 @@ async def billing_browser(
 
 @pytest_asyncio.fixture
 async def unconfigured_billing_browser(
-    build_billing_app: BillingAppFactory, open_auth_browsers: Callable[..., Any]
-) -> AsyncIterator[Any]:
+    build_billing_app: BillingAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+) -> AsyncIterator[httpx.AsyncClient]:
     """Yield one browser on an app with no Stripe configuration at all."""
     async with open_auth_browsers(build_billing_app()) as browsers:
         yield browsers[0]
 
 
 @pytest.fixture
-def billing_db(auth_db: Any) -> BillingDatabase:
+def billing_db(auth_db: AuthDatabase) -> BillingDatabase:
     """Return the billing seeding and reading helpers."""
     return BillingDatabase(auth_db)
 
@@ -291,7 +293,7 @@ async def open_webhook_sender(
 
 @pytest_asyncio.fixture
 async def webhook_sender(
-    build_billing_app: BillingAppFactory, auth_db: Any
+    build_billing_app: BillingAppFactory, auth_db: AuthDatabase
 ) -> AsyncIterator[WebhookSender]:
     """Yield a sender on an app configured with the webhook signing secret."""
     application = build_billing_app(
@@ -303,7 +305,7 @@ async def webhook_sender(
 
 @pytest_asyncio.fixture
 async def unconfigured_webhook_sender(
-    build_billing_app: BillingAppFactory, auth_db: Any
+    build_billing_app: BillingAppFactory, auth_db: AuthDatabase
 ) -> AsyncIterator[WebhookSender]:
     """Yield a sender on an app with no webhook signing secret configured."""
     async with open_webhook_sender(build_billing_app(), auth_db.engine) as sender:

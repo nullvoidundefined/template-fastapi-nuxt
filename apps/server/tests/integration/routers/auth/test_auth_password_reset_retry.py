@@ -17,6 +17,8 @@ from arq.connections import ArqRedis, RedisSettings, create_pool
 from arq.worker import Worker
 from redis.exceptions import RedisError
 
+from tests.integration.routers.conftest import AuthDatabase, EmailFactory
+
 ORIGINAL_PASSPHRASE = "-".join(("retry", "reset", "test", "phrase"))
 CLIENT_URL = "https://app.example.test"
 # Its own Redis database, so flushing it cannot empty the counters another suite relies on.
@@ -40,6 +42,9 @@ class FlakyEmailClient:
         if self.attempts == 1:
             raise RuntimeError("resend answered 503")
         self.delivered.append(to)
+
+    async def close(self) -> None:
+        """Release nothing; there is nothing real underneath the fake to close."""
 
 
 def build_retry_redis_url() -> str:
@@ -83,7 +88,7 @@ def worker_environment(monkeypatch: pytest.MonkeyPatch, migrated_database_url: s
 
 @pytest.mark.integration
 async def test_b47_arq_retries_a_failed_send_and_the_second_try_delivers(
-    worker_environment, auth_db, auth_emails
+    worker_environment: str, auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """B-47: a send that fails once is retried by arq, and the retry delivers the email."""
     from app.constants.job_names import RESET_EMAIL_JOB_NAME  # noqa: PLC0415
@@ -115,7 +120,7 @@ async def test_b47_arq_retries_a_failed_send_and_the_second_try_delivers(
 
 @pytest.mark.integration
 async def test_b47_the_last_try_fails_with_the_real_error_instead_of_asking_again(
-    worker_environment, auth_db, auth_emails
+    worker_environment: str, auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """R-344: on its final try the job raises the provider's error, so the failure is logged."""
     from arq.worker import Retry  # noqa: PLC0415
@@ -145,7 +150,7 @@ async def test_b47_the_last_try_fails_with_the_real_error_instead_of_asking_agai
 
 @pytest.mark.integration
 async def test_r341_the_job_binds_the_request_id_of_the_request_that_enqueued_it(
-    worker_environment, auth_db, auth_emails
+    worker_environment: str, auth_db: AuthDatabase, auth_emails: EmailFactory
 ) -> None:
     """R-341: the send runs with the forgot-password request's ID bound, so it is forwarded."""
     from app.workers.jobs.send_password_reset_email import (  # noqa: PLC0415

@@ -12,6 +12,7 @@ schema the revision produced is what is under test.
 import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 import pytest
 import pytest_asyncio
@@ -19,7 +20,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 REVISION_BEFORE_ROLE = "20260924_0003"
 PASSWORD_HASH = "-".join(("test", "hash"))
@@ -42,10 +43,12 @@ SET_ROLE_SQL = text("UPDATE users SET role = :role WHERE id = :user_id")
 DELETE_USER_SQL = text("DELETE FROM users WHERE id = :user_id")
 
 
-async def read_role(connection, user_id: object) -> str | None:
+async def read_role(connection: AsyncConnection, user_id: uuid.UUID) -> str | None:
     """Return the user's role, asserting first that the column exists at all."""
     assert (await connection.execute(ROLE_COLUMN_SQL)).one_or_none(), "users has no role column"
-    return await connection.scalar(READ_ROLE_SQL, {"user_id": user_id})
+    # read_role's SQL selects role::text, so the scalar is always a str or None; cast narrows
+    # the driver's Any return to that known shape (R-401: not weakening the assertion).
+    return cast("str | None", await connection.scalar(READ_ROLE_SQL, {"user_id": user_id}))
 
 
 def build_unique_email() -> str:
