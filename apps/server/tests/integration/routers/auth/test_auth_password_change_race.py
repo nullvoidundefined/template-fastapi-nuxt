@@ -49,17 +49,25 @@ import asyncio
 import hashlib
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Any, NamedTuple
 
 import bcrypt
+import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.settings import Settings
+from tests.integration.routers.conftest import (
+    AuthAppFactory,
+    AuthDatabase,
+    CookieTools,
+    EmailFactory,
+)
 
 LOGIN_PATH = "/v1/auth/login"
 ME_PATH = "/v1/auth/me"
@@ -120,7 +128,7 @@ async def count_stalled_backends(
 async def wait_for_stalled_backends(
     connection: AsyncConnection,
     expected: int,
-    requests: list[asyncio.Task[object]],
+    requests: list[asyncio.Task[httpx.Response]],
     application_name: str,
     since: datetime | None = None,
 ) -> int:
@@ -144,9 +152,9 @@ async def run_overlapping_requests(
     control: AsyncConnection,
     user_id: uuid.UUID,
     application_name: str,
-    change_password: Callable[[], Awaitable[object]],
-    log_in: Callable[[], Awaitable[object]],
-) -> tuple[list[int], list[object]]:
+    change_password: Callable[[], Coroutine[Any, Any, httpx.Response]],
+    log_in: Callable[[], Coroutine[Any, Any, httpx.Response]],
+) -> tuple[list[int], list[httpx.Response]]:
     """Hold the user's row, start both requests, and release once both have stalled on it.
 
     Returns the number of stalled backends observed after each request was started, and the two
@@ -154,7 +162,7 @@ async def run_overlapping_requests(
     no task is left pending when a caller's assertion fails.
     """
     observed_stalls: list[int] = []
-    requests: list[asyncio.Task[object]] = []
+    requests: list[asyncio.Task[httpx.Response]] = []
     async with control.begin():
         await control.execute(LOCK_USER_SQL, {"user_id": user_id})
         requests.append(asyncio.create_task(change_password()))
@@ -177,7 +185,9 @@ class LabelledApplication(NamedTuple):
 
 
 @pytest.fixture
-def labelled_application(build_auth_app, monkeypatch: pytest.MonkeyPatch) -> LabelledApplication:
+def labelled_application(
+    build_auth_app: AuthAppFactory, monkeypatch: pytest.MonkeyPatch
+) -> LabelledApplication:
     """Build the application with every connection it opens named for this test run.
 
     The name is generated per run rather than fixed, so two parallel workers running this file do
@@ -206,7 +216,11 @@ def labelled_application(build_auth_app, monkeypatch: pytest.MonkeyPatch) -> Lab
 
 @pytest.mark.integration
 async def test_a_login_racing_a_password_change_leaves_no_session_from_the_old_password(
-    labelled_application, open_auth_browsers, auth_emails, auth_db, cookies
+    labelled_application: LabelledApplication,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """The change wins or the login does, and either way only the caller's session survives."""
     email = auth_emails("race")

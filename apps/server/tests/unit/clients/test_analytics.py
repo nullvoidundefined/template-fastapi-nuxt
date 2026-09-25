@@ -10,12 +10,18 @@ The SDK is replaced by a recorder at its own boundary, so what is asserted is ex
 would have been handed.
 """
 
+from __future__ import annotations
+
 import uuid
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 import structlog
 from structlog.contextvars import bind_contextvars, clear_contextvars
+
+if TYPE_CHECKING:
+    from app.core.settings import Settings
 
 USER_ID = uuid.UUID("5f0b1f9c-3a4e-4c1d-9a51-0d2f6c7e8a10")
 REQUEST_ID = "req-analytics-1"
@@ -99,7 +105,9 @@ class HangingPosthog:
         time.sleep(30)
 
 
-async def test_b24_closing_a_hung_client_gives_up_within_its_budget(monkeypatch) -> None:
+async def test_b24_closing_a_hung_client_gives_up_within_its_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A PostHog outage cannot hold the process open at shutdown."""
     import time  # noqa: PLC0415
 
@@ -116,7 +124,9 @@ async def test_b24_closing_a_hung_client_gives_up_within_its_budget(monkeypatch)
     assert "analytics_shutdown_timed_out" in [log["event"] for log in logs]
 
 
-async def test_b24_the_api_lifespan_closes_the_analytics_client_on_shutdown(monkeypatch) -> None:
+async def test_b24_the_api_lifespan_closes_the_analytics_client_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Shutting the API down flushes PostHog's queue."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
     from app.core.settings import get_settings  # noqa: PLC0415
@@ -144,11 +154,16 @@ def empty_structlog_context() -> Iterator[None]:
     clear_contextvars()
 
 
-def build_settings(**overrides: object) -> object:
+def build_settings(**overrides: str) -> Settings:
     """Build Settings with a database URL, so the constructor has what it requires."""
     from app.core.settings import Settings  # noqa: PLC0415
 
-    return Settings(database_url="postgresql+asyncpg://127.0.0.1:1/none", **overrides)
+    return Settings(
+        database_url="postgresql+asyncpg://127.0.0.1:1/none",
+        **overrides,  # type: ignore[arg-type]  # pydantic-settings' __init__ stub types its
+        # own config kwargs (_case_sensitive, _env_file, ...), not the model fields **overrides
+        # forwards, so mypy checks the spread against every one of those instead.
+    )
 
 
 def test_b24_the_registry_names_the_four_auth_events_as_object_action() -> None:

@@ -8,12 +8,20 @@ claim still ends completed. The query-string case closes a gap in B-40's identit
 """
 
 import asyncio
+import uuid
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 
+import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 import app.middleware.idempotency as idempotency_module
+from app.repositories.request_idempotency_keys import IdempotentRequest, StoredResponse
 from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -21,20 +29,34 @@ from tests.integration.middleware.idempotency.conftest import (
 
 COMPLETE_FUNCTION_NAME = "complete_idempotency_key"
 
+CompleteIdempotencyKey = Callable[
+    [AsyncConnection, IdempotentRequest, uuid.UUID, StoredResponse], Awaitable[bool]
+]
+
 
 @pytest.mark.integration
 async def test_b17_a_transient_failure_storing_the_response_is_retried_until_it_completes(
-    idempotency_app, idempotency_db, handler_probe, monkeypatch
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A dropped connection on the first completion write does not leave the claim open."""
-    real_complete = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
+    # getattr with a dynamic name sidesteps mypy's no-implicit-reexport check on the module
+    # attribute; the annotation below restores the precise signature without a bare Any.
+    real_complete: CompleteIdempotencyKey = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
     failures_left = [1]
 
-    async def complete_after_one_failure(*args, **kwargs):
+    async def complete_after_one_failure(
+        connection: AsyncConnection,
+        request: IdempotentRequest,
+        claim_token: uuid.UUID,
+        response: StoredResponse,
+    ) -> bool:
         if failures_left[0]:
             failures_left[0] -= 1
             raise OSError("connection reset while storing the response")
-        return await real_complete(*args, **kwargs)
+        return await real_complete(connection, request, claim_token, response)
 
     monkeypatch.setattr(idempotency_module, COMPLETE_FUNCTION_NAME, complete_after_one_failure)
     user = await idempotency_db.sign_in_user()
@@ -54,17 +76,25 @@ async def test_b17_a_transient_failure_storing_the_response_is_retried_until_it_
 
 @pytest.mark.integration
 async def test_b18_a_cancellation_while_storing_the_response_still_completes_the_claim(
-    idempotency_app, idempotency_db, handler_probe, monkeypatch
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A timeout that lands after the handler answered cannot strand the claim in progress."""
-    real_complete = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
+    real_complete: CompleteIdempotencyKey = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
     completion_entered = asyncio.Event()
     completion_may_finish = asyncio.Event()
 
-    async def slow_complete(*args, **kwargs):
+    async def slow_complete(
+        connection: AsyncConnection,
+        request: IdempotentRequest,
+        claim_token: uuid.UUID,
+        response: StoredResponse,
+    ) -> bool:
         completion_entered.set()
         await completion_may_finish.wait()
-        return await real_complete(*args, **kwargs)
+        return await real_complete(connection, request, claim_token, response)
 
     monkeypatch.setattr(idempotency_module, COMPLETE_FUNCTION_NAME, slow_complete)
     user = await idempotency_db.sign_in_user()
@@ -94,17 +124,25 @@ async def test_b18_a_cancellation_while_storing_the_response_still_completes_the
 
 @pytest.mark.integration
 async def test_b18_a_settlement_outliving_its_request_is_held_until_it_finishes(
-    idempotency_app, idempotency_db, handler_probe, monkeypatch
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The event loop keeps only a weak reference to a task, so the module must hold it."""
-    real_complete = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
+    real_complete: CompleteIdempotencyKey = getattr(idempotency_module, COMPLETE_FUNCTION_NAME)
     completion_entered = asyncio.Event()
     completion_may_finish = asyncio.Event()
 
-    async def slow_complete(*args, **kwargs):
+    async def slow_complete(
+        connection: AsyncConnection,
+        request: IdempotentRequest,
+        claim_token: uuid.UUID,
+        response: StoredResponse,
+    ) -> bool:
         completion_entered.set()
         await completion_may_finish.wait()
-        return await real_complete(*args, **kwargs)
+        return await real_complete(connection, request, claim_token, response)
 
     monkeypatch.setattr(idempotency_module, COMPLETE_FUNCTION_NAME, slow_complete)
     user = await idempotency_db.sign_in_user()
@@ -133,7 +171,9 @@ async def test_b18_a_settlement_outliving_its_request_is_held_until_it_finishes(
 
 @pytest.mark.integration
 async def test_b40_the_same_key_on_a_different_query_string_is_a_reuse(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The query string is part of what the key promises, so a different one answers 422."""
     user = await idempotency_db.sign_in_user()

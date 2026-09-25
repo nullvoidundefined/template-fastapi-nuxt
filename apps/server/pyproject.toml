@@ -61,6 +61,11 @@ target-version = ["py313"]
 strict = true
 python_version = "3.13"
 plugins = ["pydantic.mypy"]
+# The tests are held to the same strict typing as the app (IAN-380). Several test directories
+# carry their own conftest.py without an __init__.py, so module names are taken from the path
+# relative to apps/server rather than from the file name alone.
+files = ["app", "tests"]
+explicit_package_bases = true
 
 # asyncpg ships no py.typed marker and has no stub package. The exception classes are imported
 # only to recognize a lost connection, so the missing types cost nothing here.

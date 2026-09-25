@@ -6,10 +6,15 @@ alone is pinned beside it: a request without a key, an anonymous request, a seco
 happens to pick the same key, and a key older than the twenty-four hour window.
 """
 
+from contextlib import AbstractAsyncContextManager
+
+import httpx
 import pytest
 
 from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -19,7 +24,9 @@ from tests.integration.middleware.idempotency.conftest import (
 
 @pytest.mark.integration
 async def test_b17_a_repeated_post_replays_the_stored_status_and_body(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The second request gets the first response and the handler runs once."""
     user = await idempotency_db.sign_in_user()
@@ -48,7 +55,9 @@ async def test_b17_a_repeated_post_replays_the_stored_status_and_body(
 
 @pytest.mark.integration
 async def test_b17_the_same_key_from_another_user_runs_separately(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """Keys are scoped per user, so one user's key can never replay into another's request."""
     first_user = await idempotency_db.sign_in_user("first")
@@ -72,7 +81,9 @@ async def test_b17_the_same_key_from_another_user_runs_separately(
 
 @pytest.mark.integration
 async def test_b17_a_request_without_a_key_runs_every_time(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """No header, no idempotency: the middleware passes the request straight through."""
     user = await idempotency_db.sign_in_user()
@@ -91,7 +102,9 @@ async def test_b17_a_request_without_a_key_runs_every_time(
 
 @pytest.mark.integration
 async def test_b17_an_anonymous_request_with_a_key_is_not_recorded(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """Only an authenticated request claims a key; an anonymous one runs and stores nothing."""
     key = build_unique_key()
@@ -113,7 +126,9 @@ async def test_b17_an_anonymous_request_with_a_key_is_not_recorded(
 
 @pytest.mark.integration
 async def test_b17_a_completed_key_older_than_24_hours_runs_again(
-    idempotency_app, idempotency_db, handler_probe
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
 ) -> None:
     """The replay window is twenty-four hours; after it, the key is claimed afresh."""
     user = await idempotency_db.sign_in_user()

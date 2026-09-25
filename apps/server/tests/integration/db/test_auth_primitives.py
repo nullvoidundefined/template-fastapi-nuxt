@@ -259,6 +259,7 @@ async def test_user_row_lock_serializes_concurrent_transactions(
             blocked_pid = await second.scalar(text("SELECT pg_backend_pid()"))
             await second.commit()
             locked_user = await lock_user_for_update(first, email)
+            assert locked_user is not None
             assert locked_user.id == user_id
             acquired = asyncio.Event()
             started = asyncio.Event()
@@ -269,6 +270,7 @@ async def test_user_row_lock_serializes_concurrent_transactions(
                     started.set()
                     result = await lock_user_for_update(second, email)
                     acquired.set()
+                    assert result is not None
                     assert result.id == user_id
                     assert result.password_hash == "-".join(("updated", "test", "hash"))
 
@@ -386,6 +388,7 @@ async def test_logout_resolver_never_raises_for_invalid_sessions(
                 build_request(candidate, SESSION_COOKIE_NAME), connection
             )
             if state == "live":
+                assert result is not None
                 assert result.user.id == user_id
                 assert result.session_id == session_id
             else:

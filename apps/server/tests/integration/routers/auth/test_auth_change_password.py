@@ -11,9 +11,19 @@ it stopped.
 """
 
 import hashlib
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 
 import bcrypt
+import httpx
 import pytest
+
+from tests.integration.routers.conftest import (
+    AuthAppFactory,
+    AuthDatabase,
+    CookieTools,
+    EmailFactory,
+)
 
 LOGIN_PATH = "/v1/auth/login"
 ME_PATH = "/v1/auth/me"
@@ -26,7 +36,10 @@ WRONG_PASSWORD = "-".join(("not", "the", "current", "one"))
 
 @pytest.mark.integration
 async def test_b13_a_wrong_current_password_is_refused_and_changes_nothing(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-13: the stored hash, the old password, and the caller's session all survive a refusal."""
     email = auth_emails("guarded")
@@ -52,7 +65,7 @@ async def test_b13_a_wrong_current_password_is_refused_and_changes_nothing(
 
 @pytest.mark.integration
 async def test_b13_the_old_password_stops_working_and_the_new_one_works(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """B-13: the change takes effect on the next login, in both directions."""
     email = auth_emails("rotated")
@@ -77,7 +90,11 @@ async def test_b13_the_old_password_stops_working_and_the_new_one_works(
 
 @pytest.mark.integration
 async def test_b13_the_other_browser_is_signed_out_and_the_caller_stays_signed_in(
-    build_auth_app, open_auth_browsers, auth_emails, auth_db, cookies
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-13: exactly one session survives the change, and it is the one that asked for it."""
     email = auth_emails("two-browsers")

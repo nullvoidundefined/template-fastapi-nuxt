@@ -14,14 +14,18 @@ own clients, dependencies, and routes all run as `create_app()` assembled them.
 """
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
+import httpx
 import pytest
 import sentry_sdk
 from fastapi import APIRouter
 from sentry_sdk.envelope import Envelope
 from sentry_sdk.transport import Transport
+
+from tests.integration.routers.conftest import AuthAppFactory, AuthDatabase, EmailFactory
 
 REGISTER_PATH = "/v1/auth/register"
 LOGIN_PATH = "/v1/auth/login"
@@ -70,7 +74,9 @@ def inert_sentry() -> Iterator[None]:
 
 @pytest.mark.integration
 async def test_b24_each_auth_action_sends_one_event_keyed_by_user_id_and_never_the_email(
-    build_auth_app, open_auth_browsers, auth_emails
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
 ) -> None:
     """Register, sign out, sign in, change password: four events, the user's ID, no address."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
@@ -110,7 +116,10 @@ async def test_b24_each_auth_action_sends_one_event_keyed_by_user_id_and_never_t
 
 @pytest.mark.integration
 async def test_b24_a_refused_login_sends_no_event(
-    build_auth_app, open_auth_browsers, auth_emails, auth_db
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
 ) -> None:
     """Only a completed action is an event: a wrong password records nothing."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
@@ -131,7 +140,10 @@ async def test_b24_a_refused_login_sends_no_event(
 @pytest.mark.integration
 @pytest.mark.usefixtures("inert_sentry")
 async def test_b30_an_unhandled_error_in_a_signed_in_request_carries_the_user_id_only(
-    build_auth_app, open_auth_browsers, auth_emails, monkeypatch: pytest.MonkeyPatch
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The Sentry event names the user by ID, and the email appears nowhere in it."""
     from app.dependencies.current_user import CurrentUser  # noqa: PLC0415

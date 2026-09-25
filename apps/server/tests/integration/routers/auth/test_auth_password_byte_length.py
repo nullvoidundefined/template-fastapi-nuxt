@@ -26,6 +26,8 @@ import bcrypt
 import httpx
 import pytest
 
+from tests.integration.routers.conftest import AuthDatabase, CookieTools, EmailFactory
+
 LOGIN_PATH = "/v1/auth/login"
 ME_PATH = "/v1/auth/me"
 REGISTER_PATH = "/v1/auth/register"
@@ -64,7 +66,7 @@ def read_field_errors(response: httpx.Response) -> dict[str, str]:
 
 @pytest.mark.integration
 async def test_register_refuses_a_password_longer_than_bcrypt_can_hash_as_input(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """A 400 naming `password`; today the bcrypt ValueError reaches the caller as a 500."""
     email = auth_emails("over-limit-register")
@@ -82,7 +84,7 @@ async def test_register_refuses_a_password_longer_than_bcrypt_can_hash_as_input(
 
 @pytest.mark.integration
 async def test_login_refuses_a_password_longer_than_bcrypt_can_compare_as_input(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """The comparison is never attempted, so the caller gets a 400 rather than a 500."""
     email = auth_emails("over-limit-login")
@@ -101,7 +103,10 @@ async def test_login_refuses_a_password_longer_than_bcrypt_can_compare_as_input(
 
 @pytest.mark.integration
 async def test_change_password_refuses_either_password_longer_than_bcrypt_can_take(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """Both fields reach bcrypt: the current one through checkpw, the new one through hashpw.
 
@@ -143,7 +148,7 @@ async def test_change_password_refuses_either_password_longer_than_bcrypt_can_ta
 
 @pytest.mark.integration
 async def test_register_accepts_a_password_of_exactly_seventy_two_multi_byte_bytes(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """The last password bcrypt can hash must still register, and must still sign in.
 

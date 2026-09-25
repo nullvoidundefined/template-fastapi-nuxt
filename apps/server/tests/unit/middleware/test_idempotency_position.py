@@ -4,6 +4,8 @@ Innermost because it must capture the final response the route produced, and ins
 because a request the rate limiter, the timeout, or the CSRF guard refuses must never claim a key.
 """
 
+from typing import cast
+
 import httpx
 from fastapi import FastAPI
 
@@ -14,7 +16,8 @@ def test_idempotency_is_the_innermost_middleware_directly_inside_the_csrf_guard(
     """Starlette lists user middleware outermost first, so the last two entries are 6 and 7."""
     from app.middleware.csrf_guard import CsrfGuardMiddleware  # noqa: PLC0415
 
-    layer_classes = [entry.cls for entry in server_app.user_middleware]
+    # Starlette types _MiddlewareFactory generically; every entry is really a concrete class.
+    layer_classes = [cast(type[object], entry.cls) for entry in server_app.user_middleware]
     layer_names = [getattr(layer, "__name__", "") for layer in layer_classes]
 
     assert layer_names[-1] == "IdempotencyMiddleware", layer_names

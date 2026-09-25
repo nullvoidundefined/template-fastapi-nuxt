@@ -6,11 +6,16 @@ completed, held under a live lease, or abandoned with an expired lease, which a 
 must never take over. A malformed key is refused before anything is stored (R-406).
 """
 
+from contextlib import AbstractAsyncContextManager
+
+import httpx
 import pytest
 
 from tests.integration.middleware.idempotency.conftest import (
     ECHO_PATH,
     OTHER_PATH,
+    HandlerProbe,
+    IdempotencyDatabase,
     build_request_headers,
     build_unique_key,
     encode_body,
@@ -30,7 +35,10 @@ REUSED_CODE = "IDEMPOTENCY_KEY_REUSED"
     ids=["body", "path", "method"],
 )
 async def test_b40_reusing_a_completed_key_for_another_request_answers_422(
-    idempotency_app, idempotency_db, handler_probe, reused_request
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    reused_request: tuple[str, str, dict[str, str]],
 ) -> None:
     """Only the first request runs; the mismatched one gets the registry code and no replay."""
     method, path, payload = reused_request
@@ -59,7 +67,10 @@ async def test_b40_reusing_a_completed_key_for_another_request_answers_422(
 @pytest.mark.integration
 @pytest.mark.parametrize("lease_seconds", [60, -1], ids=["live-lease", "expired-lease"])
 async def test_b40_a_mismatched_request_never_waits_on_or_takes_over_an_in_progress_claim(
-    idempotency_app, idempotency_db, handler_probe, lease_seconds
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    lease_seconds: int,
 ) -> None:
     """A different body meets someone else's claim: 422, not 409, and never a takeover."""
     user = await idempotency_db.sign_in_user()
@@ -87,13 +98,21 @@ async def test_b40_a_mismatched_request_never_waits_on_or_takes_over_an_in_progr
 @pytest.mark.integration
 @pytest.mark.parametrize("key", ["k" * 256, "has space", "café"], ids=["long", "space", "utf8"])
 async def test_b40_a_malformed_key_answers_400_and_stores_nothing(
-    idempotency_app, idempotency_db, handler_probe, key
+    idempotency_app: AbstractAsyncContextManager[httpx.AsyncClient],
+    idempotency_db: IdempotencyDatabase,
+    handler_probe: HandlerProbe,
+    key: str,
 ) -> None:
     """R-406: an oversized or unprintable key is a validation error, not a claim."""
     user = await idempotency_db.sign_in_user()
     await idempotency_db.assert_table_exists()
     headers = build_request_headers(user, None)
-    headers_with_key = [*headers.items(), ("Idempotency-Key", key.encode())]
+    # Every entry goes over as raw bytes, key included, so httpx's Sequence[tuple[bytes, bytes]]
+    # overload accepts one uniform type instead of a name/value pair mismatched with the key's.
+    headers_with_key: list[tuple[bytes, bytes]] = [
+        (name.encode(), value.encode()) for name, value in headers.items()
+    ]
+    headers_with_key.append((b"Idempotency-Key", key.encode()))
 
     async with idempotency_app as client:
         response = await client.post(

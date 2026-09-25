@@ -7,7 +7,10 @@ is sent by the reset route, which learns the user from the token it consumed.
 """
 
 import json
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 
+import httpx
 import pytest
 
 from tests.integration.routers.auth.test_auth_observability import RecordingPosthog
@@ -20,6 +23,7 @@ from tests.integration.routers.auth.test_auth_password_reset import (
     job_environment,  # noqa: F401  (a fixture, used by name below)
     reset_body,
 )
+from tests.integration.routers.conftest import AuthAppFactory, AuthDatabase, EmailFactory
 
 REPLACEMENT = "-".join(("recovered", "account", "test", "phrase"))
 
@@ -27,7 +31,10 @@ REPLACEMENT = "-".join(("recovered", "account", "test", "phrase"))
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
 async def test_b24_a_reset_sends_requested_then_completed_keyed_by_user_id(
-    build_auth_app, open_auth_browsers, auth_db, auth_emails
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_db: AuthDatabase,
+    auth_emails: EmailFactory,
 ) -> None:
     """The job reports the request and the route reports the completion, with no address."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
@@ -66,7 +73,9 @@ async def test_b24_a_reset_sends_requested_then_completed_keyed_by_user_id(
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("job_environment")
-async def test_b24_an_unknown_address_sends_no_reset_event(auth_db, auth_emails) -> None:
+async def test_b24_an_unknown_address_sends_no_reset_event(
+    auth_db: AuthDatabase, auth_emails: EmailFactory
+) -> None:
     """Nothing is reported for an address with no account, so analytics cannot enumerate them."""
     from app.clients.analytics import AnalyticsClient  # noqa: PLC0415
     from app.workers.jobs.send_password_reset_email import (  # noqa: PLC0415

@@ -12,6 +12,7 @@ from collections.abc import Iterator, Mapping
 import pytest
 import structlog
 from structlog.contextvars import bind_contextvars, clear_contextvars
+from structlog.typing import EventDict
 
 PROVIDER = "resend"
 OPERATION = "send_email"
@@ -28,7 +29,7 @@ def empty_structlog_context() -> Iterator[None]:
     clear_contextvars()
 
 
-def client_call_events(captured_events: list[dict[str, object]]) -> list[dict[str, object]]:
+def client_call_events(captured_events: list[EventDict]) -> list[EventDict]:
     """Return only the events that name the provider under test."""
     return [event for event in captured_events if event.get("provider") == PROVIDER]
 

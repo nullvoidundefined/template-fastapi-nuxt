@@ -8,9 +8,15 @@ nothing and logs one warning, so an unconfigured deployment refuses uploads rath
 URLs against a bucket that does not exist.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlsplit
 
 import structlog
+
+if TYPE_CHECKING:
+    from app.core.settings import Settings
 
 ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
 BUCKET = "template-uploads"
@@ -21,14 +27,19 @@ ACCESS_KEY_ID = "".join(("placeholder", "access", "id"))
 SECRET_ACCESS_KEY = "".join(("placeholder", "secret", "value"))
 
 
-def build_settings(**overrides: object) -> object:
+def build_settings(**overrides: str) -> Settings:
     """Build Settings with a database URL, so the constructor has what it requires."""
     from app.core.settings import Settings  # noqa: PLC0415
 
-    return Settings(database_url="postgresql+asyncpg://127.0.0.1:1/none", **overrides)
+    return Settings(
+        database_url="postgresql+asyncpg://127.0.0.1:1/none",
+        **overrides,  # type: ignore[arg-type]  # pydantic-settings' __init__ stub types its
+        # own config kwargs (_case_sensitive, _env_file, ...), not the model fields **overrides
+        # forwards, so mypy checks the spread against every one of those instead.
+    )
 
 
-def build_configured_settings() -> object:
+def build_configured_settings() -> Settings:
     """Return settings naming an account, a bucket, and a key pair."""
     return build_settings(
         r2_account_id=ACCOUNT_ID,

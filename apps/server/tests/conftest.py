@@ -15,7 +15,7 @@ never mounts that router, and `tests/unit/test_main_exception_handlers.py` asser
 """
 
 import os
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, MutableMapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -157,8 +157,10 @@ def captured_log_events(server_app: FastAPI) -> Iterator[list[dict[str, Any]]]:
     recorded_events: list[dict[str, Any]] = []
 
     def record_event_dict(
-        _logger: object, _method_name: str, event_dict: dict[str, Any]
-    ) -> dict[str, Any]:
+        _logger: structlog.typing.WrappedLogger,
+        _method_name: str,
+        event_dict: MutableMapping[str, Any],
+    ) -> Mapping[str, Any]:
         recorded_events.append(dict(event_dict))
         return event_dict
 

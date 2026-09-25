@@ -10,9 +10,12 @@ malformed body. Without a session the route answers 401, and without Stripe conf
 
 import uuid
 
+import httpx
 import pytest
 
-from tests.integration.routers.billing.conftest import CLIENT_URL
+from tests.conftest import StripeRecorder
+from tests.integration.routers.billing.conftest import CLIENT_URL, BillingDatabase
+from tests.integration.routers.conftest import CookieTools, EmailFactory
 
 CHECKOUT_PATH = "/v1/billing/checkout"
 PRICE_ID = "price_Basic123"
@@ -20,7 +23,11 @@ PRICE_ID = "price_Basic123"
 
 @pytest.mark.integration
 async def test_b33_checkout_answers_the_session_url_and_a_keyed_repeat_replays_it(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """One Stripe request in subscription mode for this user; the repeat replays the same URL."""
     user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("checkout"))
@@ -45,7 +52,11 @@ async def test_b33_checkout_answers_the_session_url_and_a_keyed_repeat_replays_i
 
 @pytest.mark.integration
 async def test_b33_a_checkout_without_a_key_creates_a_session_each_time(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """Without an Idempotency-Key nothing is replayed, so the replay above is the key's doing."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("unkeyed"))
@@ -80,7 +91,12 @@ async def test_b33_a_checkout_without_a_key_creates_a_session_each_time(
     ],
 )
 async def test_b33_an_invalid_price_id_answers_400_without_calling_stripe(  # noqa: PLR0913, PLR0917
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder, body
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
+    body: dict[str, object],
 ) -> None:
     """Every body outside the schema is refused with the envelope before Stripe is reached."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("invalid"))
@@ -96,7 +112,11 @@ async def test_b33_an_invalid_price_id_answers_400_without_calling_stripe(  # no
 
 @pytest.mark.integration
 async def test_r406_a_malformed_body_answers_400_without_calling_stripe(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """Bytes that are not UTF-8 JSON are refused with the envelope, and Stripe is never called."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("malformed"))
@@ -114,7 +134,7 @@ async def test_r406_a_malformed_body_answers_400_without_calling_stripe(
 
 @pytest.mark.integration
 async def test_checkout_without_a_session_answers_auth_required(
-    billing_browser, stripe_recorder
+    billing_browser: httpx.AsyncClient, stripe_recorder: StripeRecorder
 ) -> None:
     """An anonymous checkout is refused with 401 and never reaches Stripe."""
     response = await billing_browser.post(CHECKOUT_PATH, json={"price_id": PRICE_ID})
@@ -126,7 +146,10 @@ async def test_checkout_without_a_session_answers_auth_required(
 
 @pytest.mark.integration
 async def test_checkout_without_stripe_configured_answers_billing_not_configured(
-    unconfigured_billing_browser, billing_db, auth_emails, cookies
+    unconfigured_billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
 ) -> None:
     """With no STRIPE_SECRET_KEY the route answers 503 with its own code, not a bare 500."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("unconfigured"))
@@ -141,7 +164,11 @@ async def test_checkout_without_stripe_configured_answers_billing_not_configured
 
 @pytest.mark.integration
 async def test_a_stripe_failure_answers_500_and_releases_the_key_for_the_retry(
-    billing_browser, billing_db, auth_emails, cookies, stripe_recorder
+    billing_browser: httpx.AsyncClient,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
+    stripe_recorder: StripeRecorder,
 ) -> None:
     """A failed Stripe call answers 500, and the same key then succeeds once Stripe recovers."""
     _user_id, raw_token = await billing_db.seed_signed_in_user(auth_emails("stripe-down"))

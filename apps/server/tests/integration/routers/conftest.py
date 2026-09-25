@@ -23,7 +23,7 @@ import hashlib
 import os
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -233,7 +233,7 @@ def build_auth_app(
 
 
 @pytest.fixture
-def open_auth_browsers() -> Callable[..., AsyncIterator[list[httpx.AsyncClient]]]:
+def open_auth_browsers() -> Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]]:
     """Return a context manager opening one or more browsers on one running application.
 
     Browsers rather than clients, because each has its own cookie jar and that is exactly what a
@@ -271,7 +271,7 @@ def open_auth_browsers() -> Callable[..., AsyncIterator[list[httpx.AsyncClient]]
 @pytest_asyncio.fixture
 async def auth_client(
     build_auth_app: AuthAppFactory,
-    open_auth_browsers: Callable[..., AsyncIterator[list[httpx.AsyncClient]]],
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Yield the common case: one browser talking to one application over HTTPS."""
     async with open_auth_browsers(build_auth_app()) as browsers:

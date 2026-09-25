@@ -18,10 +18,13 @@ import pytest
 from tests.integration.routers.billing.conftest import (
     WEBHOOK_SIGNING_VALUE,
     WRONG_SIGNING_VALUE,
+    BillingDatabase,
+    WebhookSender,
     build_stripe_event,
     make_stripe_id,
     sign_stripe_payload,
 )
+from tests.integration.routers.conftest import EmailFactory
 
 RECEIVED_BODY = {"data": {"received": True}}
 PERIOD_START = 1767225600
@@ -37,7 +40,9 @@ STALE_CLAIM_MINUTES_AGO = 11
 FRESH_CLAIM_MINUTES_AGO = 2
 
 
-def build_checkout_session(user_id: object, customer_id: str, subscription_id: str) -> dict:
+def build_checkout_session(
+    user_id: object, customer_id: str, subscription_id: str
+) -> dict[str, Any]:
     """Return a completed subscription-mode Checkout session naming the user in its metadata."""
     return {
         "id": make_stripe_id("cs"),
@@ -98,7 +103,9 @@ def build_payment_failed_event(subscription_id: str) -> dict[str, Any]:
     )
 
 
-async def seed_linked_user(billing_db, auth_emails, label: str) -> tuple[uuid.UUID, str, str]:
+async def seed_linked_user(
+    billing_db: BillingDatabase, auth_emails: EmailFactory, label: str
+) -> tuple[uuid.UUID, str, str]:
     """Commit a user whose subscription row already names a customer and a subscription."""
     user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails(label))
     customer_id = make_stripe_id("cus")
@@ -107,7 +114,9 @@ async def seed_linked_user(billing_db, auth_emails, label: str) -> tuple[uuid.UU
     return user_id, customer_id, subscription_id
 
 
-async def build_unlinked_checkout(billing_db, auth_emails, label: str) -> tuple[uuid.UUID, dict]:
+async def build_unlinked_checkout(
+    billing_db: BillingDatabase, auth_emails: EmailFactory, label: str
+) -> tuple[uuid.UUID, dict[str, Any]]:
     """Commit a user with no subscription row and return a checkout event naming that user."""
     user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails(label))
     event = build_stripe_event(
@@ -119,7 +128,7 @@ async def build_unlinked_checkout(billing_db, auth_emails, label: str) -> tuple[
 
 @pytest.mark.integration
 async def test_b20_a_signature_under_the_wrong_key_answers_400_and_writes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """An event signed with any other key is INVALID_SIGNATURE, with no ledger row and no link."""
     user_id, event = await build_unlinked_checkout(billing_db, auth_emails, "wrong-key")
@@ -135,7 +144,10 @@ async def test_b20_a_signature_under_the_wrong_key_answers_400_and_writes_nothin
 @pytest.mark.integration
 @pytest.mark.parametrize("defect", ["other-bytes", "stale", "garbage"])
 async def test_b20_a_tampered_stale_or_garbled_signature_is_invalid(
-    webhook_sender, billing_db, auth_emails, defect
+    webhook_sender: WebhookSender,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    defect: str,
 ) -> None:
     """The right key over other bytes, the right signature an hour old, or no v1 scheme at all."""
     user_id, event = await build_unlinked_checkout(billing_db, auth_emails, f"sig-{defect}")
@@ -157,7 +169,7 @@ async def test_b20_a_tampered_stale_or_garbled_signature_is_invalid(
 
 @pytest.mark.integration
 async def test_b42_a_delivery_without_a_stripe_signature_header_answers_misconfigured(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """No Stripe-Signature header at all is MISCONFIGURED, and nothing is written."""
     user_id, event = await build_unlinked_checkout(billing_db, auth_emails, "no-header")
@@ -172,7 +184,9 @@ async def test_b42_a_delivery_without_a_stripe_signature_header_answers_misconfi
 
 @pytest.mark.integration
 async def test_b42_a_webhook_without_a_configured_signing_value_answers_misconfigured(
-    unconfigured_webhook_sender, billing_db, auth_emails
+    unconfigured_webhook_sender: WebhookSender,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
 ) -> None:
     """A signed delivery to a deployment without STRIPE_WEBHOOK_SECRET is refused, writing none."""
     user_id, event = await build_unlinked_checkout(billing_db, auth_emails, "no-config")
@@ -187,7 +201,7 @@ async def test_b42_a_webhook_without_a_configured_signing_value_answers_misconfi
 
 @pytest.mark.integration
 async def test_b34_a_verified_event_outside_the_allowlist_answers_200_and_changes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """An unhandled type is acknowledged; no ledger row is written and no subscription moves."""
     user_id, customer_id, _subscription_id = await seed_linked_user(
@@ -206,7 +220,7 @@ async def test_b34_a_verified_event_outside_the_allowlist_answers_200_and_change
 
 @pytest.mark.integration
 async def test_b21_b51_checkout_links_the_user_once_however_often_it_is_delivered(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """The first delivery links customer and subscription by metadata; the second writes nothing."""
     user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails("checkout-once"))
@@ -247,7 +261,13 @@ async def test_b21_b51_checkout_links_the_user_once_however_often_it_is_delivere
     ],
 )
 async def test_b51_each_subscription_event_writes_status_plan_period_and_cancel_flag(  # noqa: PLR0913, PLR0917
-    webhook_sender, billing_db, auth_emails, event_type, status, is_canceling, is_period_on_item
+    webhook_sender: WebhookSender,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    event_type: str,
+    status: str,
+    is_canceling: bool,
+    is_period_on_item: bool,
 ) -> None:
     """The row found by subscription id takes the event's status, price, period, and flag."""
     user_id, customer_id, subscription_id = await seed_linked_user(
@@ -263,6 +283,7 @@ async def test_b51_each_subscription_event_writes_status_plan_period_and_cancel_
 
     assert response.status_code == 200, response.text
     stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
     assert stored.status == status
     assert stored.plan_id == "price_Pro1"
     assert stored.current_period_start == PERIOD_START_AT
@@ -274,7 +295,7 @@ async def test_b51_each_subscription_event_writes_status_plan_period_and_cancel_
 
 @pytest.mark.integration
 async def test_b51_a_subscription_event_arriving_before_checkout_creates_the_users_row(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """Stripe does not order deliveries, so the subscription's own metadata links a new row."""
     user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails("early-subscription"))
@@ -300,7 +321,7 @@ async def test_b51_a_subscription_event_arriving_before_checkout_creates_the_use
 
 @pytest.mark.integration
 async def test_b51_a_subscription_event_for_an_unknown_subscription_changes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """No row names the subscription and no metadata names a user, so nothing is written."""
     user_id, _customer_id, _subscription_id = await seed_linked_user(
@@ -320,7 +341,7 @@ async def test_b51_a_subscription_event_for_an_unknown_subscription_changes_noth
 
 @pytest.mark.integration
 async def test_b51_a_late_event_for_a_replaced_subscription_leaves_the_newer_one_alone(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """The user moved from S1 to S2; S1's late event, metadata and all, must not repoint the row.
 
@@ -346,7 +367,7 @@ async def test_b51_a_late_event_for_a_replaced_subscription_leaves_the_newer_one
 
 @pytest.mark.integration
 async def test_b51_a_subscription_event_fills_a_row_that_names_no_subscription_yet(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A row holding only the customer takes the subscription its metadata links to the user."""
     user_id, _raw_token = await billing_db.seed_signed_in_user(auth_emails("customer-only"))
@@ -363,13 +384,14 @@ async def test_b51_a_subscription_event_fills_a_row_that_names_no_subscription_y
 
     assert response.status_code == 200, response.text
     stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
     assert stored.stripe_subscription_id == subscription_id
     assert stored.status == "active"
 
 
 @pytest.mark.integration
 async def test_b51_an_update_created_before_the_deletion_but_delivered_after_it_changes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """Stripe does not order deliveries, so an older `updated` must not revive a canceled row.
 
@@ -397,6 +419,7 @@ async def test_b51_an_update_created_before_the_deletion_but_delivered_after_it_
     updated = await webhook_sender.deliver(late_update)
 
     assert deleted.status_code == 200, deleted.text
+    assert canceled is not None
     assert canceled.status == "canceled"
     assert updated.status_code == 200, updated.text
     assert await billing_db.read_subscription(user_id) == canceled
@@ -406,7 +429,7 @@ async def test_b51_an_update_created_before_the_deletion_but_delivered_after_it_
 
 @pytest.mark.integration
 async def test_b51_a_subscription_event_created_in_the_same_second_as_the_last_is_applied(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """Stripe stamps whole seconds, so an event as old as the stored one is still applied."""
     user_id, customer_id, subscription_id = await seed_linked_user(
@@ -423,13 +446,18 @@ async def test_b51_a_subscription_event_created_in_the_same_second_as_the_last_i
         )
         assert response.status_code == 200, response.text
 
-    assert (await billing_db.read_subscription(user_id)).status == "active"
+    stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
+    assert stored.status == "active"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("is_parent_shape", [True, False])
 async def test_b51_invoice_payment_failed_sets_past_due(
-    webhook_sender, billing_db, auth_emails, is_parent_shape
+    webhook_sender: WebhookSender,
+    billing_db: BillingDatabase,
+    auth_emails: EmailFactory,
+    is_parent_shape: bool,
 ) -> None:
     """The invoice's subscription, in either API version's shape, is marked past_due."""
     user_id, customer_id, subscription_id = await seed_linked_user(
@@ -452,13 +480,14 @@ async def test_b51_invoice_payment_failed_sets_past_due(
 
     assert response.status_code == 200, response.text
     stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
     assert stored.status == "past_due"
     assert stored.stripe_subscription_id == subscription_id
 
 
 @pytest.mark.integration
 async def test_b41_a_failed_event_is_claimed_again_and_processed_on_redelivery(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """An event whose earlier attempt failed is taken back by Stripe's retry and applied."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
@@ -475,12 +504,14 @@ async def test_b41_a_failed_event_is_claimed_again_and_processed_on_redelivery(
     assert processed_row.status == "processed"
     assert processed_row.processed_at is not None
     assert processed_row.attempted_at > failed_row.attempted_at
-    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+    stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
+    assert stored.status == "past_due"
 
 
 @pytest.mark.integration
 async def test_b51_a_checkout_naming_no_existing_user_is_processed_without_a_link(
-    webhook_sender, billing_db
+    webhook_sender: WebhookSender, billing_db: BillingDatabase
 ) -> None:
     """A retry could never create the user, so the event is marked processed and answers 200.
 
@@ -503,7 +534,7 @@ async def test_b51_a_checkout_naming_no_existing_user_is_processed_without_a_lin
 
 @pytest.mark.integration
 async def test_b51_a_checkout_for_a_customer_linked_to_another_user_links_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """One customer belongs to one user, so the second user's checkout is processed unapplied."""
     owner_id, customer_id, _subscription_id = await seed_linked_user(
@@ -529,7 +560,7 @@ async def test_b51_a_checkout_for_a_customer_linked_to_another_user_links_nothin
 
 @pytest.mark.integration
 async def test_b51_a_subscription_whose_metadata_names_no_existing_user_is_processed_unapplied(
-    webhook_sender, billing_db
+    webhook_sender: WebhookSender, billing_db: BillingDatabase
 ) -> None:
     """The metadata fallback checks the user exists too, rather than failing on the foreign key."""
     missing_user_id = uuid.uuid4()
@@ -551,7 +582,7 @@ async def test_b51_a_subscription_whose_metadata_names_no_existing_user_is_proce
 
 @pytest.mark.integration
 async def test_b51_a_subscription_for_a_customer_linked_to_another_user_is_processed_unapplied(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """The metadata fallback never links a customer that already belongs to a different user."""
     owner_id, customer_id, _subscription_id = await seed_linked_user(
@@ -577,7 +608,7 @@ async def test_b51_a_subscription_for_a_customer_linked_to_another_user_is_proce
 
 @pytest.mark.integration
 async def test_b41_a_claim_older_than_ten_minutes_is_taken_over_on_redelivery(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A claim a crashed handler left behind is claimed again, applied, and marked processed."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
@@ -591,12 +622,14 @@ async def test_b41_a_claim_older_than_ten_minutes_is_taken_over_on_redelivery(
     assert response.status_code == 200, response.text
     [ledger_row] = await webhook_sender.read_ledger(event["id"])
     assert ledger_row.status == "processed"
-    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+    stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
+    assert stored.status == "past_due"
 
 
 @pytest.mark.integration
 async def test_b41_a_fresh_claim_held_by_another_delivery_answers_409_so_stripe_retries(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A claim younger than ten minutes may still crash, so the delivery is refused, not acked.
 
@@ -621,7 +654,7 @@ async def test_b41_a_fresh_claim_held_by_another_delivery_answers_409_so_stripe_
 
 @pytest.mark.integration
 async def test_b21_an_event_already_processed_answers_200_and_changes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A redelivery of a processed event is acknowledged, and neither table moves."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
@@ -644,7 +677,7 @@ async def test_b21_an_event_already_processed_answers_200_and_changes_nothing(
 
 @pytest.mark.integration
 async def test_b42_an_unparseable_event_object_is_marked_failed_and_changes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A subscription whose status Stripe never sends fails its handler and is left to retry."""
     user_id, customer_id, subscription_id = await seed_linked_user(
@@ -666,7 +699,7 @@ async def test_b42_an_unparseable_event_object_is_marked_failed_and_changes_noth
 
 @pytest.mark.integration
 async def test_b43_a_signed_delivery_of_200_kb_is_processed(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """Stripe's larger events pass the 100 KB limit other routes keep, and are applied."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
@@ -680,12 +713,14 @@ async def test_b43_a_signed_delivery_of_200_kb_is_processed(
     assert response.status_code == 200, response.text
     [ledger_row] = await webhook_sender.read_ledger(event["id"])
     assert ledger_row.status == "processed"
-    assert (await billing_db.read_subscription(user_id)).status == "past_due"
+    stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
+    assert stored.status == "past_due"
 
 
 @pytest.mark.integration
 async def test_b43_a_signed_delivery_of_2_mb_answers_413_and_writes_nothing(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """The webhook's ceiling is 1 MB, not none: a 2 MB delivery never reaches the route."""
     user_id, _customer_id, subscription_id = await seed_linked_user(
@@ -705,7 +740,7 @@ async def test_b43_a_signed_delivery_of_2_mb_answers_413_and_writes_nothing(
 
 @pytest.mark.integration
 async def test_b6_b7_the_webhook_is_exempt_from_csrf_and_both_rate_limit_buckets(
-    webhook_sender,
+    webhook_sender: WebhookSender,
 ) -> None:
     """More deliveries than the global limit, none carrying the CSRF header, are all accepted."""
     statuses = []
@@ -719,7 +754,7 @@ async def test_b6_b7_the_webhook_is_exempt_from_csrf_and_both_rate_limit_buckets
 
 @pytest.mark.integration
 async def test_b51_a_payment_failure_created_before_a_recovery_cannot_mark_it_past_due(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A retried payment that succeeded is newer than the failure Stripe delivers late."""
     user_id, customer_id, subscription_id = await seed_linked_user(
@@ -741,12 +776,14 @@ async def test_b51_a_payment_failure_created_before_a_recovery_cannot_mark_it_pa
     failed = await webhook_sender.deliver(late_failure)
 
     assert failed.status_code == 200, failed.text
-    assert (await billing_db.read_subscription(user_id)).status == "active"
+    stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
+    assert stored.status == "active"
 
 
 @pytest.mark.integration
 async def test_b51_a_late_checkout_for_a_replaced_subscription_leaves_the_row_alone(
-    webhook_sender, billing_db, auth_emails
+    webhook_sender: WebhookSender, billing_db: BillingDatabase, auth_emails: EmailFactory
 ) -> None:
     """A checkout for the old subscription must not repoint a row that names the newer one."""
     user_id, customer_id, current_subscription_id = await seed_linked_user(
@@ -762,4 +799,5 @@ async def test_b51_a_late_checkout_for_a_replaced_subscription_leaves_the_row_al
 
     assert response.status_code == 200, response.text
     stored = await billing_db.read_subscription(user_id)
+    assert stored is not None
     assert stored.stripe_subscription_id == current_subscription_id

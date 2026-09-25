@@ -12,12 +12,21 @@ change to `BCRYPT_ROUNDS` that never reached a stored password still fails this 
 
 import hashlib
 import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
+import httpx
 import pytest
 
 from app.constants.session import SESSION_TTL
+from tests.integration.routers.conftest import (
+    AuthAppFactory,
+    AuthDatabase,
+    CookieTools,
+    EmailFactory,
+)
 
 REGISTER_PATH = "/v1/auth/register"
 # Built from parts rather than written as one literal, so no credential-shaped string appears in
@@ -31,7 +40,7 @@ VALIDATION_MESSAGE_PREFIX = "The request body failed validation"
 
 @pytest.mark.integration
 async def test_b10_registration_stores_a_cost_12_bcrypt_hash_of_the_submitted_password(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """B-10: the stored password is a bcrypt hash of what was sent, whose cost field reads 12."""
     email = auth_emails("hash")
@@ -52,7 +61,7 @@ async def test_b10_registration_stores_a_cost_12_bcrypt_hash_of_the_submitted_pa
 
 @pytest.mark.integration
 async def test_b10_registration_stores_the_email_trimmed_and_lowercased(
-    auth_client, auth_emails, auth_db
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, auth_db: AuthDatabase
 ) -> None:
     """B-10: an address typed with padding and mixed case is stored in its folded form."""
     email = auth_emails("mixed")
@@ -74,7 +83,7 @@ async def test_b10_registration_stores_the_email_trimmed_and_lowercased(
 
 @pytest.mark.integration
 async def test_b10_the_session_cookie_carries_every_attribute_a_browser_must_enforce(
-    auth_client, auth_emails, cookies
+    auth_client: httpx.AsyncClient, auth_emails: EmailFactory, cookies: CookieTools
 ) -> None:
     """B-10: the cookie is HttpOnly, SameSite=Lax, path-wide, and lives exactly seven days."""
     email = auth_emails("cookie")
@@ -95,7 +104,10 @@ async def test_b10_the_session_cookie_carries_every_attribute_a_browser_must_enf
 
 @pytest.mark.integration
 async def test_b10_the_issued_cookie_is_stored_only_as_its_sha256(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-10: the row holds the SHA-256 of the cookie's token, and expires when the cookie does."""
     email = auth_emails("token")
@@ -117,7 +129,10 @@ async def test_b10_the_issued_cookie_is_stored_only_as_its_sha256(
 
 @pytest.mark.integration
 async def test_b10_a_mixed_case_duplicate_is_refused_and_leaves_the_first_account_untouched(
-    auth_client, auth_emails, auth_db, cookies
+    auth_client: httpx.AsyncClient,
+    auth_emails: EmailFactory,
+    auth_db: AuthDatabase,
+    cookies: CookieTools,
 ) -> None:
     """B-10: a duplicate differing only in case and padding answers 409 and changes nothing.
 
@@ -144,7 +159,11 @@ async def test_b10_a_mixed_case_duplicate_is_refused_and_leaves_the_first_accoun
 
 @pytest.mark.integration
 async def test_b10_the_session_cookie_is_secure_under_production(
-    build_auth_app, open_auth_browsers, auth_emails, auth_redis_url, cookies
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    auth_redis_url: str,
+    cookies: CookieTools,
 ) -> None:
     """B-10: under the production setting the cookie is marked Secure, and still HttpOnly."""
     email = auth_emails("production")
@@ -165,7 +184,10 @@ async def test_b10_the_session_cookie_is_secure_under_production(
 
 @pytest.mark.integration
 async def test_b10_the_session_cookie_is_not_secure_under_local_development(
-    build_auth_app, open_auth_browsers, auth_emails, cookies
+    build_auth_app: AuthAppFactory,
+    open_auth_browsers: Callable[..., AbstractAsyncContextManager[list[httpx.AsyncClient]]],
+    auth_emails: EmailFactory,
+    cookies: CookieTools,
 ) -> None:
     """B-10: local development serves plain HTTP, where a Secure cookie would never come back."""
     email = auth_emails("development")
@@ -184,7 +206,7 @@ async def test_b10_the_session_cookie_is_not_secure_under_local_development(
 
 @pytest.mark.integration
 async def test_b38_an_invalid_email_answers_a_structured_field_error_naming_the_field(
-    auth_client, auth_db
+    auth_client: httpx.AsyncClient, auth_db: AuthDatabase
 ) -> None:
     """B-38: the envelope carries `field_errors`, one entry naming `email`, beside the prose.
 
@@ -211,7 +233,7 @@ async def test_b38_an_invalid_email_answers_a_structured_field_error_naming_the_
 
 @pytest.mark.integration
 async def test_b38_every_offending_field_is_named_once_and_carries_only_field_and_message(
-    auth_client,
+    auth_client: httpx.AsyncClient,
 ) -> None:
     """B-38: two bad inputs give two entries, each exactly `{ field, message }`."""
     response = await auth_client.post(REGISTER_PATH, json={"email": "not-an-email"})
