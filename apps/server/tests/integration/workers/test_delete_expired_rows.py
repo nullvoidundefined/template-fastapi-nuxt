@@ -14,7 +14,6 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -291,7 +290,7 @@ class BatchCase:
     case_name: str
     load_batch_function: Callable[[], BatchFunction]
     seed_stale_rows: StaleRowSeeder
-    count_sql: Any
+    count_sql: TextClause
 
 
 BATCH_CASES = [
