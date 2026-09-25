@@ -15,6 +15,7 @@ PRODUCTION_ENVIRONMENT = "production"
 # proxied request on the proxy's own address and the whole site shares one rate-limit bucket.
 REQUIRED_PRODUCTION_FIELDS = ("cors_origin", "redis_url", "forwarded_allow_ips")
 REQUIRED_PRODUCTION_VARIABLES = "CORS_ORIGIN, REDIS_URL, and FORWARDED_ALLOW_IPS"
+UNSAFE_CORS_ORIGINS = frozenset({"*", "null"})
 
 
 class Settings(BaseSettings):
@@ -70,6 +71,19 @@ class Settings(BaseSettings):
         every call Stripe refuses, answering 500 where 503 `BILLING_NOT_CONFIGURED` is the truth.
         """
         return None if is_blank(value) else value
+
+    @field_validator("cors_origin", mode="after")
+    @classmethod
+    def refuse_unsafe_cors_origin(cls, value: str | None) -> str | None:
+        """Refuse a CORS origin that opens the credentialed API to every site, in any environment.
+
+        Starlette reads `*` as allow-all and, with credentials on, echoes each caller's Origin, and
+        `null` is the Origin every sandboxed iframe and file:// page sends. Either one hands the
+        session cookie's single-origin boundary to the whole web, so no stack may start with it.
+        """
+        if value is not None and value.strip().lower() in UNSAFE_CORS_ORIGINS:
+            raise ValueError(f"CORS_ORIGIN must name one concrete origin, not {value.strip()!r}")
+        return value
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:
