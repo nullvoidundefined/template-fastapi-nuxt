@@ -21,7 +21,7 @@ from app.clients.sentry import initialize_sentry
 from app.clients.stripe import create_stripe_billing_client
 from app.constants.error_codes import ErrorCode
 from app.core.logging import configure_logging
-from app.core.settings import Settings, get_settings
+from app.core.settings import Settings, get_settings, require_api_production_values
 from app.db.engine import create_database_engine
 from app.errors import DATABASE_UNAVAILABLE_MESSAGE, AppError, build_error_response
 from app.middleware.csrf_guard import CSRF_HEADER_MISSING_MESSAGE, CsrfGuardMiddleware
@@ -81,6 +81,7 @@ VALIDATION_ERROR_MESSAGE = "The request body failed validation"
 def create_app() -> FastAPI:
     """Assemble settings, logging, error reporting, the lifespan, clients, middleware, routers."""
     settings = get_settings()
+    require_api_production_values(settings)
     configure_logging(settings)
     initialize_sentry(settings)
     app = FastAPI(

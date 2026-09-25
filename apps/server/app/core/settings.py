@@ -2,14 +2,15 @@
 
 import re
 from functools import lru_cache
-from typing import Literal, Self
+from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENVIRONMENT = "production"
-# Every one of these is a protection that silently degrades rather than failing loudly when it is
-# absent, which is why production refuses to start without them instead of warning. Without
+# The API requires each of these in production (require_api_production_values), because each is a
+# protection that silently degrades rather than failing loudly when it is absent, which is why the
+# production API refuses to start without them instead of warning. Without
 # CORS_ORIGIN the allowed-origin list is empty and the CSRF guard loses the preflight that makes
 # its header meaningful; without REDIS_URL the rate limiter counts per process, so an attacker
 # rotates across instances past the auth limit; without FORWARDED_ALLOW_IPS uvicorn keys every
@@ -107,18 +108,22 @@ class Settings(BaseSettings):
             )
         return origin
 
-    @model_validator(mode="after")
-    def require_production_values(self) -> Self:
-        """Refuse to start in production without the values production's protections need."""
-        if self.environment != PRODUCTION_ENVIRONMENT:
-            return self
-        missing = [name for name in REQUIRED_PRODUCTION_FIELDS if is_blank(getattr(self, name))]
-        if missing:
-            raise ValueError(
-                f"{REQUIRED_PRODUCTION_VARIABLES} are required in production; missing: "
-                f"{', '.join(name.upper() for name in missing)}"
-            )
-        return self
+
+def require_api_production_values(settings: Settings) -> None:
+    """Refuse to start the production API without the values its protections need.
+
+    The check runs when the API starts rather than on the Settings model, because the worker and
+    `migrations/env.py` build the same Settings and use neither CORS nor proxy trust; a model
+    validator stopped both from starting in a production that, correctly, gave them no such values.
+    """
+    if settings.environment != PRODUCTION_ENVIRONMENT:
+        return
+    missing = [name for name in REQUIRED_PRODUCTION_FIELDS if is_blank(getattr(settings, name))]
+    if missing:
+        raise RuntimeError(
+            f"{REQUIRED_PRODUCTION_VARIABLES} are required in production; missing: "
+            f"{', '.join(name.upper() for name in missing)}"
+        )
 
 
 def is_browser_origin(candidate: str) -> bool:
