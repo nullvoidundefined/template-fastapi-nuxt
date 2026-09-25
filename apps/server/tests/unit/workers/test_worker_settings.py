@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 import pytest
 import structlog
-from sqlalchemy import event
+from sqlalchemy import Engine, event
 
 from tests.conftest import UNREACHABLE_DATABASE_URL, clear_settings_cache
 
@@ -151,7 +151,7 @@ async def test_b3_worker_lifecycle_serves_the_probe_on_worker_port_and_releases_
 
     disposed_engine_urls: list[str] = []
 
-    def record_engine_disposal(sync_engine: Any) -> None:
+    def record_engine_disposal(sync_engine: Engine) -> None:
         disposed_engine_urls.append(str(sync_engine.url))
 
     await worker_settings_module.start_worker_resources(worker_context)

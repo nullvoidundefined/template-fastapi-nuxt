@@ -15,7 +15,7 @@ import importlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import ModuleType
-from typing import Any, cast
+from typing import cast
 
 import httpx
 import pytest
@@ -38,7 +38,7 @@ class FakeConnection:
     def __init__(self, executed_statements: list[str]) -> None:
         self.executed_statements = executed_statements
 
-    async def execute(self, statement: Any) -> None:
+    async def execute(self, statement: object) -> None:
         self.executed_statements.append(str(statement))
 
 

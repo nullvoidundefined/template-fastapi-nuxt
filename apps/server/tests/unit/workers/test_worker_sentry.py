@@ -10,10 +10,11 @@ at the SDK's transport, the last point before the network.
 """
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import sentry_sdk
+from arq.typing import WorkerCoroutine
 from arq.worker import Retry
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -58,12 +59,14 @@ def recording_transport() -> RecordingTransport:
     return transport
 
 
-def find_registered_job(job_name: str) -> Any:
+def find_registered_job(job_name: str) -> WorkerCoroutine:
     """Return the coroutine WorkerSettings registers under the name, as a job or a cron job."""
     worker_settings = import_worker_settings_module().WorkerSettings
     for registered_job in [*worker_settings.functions, *worker_settings.cron_jobs]:
         if registered_job.name == job_name:
-            return registered_job.coroutine
+            # WorkerSettings comes through import_module, so mypy sees it as Any; arq types every
+            # registered coroutine as a WorkerCoroutine.
+            return cast("WorkerCoroutine", registered_job.coroutine)
     raise AssertionError(f"{job_name} is not registered")
 
 

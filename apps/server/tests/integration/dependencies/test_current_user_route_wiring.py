@@ -23,7 +23,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import httpx
 import pytest
@@ -31,6 +31,9 @@ import pytest_asyncio
 from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+if TYPE_CHECKING:
+    from app.dependencies.current_user import AuthenticatedUser
 
 CURRENT_USER_PATH = "/test-only/current-user"
 RESOLVED_USER_PATH = "/test-only/resolved-user"
@@ -86,7 +89,7 @@ def build_test_only_router() -> APIRouter:
     return router
 
 
-def describe_user(current_user: Any) -> dict[str, str]:
+def describe_user(current_user: "AuthenticatedUser") -> dict[str, str]:
     """Render a resolved session as the body a route would return for it."""
     return {
         "email": current_user.user.email,

@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 import structlog
-from sqlalchemy import text
+from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from structlog.contextvars import clear_contextvars, get_contextvars, merge_contextvars
 
@@ -156,7 +156,7 @@ async def seed_stale_webhook_events(
     await seed_webhook_events(connection, marker, row_count, timedelta(days=31))
 
 
-async def count_seeded_rows(engine: AsyncEngine, count_sql: Any, marker: str) -> int:
+async def count_seeded_rows(engine: AsyncEngine, count_sql: TextClause, marker: str) -> int:
     """Return how many rows carrying this marker are still in the table the query reads."""
     async with engine.connect() as connection:
         row_count = await connection.scalar(count_sql, {"marker": marker})

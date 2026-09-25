@@ -21,6 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from redis.asyncio import Redis
 
 # Named here rather than imported from the conftest, so this module needs no package import of
 # the fixture file that pytest loads for it.
@@ -55,7 +56,7 @@ PASSWORD_CHANGE_BODY = {
 @pytest.mark.integration
 async def test_b7_the_password_change_route_is_counted_in_the_auth_bucket(
     rate_limit_redis_url: str,
-    rate_limit_redis_client: Any,
+    rate_limit_redis_client: Redis,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:
@@ -89,7 +90,7 @@ async def test_b7_the_password_change_route_is_counted_in_the_auth_bucket(
 @pytest.mark.integration
 async def test_b7_the_session_read_is_still_outside_the_auth_bucket(
     rate_limit_redis_url: str,
-    rate_limit_redis_client: Any,
+    rate_limit_redis_client: Redis,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:
