@@ -57,15 +57,16 @@ def inert_sentry() -> Iterator[None]:
     sentry_sdk.init()
 
 
-def build_settings(**overrides: Any) -> "Settings":
-    """Build Settings with a database URL, so the constructor has what it requires.
-
-    `overrides` carries whatever mix of str, bool, and float values a test wants to set, so it is
-    typed `Any` rather than a narrower type the different Settings fields could not share.
-    """
+def build_settings(**overrides: str) -> "Settings":
+    """Build Settings with a database URL, so the constructor has what it requires."""
     from app.core.settings import Settings  # noqa: PLC0415
 
-    return Settings(database_url="postgresql+asyncpg://127.0.0.1:1/none", **overrides)
+    return Settings(
+        database_url="postgresql+asyncpg://127.0.0.1:1/none",
+        **overrides,  # type: ignore[arg-type]  # pydantic-settings' __init__ stub types its
+        # own config kwargs (_case_sensitive, _env_file, ...), not the model fields **overrides
+        # forwards, so mypy checks the spread against every one of those instead.
+    )
 
 
 def test_b30_without_a_dsn_sentry_stays_inert_and_one_warning_is_logged() -> None:
