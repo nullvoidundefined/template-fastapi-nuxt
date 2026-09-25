@@ -240,6 +240,30 @@ describe('the Nitro catch-all proxy at /api/**', () => {
         expect(backendRequest!.body).toBe('{"email":"person@example.test"}');
     });
 
+    it('US-AUTH-003: passes Idempotency-Key and X-Request-Id through by name, so replay and request tracing reach the backend', async () => {
+        const handleRequest = await createNitroRouteTable();
+        const idempotencyKey = 'checkout-attempt-7f3a';
+        const requestId = 'req-proxy-pin-01';
+
+        await handleRequest(
+            new Request('http://web.test/api/v1/billing/checkout', {
+                method: 'POST',
+                headers: {
+                    cookie: sessionCookie,
+                    'X-Requested-With': csrfHeaderValue,
+                    'Idempotency-Key': idempotencyKey,
+                    'X-Request-Id': requestId,
+                    'Content-Type': 'application/json',
+                },
+                body: '{"price_id":"price_pin"}',
+            }),
+        );
+
+        expect(backendRequests).toHaveLength(1);
+        expect(backendRequests[0]!.headers.get('idempotency-key')).toBe(idempotencyKey);
+        expect(backendRequests[0]!.headers.get('x-request-id')).toBe(requestId);
+    });
+
     it('US-AUTH-003: replaces the X-Forwarded-For chain with the edge-appended address, so a forged entry cannot rotate the rate-limit bucket', async () => {
         const handleRequest = await createNitroRouteTable();
 
