@@ -20,6 +20,8 @@ import re
 from enum import StrEnum
 
 IDEMPOTENCY_KEY_HEADER = b"idempotency-key"
+# Where the middleware leaves the claim generation for a route to read (IAN-373).
+CLAIM_GENERATION_STATE_KEY = "idempotency_claim_generation"
 IDEMPOTENT_METHODS = frozenset({"POST", "PUT"})
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[\x21-\x7e]{1,255}$")
 LEASE_SECONDS = 60

@@ -21,7 +21,7 @@ for the reason `delete_expired_sessions_batch` gives: a LIMIT subquery may run m
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Row, delete, select, update
@@ -68,12 +68,16 @@ class StoredResponse:
 
 async def claim_idempotency_key(
     connection: AsyncConnection, request: IdempotentRequest, claim_token: uuid.UUID
-) -> bool:
-    """Insert a fresh in-progress claim, or reclaim one past the replay window; True if taken.
+) -> datetime | None:
+    """Insert a fresh in-progress claim, or reclaim one past the replay window.
+
+    Returns the claim's `created_at` when this request took it, the identity of this generation
+    of the claim, and None when a live row already holds the key.
 
     A row still inside its twenty-four hour window is left untouched and nothing is returned, so
     the caller knows to read it. A row older than the window has expired as a key, and is
-    overwritten in the same statement rather than deleted and reinserted in two.
+    overwritten in the same statement rather than deleted and reinserted in two, with a new
+    `created_at`, because it is a new generation.
     """
     values = {
         "key": request.key,
@@ -99,8 +103,9 @@ async def claim_idempotency_key(
             "created_at": func.now(),
         },
         where=keys.c.created_at < func.now() - REPLAY_WINDOW,
-    ).returning(keys.c.key)
-    return (await connection.execute(statement)).first() is not None
+    ).returning(keys.c.created_at)
+    created_at: datetime | None = (await connection.execute(statement)).scalar_one_or_none()
+    return created_at
 
 
 async def read_idempotency_key(
@@ -125,8 +130,11 @@ async def read_idempotency_key(
 
 async def take_over_idempotency_key(
     connection: AsyncConnection, request: IdempotentRequest, claim_token: uuid.UUID
-) -> bool:
-    """Take an in-progress claim whose lease has expired, in one statement; True if taken.
+) -> datetime | None:
+    """Take an in-progress claim whose lease has expired, in one statement.
+
+    Returns the claim's unchanged `created_at` when this request took it over, since a takeover
+    continues the same generation the dead holder started, and None when it took nothing.
 
     Method, path, and body hash are part of the condition, so a request that differs from the
     one that claimed the key can never take it over (B-40), and the lease condition means that of
@@ -144,9 +152,10 @@ async def take_over_idempotency_key(
             keys.c.locked_until < func.now(),
         )
         .values(locked_until=func.now() + LEASE, claim_token=claim_token)
-        .returning(keys.c.key)
+        .returning(keys.c.created_at)
     )
-    return (await connection.execute(statement)).first() is not None
+    created_at: datetime | None = (await connection.execute(statement)).scalar_one_or_none()
+    return created_at
 
 
 async def complete_idempotency_key(

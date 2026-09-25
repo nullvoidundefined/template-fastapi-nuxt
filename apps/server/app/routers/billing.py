@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request
 from app.constants.billing import STRIPE_SIGNATURE_HEADER
 from app.dependencies.current_user import CurrentUser, RequestConnection
 from app.dependencies.database_engine import RequestEngine
+from app.dependencies.idempotency_claim_generation import IdempotencyClaimGeneration
 from app.dependencies.settings import RequestSettings
 from app.dependencies.stripe_billing_client import RequestStripeBillingClient
 from app.schemas.billing import (
@@ -40,10 +41,11 @@ async def create_checkout(
     current: CurrentUser,
     stripe_client: RequestStripeBillingClient,
     settings: RequestSettings,
+    claim_generation: IdempotencyClaimGeneration,
 ) -> BillingRedirectResponse:
     """Create a subscription Checkout session for the signed-in user; answer its URL."""
     url = await create_checkout_url(
-        stripe_client, settings.client_url, current.user.id, body.price_id
+        stripe_client, settings.client_url, current.user.id, body.price_id, claim_generation
     )
     logger.info("billing_checkout_created", user_id=str(current.user.id))
     return BillingRedirectResponse(data=BillingRedirectData(url=url))
