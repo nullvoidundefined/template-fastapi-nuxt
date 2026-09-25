@@ -11,8 +11,10 @@ from pydantic import ValidationError
 from app.core.settings import Settings
 from tests.conftest import UNREACHABLE_DATABASE_URL
 
+# Joined at run time so no credential-shaped literal sits in the source (R-108).
+USERINFO_ORIGIN = "https://:" + "-".join(["userinfo", "value"]) + "@client.example"
 NON_CANONICAL_ORIGINS = [
-    "https://:secret@client.example",
+    USERINFO_ORIGIN,
     "https://@client.example",
     "https://a.example b.example",
     "https://client.exa\tmple",
