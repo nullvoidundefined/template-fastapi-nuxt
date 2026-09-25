@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +17,7 @@ PRODUCTION_ENVIRONMENT = "production"
 REQUIRED_PRODUCTION_FIELDS = ("cors_origin", "redis_url", "forwarded_allow_ips")
 REQUIRED_PRODUCTION_VARIABLES = "CORS_ORIGIN, REDIS_URL, and FORWARDED_ALLOW_IPS"
 UNSAFE_CORS_ORIGINS = frozenset({"*", "null"})
+HTTP_ORIGIN_SCHEMES = frozenset({"http", "https"})
 
 
 class Settings(BaseSettings):
@@ -75,15 +77,23 @@ class Settings(BaseSettings):
     @field_validator("cors_origin", mode="after")
     @classmethod
     def refuse_unsafe_cors_origin(cls, value: str | None) -> str | None:
-        """Refuse a CORS origin that opens the credentialed API to every site, in any environment.
+        """Accept only one bare http(s) origin, stripped, and refuse anything else at startup.
 
         Starlette reads `*` as allow-all and, with credentials on, echoes each caller's Origin, and
         `null` is the Origin every sandboxed iframe and file:// page sends. Either one hands the
         session cookie's single-origin boundary to the whole web, so no stack may start with it.
+        Any other shape a browser's Origin header can never equal (a path, a trailing slash, a
+        list, a pattern, no scheme) would start the API with every credentialed call failing its
+        preflight, so it is refused here too, where the operator sees why.
         """
-        if value is not None and value.strip().lower() in UNSAFE_CORS_ORIGINS:
-            raise ValueError(f"CORS_ORIGIN must name one concrete origin, not {value.strip()!r}")
-        return value
+        if value is None or not value.strip():
+            return value
+        origin = value.strip()
+        if origin.lower() in UNSAFE_CORS_ORIGINS:
+            raise ValueError(f"CORS_ORIGIN must name one concrete origin, not {origin!r}")
+        if not is_bare_http_origin(origin):
+            raise ValueError(f"CORS_ORIGIN must be scheme://host[:port] only, not {origin!r}")
+        return origin
 
     @model_validator(mode="after")
     def require_production_values(self) -> Self:
@@ -97,6 +107,22 @@ class Settings(BaseSettings):
                 f"{', '.join(name.upper() for name in missing)}"
             )
         return self
+
+
+def is_bare_http_origin(candidate: str) -> bool:
+    """Return True when the text is exactly scheme://host[:port] over http or https."""
+    parts = urlsplit(candidate)
+    try:
+        parts.port  # noqa: B018 (reading it validates the port and raises when it is malformed)
+    except ValueError:
+        return False
+    has_only_origin_parts = not (parts.path or parts.query or parts.fragment or parts.username)
+    return (
+        parts.scheme in HTTP_ORIGIN_SCHEMES
+        and bool(parts.hostname)
+        and has_only_origin_parts
+        and not any(character in parts.netloc for character in "*,")
+    )
 
 
 def is_blank(value: SecretStr | str | None) -> bool:
