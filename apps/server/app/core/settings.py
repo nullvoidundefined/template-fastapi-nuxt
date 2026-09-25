@@ -1,5 +1,6 @@
 """Typed settings read from the environment once per process and validated at startup."""
 
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -16,12 +17,23 @@ PRODUCTION_ENVIRONMENT = "production"
 # proxied request on the proxy's own address and the whole site shares one rate-limit bucket.
 REQUIRED_PRODUCTION_FIELDS = ("cors_origin", "redis_url", "forwarded_allow_ips")
 REQUIRED_PRODUCTION_VARIABLES = "CORS_ORIGIN, REDIS_URL, and FORWARDED_ALLOW_IPS"
+UNSAFE_CORS_ORIGINS = frozenset({"*", "null"})
+# One DNS name of lowercase labels, as a browser serializes the host in an Origin header.
+BROWSER_ORIGIN_PATTERN = re.compile(
+    r"(?P<scheme>https?)://"
+    r"(?P<host>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*)"
+    r"(?::(?P<port>[1-9][0-9]{0,4}))?"
+)
+DEFAULT_PORTS = {"http": "80", "https": "443"}
+MAX_TCP_PORT = 65535
 
 
 class Settings(BaseSettings):
     """Every environment variable the API reads, with its type and default."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Every refusal names the variable but never repeats its value: a pasted URL can carry a
+    # password in its userinfo, and the startup error lands in the platform's log.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     app_name: str = "template-fastapi-nuxt"
     environment: Literal["development", "test", "staging", "production"] = "development"
@@ -72,6 +84,30 @@ class Settings(BaseSettings):
         """
         return None if is_blank(value) else value
 
+    @field_validator("cors_origin", mode="after")
+    @classmethod
+    def refuse_unsafe_cors_origin(cls, value: str | None) -> str | None:
+        """Accept one browser-serialized http(s) origin, read blank as unset, refuse the rest.
+
+        Starlette reads `*` as allow-all and, with credentials on, echoes each caller's Origin, and
+        `null` is the Origin every sandboxed iframe and file:// page sends. Either one hands the
+        session cookie's single-origin boundary to the whole web, so no stack may start with it.
+        Any other shape a browser's Origin header can never equal (a path, a trailing slash, a
+        list, a pattern, no scheme, mixed case, a default port) would start the API with every
+        credentialed call failing its preflight, so it is refused here too, where the operator
+        sees why.
+        """
+        if value is None or not value.strip():
+            return None
+        origin = value.strip()
+        if origin.lower() in UNSAFE_CORS_ORIGINS:
+            raise ValueError("CORS_ORIGIN must name one concrete origin, not a wildcard or null")
+        if not is_browser_origin(origin):
+            raise ValueError(
+                "CORS_ORIGIN must be scheme://host[:port] exactly as a browser sends it"
+            )
+        return origin
+
 
 def require_api_production_values(settings: Settings) -> None:
     """Refuse to start the production API without the values its protections need.
@@ -88,6 +124,21 @@ def require_api_production_values(settings: Settings) -> None:
             f"{REQUIRED_PRODUCTION_VARIABLES} are required in production; missing: "
             f"{', '.join(name.upper() for name in missing)}"
         )
+
+
+def is_browser_origin(candidate: str) -> bool:
+    """Return True when the text is an http(s) origin exactly as a browser serializes one.
+
+    That is a lowercase scheme and host, no userinfo, path, or whitespace, and a port only when it
+    is not the scheme's default, which a browser always leaves out of the Origin header. IPv4
+    shorthand such as `127.1`, which a browser would rewrite, is not normalized here; it fails
+    closed as a CORS mismatch rather than widening what is allowed.
+    """
+    match = BROWSER_ORIGIN_PATTERN.fullmatch(candidate)
+    if match is None:
+        return False
+    port = match["port"]
+    return port is None or (int(port) <= MAX_TCP_PORT and port != DEFAULT_PORTS[match["scheme"]])
 
 
 def is_blank(value: SecretStr | str | None) -> bool:
