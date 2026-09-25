@@ -35,7 +35,7 @@ closed with 503 and everything else is served.
 ## Architectural decisions
 
 **One Lua script rather than `INCR` plus `EXPIRE`.** Chosen: a script that increments and arms the
-expiry in one server-side operation, setting the expiry only when the counter is new. Alternative:
+expiry in one server-side operation, arming the expiry whenever the key has no TTL. Alternative:
 `INCR` followed by `EXPIRE`, or read-decide-write. Why: the plan said the counts are "counted in
 Redis so that every replica shares them", which describes where the count lives and not that
 checking it is one operation. Two round trips admit more than the limit when requests race, and a
@@ -89,7 +89,7 @@ Twenty tests. Codex was at its usage limit when this PR started, so they came fr
 - **Without Redis:** one in-memory bucket shared across requests, the warning logged exactly once,
   and a fresh application starting with an empty count.
 
-Full server suite: 188 passed. `ruff`, `black` and `mypy --strict` clean. The whole stack was
+Full server suite: 194 passed. `ruff`, `black` and `mypy --strict` clean. The whole stack was
 brought up on the new network and came back healthy, with `web` holding `172.28.0.10`, the address
 `FORWARDED_ALLOW_IPS` names.
 

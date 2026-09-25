@@ -54,34 +54,34 @@ Postgres and Redis publish on 5433 and 6380 so that a locally installed Postgres
 
 For live reload, run the API and the web app on the host instead (`pnpm dev`), with the compose Postgres and Redis (`docker compose up --detach --wait postgres redis`) and these variables exported in your shell:
 
-| Variable                      | Read by           | Value for local development                                        |
-| ----------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `DATABASE_URL`                | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                      |
-| `REDIS_URL`                   | API, worker       | `redis://localhost:6380/0`                                         |
-| `ENVIRONMENT`                 | API, worker       | `development`                                                      |
-| `PORT`                        | API image         | `3001`                                                             |
-| `WORKER_PORT`                 | worker            | `3002`                                                             |
-| `DATABASE_CA_CERT`            | API, worker       | unset locally; a CA bundle path when deployed                      |
-| `CORS_ORIGIN`                 | API               | unset locally; the web origin when deployed                        |
-| `FORWARDED_ALLOW_IPS`         | API image         | `172.28.0.10` under compose; the private network's CIDR on Railway |
-| `CLIENT_URL`                  | API, worker       | `http://localhost:3000`, the origin reset and Stripe links open    |
-| `RESEND_API_KEY`              | worker            | unset locally, so reset emails are logged instead of sent          |
-| `EMAIL_FROM`                  | worker            | `Template <noreply@example.test>`; a verified sender deployed      |
-| `NUXT_API_BASE_URL`           | web (server side) | `http://localhost:3001`                                            |
-| `SENTRY_DSN`                  | API               | unset locally; the Sentry project's DSN when deployed              |
-| `POSTHOG_API_KEY`             | API               | unset locally; the PostHog project key when deployed               |
-| `POSTHOG_HOST`                | API               | `https://us.i.posthog.com`                                         |
-| `R2_ACCOUNT_ID`               | API               | unset locally; the Cloudflare account ID when deployed             |
-| `R2_BUCKET`                   | API               | unset locally; the upload bucket's name when deployed              |
-| `R2_ACCESS_KEY_ID`            | API               | unset locally; an R2 API token's key ID when deployed              |
-| `R2_SECRET_ACCESS_KEY`        | API               | unset locally; that token's secret when deployed                   |
-| `NUXT_POSTHOG_HOST`           | web (server side) | `https://us.i.posthog.com`, where `/api/ingest` forwards           |
-| `NUXT_PUBLIC_POSTHOG_KEY`     | web               | unset locally; the PostHog project key when deployed               |
-| `NUXT_PUBLIC_SENTRY_DSN`      | web               | unset locally; the web Sentry project's DSN when deployed          |
-| `STRIPE_SECRET_KEY`           | API               | unset locally, so checkout and portal answer 503                   |
-| `STRIPE_WEBHOOK_SECRET`       | API               | unset locally, so the webhook answers 400                          |
-| `STRIPE_API_BASE`             | API               | unset; `http://stripe-mock:12111` in the end-to-end stack          |
-| `NUXT_PUBLIC_STRIPE_PRICE_ID` | web               | unset locally; the Stripe price the Subscribe button buys          |
+| Variable                      | Read by           | Value for local development                                                                                                              |
+| ----------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | API, worker       | `postgresql+asyncpg://app@localhost:5433/app`                                                                                            |
+| `REDIS_URL`                   | API, worker       | `redis://localhost:6380/0`                                                                                                               |
+| `ENVIRONMENT`                 | API, worker       | `development`                                                                                                                            |
+| `PORT`                        | API image         | `3001`                                                                                                                                   |
+| `WORKER_PORT`                 | worker            | `3002`                                                                                                                                   |
+| `DATABASE_CA_CERT`            | API, worker       | unset locally; a CA bundle path when deployed                                                                                            |
+| `CORS_ORIGIN`                 | API               | unset locally; the web origin when deployed                                                                                              |
+| `FORWARDED_ALLOW_IPS`         | API image         | unset under `pnpm dev`, whose uvicorn runs without `--proxy-headers`; `172.28.0.10` under compose; the private network's CIDR on Railway |
+| `CLIENT_URL`                  | API, worker       | `http://localhost:3000`, the origin reset and Stripe links open                                                                          |
+| `RESEND_API_KEY`              | worker            | unset locally, so reset emails are logged instead of sent                                                                                |
+| `EMAIL_FROM`                  | worker            | `Template <noreply@example.test>`; a verified sender deployed                                                                            |
+| `NUXT_API_BASE_URL`           | web (server side) | `http://localhost:3001`                                                                                                                  |
+| `SENTRY_DSN`                  | API               | unset locally; the Sentry project's DSN when deployed                                                                                    |
+| `POSTHOG_API_KEY`             | API               | unset locally; the PostHog project key when deployed                                                                                     |
+| `POSTHOG_HOST`                | API               | `https://us.i.posthog.com`                                                                                                               |
+| `R2_ACCOUNT_ID`               | API               | unset locally; the Cloudflare account ID when deployed                                                                                   |
+| `R2_BUCKET`                   | API               | unset locally; the upload bucket's name when deployed                                                                                    |
+| `R2_ACCESS_KEY_ID`            | API               | unset locally; an R2 API token's key ID when deployed                                                                                    |
+| `R2_SECRET_ACCESS_KEY`        | API               | unset locally; that token's secret when deployed                                                                                         |
+| `NUXT_POSTHOG_HOST`           | web (server side) | `https://us.i.posthog.com`, where `/api/ingest` forwards                                                                                 |
+| `NUXT_PUBLIC_POSTHOG_KEY`     | web               | unset locally; the PostHog project key when deployed                                                                                     |
+| `NUXT_PUBLIC_SENTRY_DSN`      | web               | unset locally; the web Sentry project's DSN when deployed                                                                                |
+| `STRIPE_SECRET_KEY`           | API               | unset locally, so checkout and portal answer 503                                                                                         |
+| `STRIPE_WEBHOOK_SECRET`       | API               | unset locally, so the webhook answers 400                                                                                                |
+| `STRIPE_API_BASE`             | API               | unset; `http://stripe-mock:12111` in the end-to-end stack                                                                                |
+| `NUXT_PUBLIC_STRIPE_PRICE_ID` | web               | unset locally; the Stripe price the Subscribe button buys                                                                                |
 
 Deployed environments set these from the platform's secrets; no value is ever committed or baked into an image.
 

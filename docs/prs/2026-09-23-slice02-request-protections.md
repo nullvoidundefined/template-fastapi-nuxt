@@ -95,7 +95,7 @@ values. Codex updated them to send the header and to supply the configuration, c
 assertion's intent. Sending the header is what a real client does, since the frontend sets it as a
 base header on every request, so those tests were unrepresentative before rather than after.
 
-Full server suite: 154 passed. `ruff`, `black`, and `mypy --strict` clean.
+Full server suite: 168 passed. `ruff`, `black`, and `mypy --strict` clean.
 
 ## Reflection
 
