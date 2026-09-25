@@ -1,4 +1,4 @@
-"""A refused CORS_ORIGIN is named in the startup error, never echoed, and the port bounds hold.
+"""A refused CORS_ORIGIN is named in the startup error but its value is never echoed.
 
 An operator who pastes a URL carrying userinfo into CORS_ORIGIN has put a password in it, and the
 startup error goes to the platform's log. Pydantic appends `input_value=...` to every validation
@@ -39,16 +39,3 @@ def test_a_refused_origin_is_named_but_never_echoed(monkeypatch: pytest.MonkeyPa
     assert isinstance(outcome, ValidationError), "accepted an origin carrying userinfo"
     assert "CORS_ORIGIN" in str(outcome)
     assert USERINFO_MARKER not in str(outcome)
-
-
-@pytest.mark.usefixtures("development_environment")
-@pytest.mark.parametrize(
-    "out_of_range_origin", ["https://client.example:65536", "https://client.example:0443"]
-)
-def test_a_port_outside_the_tcp_range_or_with_a_leading_zero_is_refused(
-    monkeypatch: pytest.MonkeyPatch, out_of_range_origin: str
-) -> None:
-    """A browser never sends port 65536 or a zero-padded port, so neither may start the API."""
-    monkeypatch.setenv("CORS_ORIGIN", out_of_range_origin)
-    outcome = build_settings_or_refusal()
-    assert isinstance(outcome, ValidationError), f"accepted {out_of_range_origin!r}"

@@ -23,6 +23,8 @@ NON_CANONICAL_ORIGINS = [
     "http://client.example:80",
     "https://client.example:",
     "https://client.example\\evil",
+    "https://client.example:65536",
+    "https://client.example:0443",
 ]
 
 
@@ -65,7 +67,12 @@ def test_a_whitespace_only_origin_is_read_as_unset(monkeypatch: pytest.MonkeyPat
 @pytest.mark.usefixtures("development_environment")
 @pytest.mark.parametrize(
     "canonical_origin",
-    ["https://client.example:8443", "http://localhost:3000", "https://app.client-example.test"],
+    [
+        "https://client.example:8443",
+        "https://client.example:65535",
+        "http://localhost:3000",
+        "https://app.client-example.test",
+    ],
 )
 def test_a_canonical_origin_with_a_non_default_port_is_accepted(
     monkeypatch: pytest.MonkeyPatch, canonical_origin: str
