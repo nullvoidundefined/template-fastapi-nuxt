@@ -10,8 +10,8 @@ else is keyed on its own peer address.
 Counting is one atomic Redis operation. `INCR` followed by a separate `EXPIRE` is two round trips:
 concurrent requests can all read the same value and all be admitted, and a process that dies
 between the two leaves a key with no expiry that never resets, locking the client out for good.
-The script below increments and initializes the expiry together, and sets the expiry only when the
-counter is new, so the window is fixed rather than sliding forward on every request.
+The script below increments and initializes the expiry together, and arms the expiry only when the
+key carries none, so the window is fixed rather than sliding forward on every request.
 
 Without Redis the limiter counts in this process, for development and tests only, and says so once
 so the degraded mode is visible rather than silent. Production never reaches that path: a
@@ -54,9 +54,9 @@ REDIS_TIMEOUT_SECONDS = 2
 UNKNOWN_CLIENT_ADDRESS = "unknown"
 GLOBAL_BUCKET_PREFIX = "ratelimit:global"
 AUTH_BUCKET_PREFIX = "ratelimit:auth"
-# Increment and arm the expiry in one server-side operation. The expiry is set only when the
-# counter is new, so a window runs from its first request rather than being pushed forward by
-# every later one, which would lock out a steady client permanently.
+# Increment and arm the expiry in one server-side operation. The expiry is set whenever the key
+# has none (TTL below zero), so a window runs from its first request rather than being pushed
+# forward by every later one, which would lock out a steady client permanently.
 INCREMENT_WITHIN_WINDOW = """
 local current = redis.call('INCR', KEYS[1])
 local ttl = redis.call('TTL', KEYS[1])
