@@ -16,7 +16,6 @@ The Stripe webhook is the one exception, matched by exact path: Stripe's event p
 ceiling instead. It is still a ceiling, enforced the same way.
 """
 
-import json
 import re
 from dataclasses import dataclass
 
@@ -27,6 +26,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.clients.sentry import tag_sentry_request
 from app.constants.error_codes import ErrorCode
 from app.constants.exempt_paths import STRIPE_WEBHOOK_PATH
+from app.errors import send_error_envelope
 
 MAX_CONTENT_LENGTH_DIGITS = 19
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -124,20 +124,5 @@ def _declares_oversized_body(scope: Scope, max_bytes: int) -> bool:
 
 
 async def _send_payload_too_large(send: Send, message: str) -> None:
-    """Answer 413 in the { code, error } envelope as raw ASGI messages.
-
-    Sending the messages directly, rather than through a Starlette response, never reads from
-    the request's receive channel, which a streamed body may already have consumed.
-    """
-    body = json.dumps({"code": PAYLOAD_TOO_LARGE_CODE, "error": message}).encode()
-    await send(
-        {
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        }
-    )
-    await send({"type": "http.response.body", "body": body})
+    """Answer 413 through the one writer of the { code, error } envelope for middleware."""
+    await send_error_envelope(send, 413, PAYLOAD_TOO_LARGE_CODE, message)
