@@ -21,7 +21,6 @@ address, so the settings the application reads match the wrapper the requests pa
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -29,6 +28,7 @@ import pytest
 from fastapi import FastAPI
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from starlette.types import ASGIApp
 
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/none"
 TEST_BASE_URL = "http://testserver"
@@ -120,7 +120,7 @@ def open_rate_limited_client() -> RateLimitClientFactory:
 
     @asynccontextmanager
     async def open_client(
-        application: FastAPI, client_address: str, asgi_app: Any = None
+        application: FastAPI, client_address: str, asgi_app: ASGIApp | None = None
     ) -> AsyncIterator[httpx.AsyncClient]:
         async with application.router.lifespan_context(application):
             transport = httpx.ASGITransport(

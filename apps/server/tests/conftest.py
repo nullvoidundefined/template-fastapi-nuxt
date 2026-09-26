@@ -18,7 +18,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, MutableMapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl
 
 import httpx
@@ -26,6 +26,9 @@ import pytest
 import structlog
 from fastapi import APIRouter, FastAPI
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from app.clients.stripe import StripeBillingClient
 
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://127.0.0.1:1/none"
 TEST_BASE_URL = "http://testserver"
@@ -223,7 +226,7 @@ class StripeRecorder:
         """Return the form fields of the recorded request at `index`, as Stripe encodes them."""
         return dict(parse_qsl(self.requests[index].content.decode()))
 
-    def build_client(self, api_base: str | None = None) -> Any:
+    def build_client(self, api_base: str | None = None) -> "StripeBillingClient":
         """Return the real Stripe billing client whose HTTP calls this recorder answers.
 
         The transport is swapped on the SDK's own httpx client after the client's factory built

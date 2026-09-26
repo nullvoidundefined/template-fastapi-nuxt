@@ -11,7 +11,6 @@ import importlib
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
 import httpx
 import pytest
@@ -24,7 +23,7 @@ TEST_BASE_URL = "http://worker-health"
 class HealthyConnection:
     """Connection stand-in whose execute() always succeeds."""
 
-    async def execute(self, _statement: Any) -> None:
+    async def execute(self, _statement: object) -> None:
         return None
 
 

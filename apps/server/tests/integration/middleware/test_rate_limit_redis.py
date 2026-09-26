@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from redis.asyncio import Redis
 
 # Named here rather than imported from the conftest, so this module needs no package import of
 # the fixture file that pytest loads for it.
@@ -183,7 +184,7 @@ async def test_b7_eleven_parallel_requests_on_one_bucket_produce_exactly_one_rej
 @pytest.mark.integration
 async def test_b7_every_bucket_key_expires_and_its_window_does_not_slide(
     rate_limit_redis_url: str,
-    rate_limit_redis_client: Any,
+    rate_limit_redis_client: Redis,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:
@@ -213,7 +214,7 @@ async def test_b7_every_bucket_key_expires_and_its_window_does_not_slide(
 @pytest.mark.integration
 async def test_b7_a_bucket_key_that_carries_no_expiry_is_armed_by_the_next_request(
     rate_limit_redis_url: str,
-    rate_limit_redis_client: Any,
+    rate_limit_redis_client: Redis,
     build_rate_limit_app: RateLimitAppFactory,
     open_rate_limited_client: RateLimitClientFactory,
 ) -> None:

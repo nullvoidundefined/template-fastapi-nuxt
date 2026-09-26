@@ -51,7 +51,9 @@ select = ["E", "F", "I", "B", "UP", "S", "D", "ANN", "PL"]
 ignore = ["D203", "D213"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "D", "ANN", "PLR2004"]
+# ANN0 and ANN2 (missing annotations) stay off in tests because mypy --strict already requires
+# every annotation there; ANN401 stays on, so a test can never annotate a bare Any (IAN-384).
+"tests/**" = ["S101", "D", "ANN0", "ANN2", "PLR2004"]
 
 [tool.black]
 line-length = 100
