@@ -16,6 +16,7 @@ build/
 # Tooling state
 .claude/tdd-lock.json
 .claude/task-tier.json
+.claude/findings.json
 *.log
 .DS_Store
 
