@@ -15,16 +15,16 @@
     "dependencies": {
         "@sentry/nuxt": "^11.0.0",
         "@tanstack/vue-query": "^5.103.2",
-        "nuxt": "4.5.2",
+        "nuxt": "4.6.0",
         "openapi-fetch": "0.17.0",
         "posthog-js": "^1.434.12",
         "reka-ui": "^2.10.5",
         "vue": "3.5.43",
-        "vue-router": "5.3.1"
+        "vue-router": "5.4.0"
     },
     "devDependencies": {
         "@nuxt/eslint": "1.17.0",
-        "@nuxt/test-utils": "4.3.2",
+        "@nuxt/test-utils": "4.3.3",
         "@nuxtjs/storybook": "^9.0.1",
         "@repo/api-types": "workspace:*",
         "@repo/tokens": "workspace:*",
@@ -33,13 +33,13 @@
         "@testing-library/vue": "8.1.0",
         "@vitejs/plugin-vue": "6.0.9",
         "@vue/test-utils": "2.5.1",
-        "eslint": "10.11.0",
-        "eslint-plugin-vuejs-accessibility": "2.6.0",
+        "eslint": "10.12.0",
+        "eslint-plugin-vuejs-accessibility": "2.6.2",
         "happy-dom": "20.14.5",
-        "sass": "1.104.1",
+        "sass": "1.105.1",
         "storybook": "^10.6.0",
         "typescript": "5.9.3",
-        "vitest": "5.0.1",
-        "vue-tsc": "3.3.11"
+        "vitest": "5.0.3",
+        "vue-tsc": "3.3.12"
     }
 }
