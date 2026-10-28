@@ -15,7 +15,7 @@
     "dependencies": {
         "@sentry/nuxt": "^11.0.0",
         "@tanstack/vue-query": "^5.103.2",
-        "nuxt": "4.5.2",
+        "nuxt": "4.6.2",
         "openapi-fetch": "0.17.0",
         "posthog-js": "^1.434.12",
         "reka-ui": "^2.10.5",
