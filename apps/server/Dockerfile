@@ -2,7 +2,7 @@
 # The builder stage installs the locked dependencies with uv; the runtime stage copies only the
 # virtual environment and the application code. Configuration arrives as environment variables at
 # run time, never as build arguments (R-102). Build context: apps/server.
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
@@ -16,7 +16,7 @@ COPY alembic.ini ./
 COPY migrations/ migrations/
 RUN uv sync --frozen --no-dev
 
-FROM python:3.13-slim
+FROM python:3.15-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" PORT=3001
 RUN useradd --create-home --uid 10001 app
